@@ -14,7 +14,7 @@ import (
 
 const maxBody = 1 << 20
 
-// Client is a read-only Forgejo (Gitea) API client.
+// Client talks to the Forgejo (Gitea) HTTP API.
 type Client struct {
 	BaseURL    string
 	Token      string

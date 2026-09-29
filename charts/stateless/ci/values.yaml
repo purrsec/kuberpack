@@ -10,3 +10,8 @@ ingress:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
 networkPolicy:
   enabled: true
+podSecurityContext:
+  runAsUser: 65534
+  runAsGroup: 65534
+  fsGroup: 65534
+

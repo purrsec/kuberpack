@@ -1,7 +1,11 @@
 .git
 bin/
 kubero-main/
+hello-world/
+examples/
 .env
 .env.*
 *.sqlite
 data/
+.DS_Store
+

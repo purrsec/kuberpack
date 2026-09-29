@@ -26,6 +26,9 @@ vendor/
 # Kubero clone (reference only, not the product)
 kubero-main/
 
+# Accidental local clones of application repos
+hello-world/
+
 # IDE
 .idea/
 .vscode/

@@ -40,3 +40,7 @@ Le tag documente le commit ; le digest identifie l'image. Un tag OCI n'est pas i
 Nixpacks n’est pas une stratégie du produit.
 
 Le builder ne pousse pas dans le dépôt applicatif, ne committe pas le GitOps, n’injecte pas de secrets de production dans un build de PR.
+
+## Code actuel
+
+`platform-deployer trigger` exécute `railpack prepare` sur la machine qui lance la CLI, puis dispatche le workflow Forgejo `app-release.yaml` (BuildKit rootless sur le runner `app-builder`). Il n’y a plus de chemin `buildctl` local dans ce dépôt.

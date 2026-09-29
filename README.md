@@ -1,10 +1,8 @@
 # Kuberpack
 
-PaaS GitOps pour Kubernetes : `git push` → image immuable → déploiement.
+PaaS GitOps visé : `git push` → image immuable → Flux.
 
-L’application n’embarque ni manifeste, ni pipeline, ni Dockerfile imposé. Elle s’enregistre une fois. Kuberpack construit le SHA reçu, publie un digest, et laisse Flux déployer.
-
-Kuberpack s’installe sur **k3s**. Il n’applique pas les workloads de production : il n’a pas de kubeconfig du cluster applicatif. La production se décrit dans un dépôt GitOps et converge via Flux + Helm Controller.
+Le CLI, le chart et le contrat sont ici. Ce qui est réellement implémenté : [docs/status.md](docs/status.md). Kuberpack n’a pas de kubeconfig du cluster de production.
 
 ## Exigences
 
@@ -18,6 +16,7 @@ Kuberpack s’installe sur **k3s**. Il n’applique pas les workloads de product
 
 | Document | Contenu |
 | --- | --- |
+| [État du code](docs/status.md) | Implémenté vs contrat |
 | [Vision](docs/vision.md) | Produit et principes |
 | [Architecture](docs/architecture.md) | Plans, sources de vérité, k3s |
 | [Flux](docs/flows.md) | Enregistrement, production, previews |
@@ -41,9 +40,9 @@ make build
 ./bin/platform-deployer promote \
   --gitops-url git@git.host.bzh:pepe/infra-homelab.git \
   --gitops-branch main \
-  --values-path apps/web/values.yaml \
+  --values-path kubernetes/vps/apps/hello-world/values.yaml \
   --chart charts/stateless \
-  --image-repository git.host.bzh/pepe/web \
+  --image-repository git.host.bzh/pepe/hello-world \
   --commit-sha <sha> \
   --digest sha256:<digest>
 ```
@@ -52,11 +51,11 @@ make build
 make test
 make build
 export FORGEJO_TOKEN=<pat write:repository>
-./bin/platform-deployer trigger --repository pepe/flask-uv --branch main
+./bin/platform-deployer trigger --repository pepe/hello-world --branch main --strategy railpack
 ```
 
 Le control plane HTTP n’est pas encore l’API d’enregistrement. `platform-deployer serve` expose `/healthz` pour un Deployment k3s. `trigger --strategy railpack` clone le SHA, lance `railpack prepare`, puis dispatche `app-release.yaml` sur le runner k3s. Promote reste une commande à part.
 
 ## État
 
-Promotion Git + chart Helm + cobaye `hello-world` déployé par Flux sur le VPS (`hello-world.host.bzh`). Builder = workflow Forgejo existant. Pas encore de webhook ni de SQLite.
+Voir [docs/status.md](docs/status.md). En une ligne : cobaye Flux en production VPS ; pas de control plane, pas de promote automatique.

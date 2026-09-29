@@ -41,7 +41,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `platform-deployer pins a digest in a GitOps repository.
+	fmt.Fprintf(os.Stderr, `platform-deployer: GitOps pin (promote), Forgejo dispatch (trigger), healthz (serve).
 
 Usage:
   platform-deployer promote [flags]
@@ -57,15 +57,16 @@ promote:
   --commit-sha string
   --digest string
 
-trigger (FORGEJO_TOKEN):
+trigger (FORGEJO_TOKEN, write:repository):
   --forgejo-url string     (default FORGEJO_URL or https://git.host.bzh)
   --repository owner/name
   --branch string          (default main)
   --strategy auto|uv|railpack
   --start-cmd string       optional Railpack start command
 
-  After prepare, dispatches pepe/infra-homelab app-release.yaml on the k3s app-builder.
-  FORGEJO_TOKEN needs write:repository (clone + dispatch).
+  Clones the SHA, runs railpack prepare, dispatches pepe/infra-homelab
+  app-release.yaml. Does not promote. uv has no executor yet: auto|uv still
+  dispatch Railpack after uv.lock --check.
 `)
 }
 

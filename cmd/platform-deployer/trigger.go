@@ -71,6 +71,14 @@ func runTrigger(args []string) error {
 	fmt.Printf("strategy: %s\n", plan.Kind)
 	fmt.Printf("clone: ok\n")
 
+	if plan.Kind == strategy.UV {
+		if err := strategy.CheckLock(dest); err != nil {
+			return err
+		}
+		fmt.Println("uv executor not implemented; building with railpack")
+		plan.Kind = strategy.Railpack
+	}
+
 	switch plan.Kind {
 	case strategy.Railpack:
 		prep, err := railpack.Prepare(ctx, railpack.Request{
@@ -98,11 +106,6 @@ func runTrigger(args []string) error {
 		}
 		fmt.Printf("dispatched %s %s on app-builder\n", dispatch, workflow)
 		fmt.Println("not promoting")
-	case strategy.UV:
-		if err := strategy.CheckLock(dest); err != nil {
-			return err
-		}
-		fmt.Println("uv builder deferred; pass --strategy railpack")
 	default:
 		fmt.Println("no builder configured; not promoting")
 	}

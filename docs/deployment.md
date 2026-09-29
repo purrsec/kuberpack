@@ -13,6 +13,4 @@ Cette page décrit **une** installation. Ce n’est pas le contrat produit.
 | Builder existant | `app-release.yaml`, `railpack-release.sh` |
 | Receiver à remplacer | `kubernetes/ci/release-webhook.py` |
 
-Cobayes prévus : site stateless déjà servi par une image Railpack ; app Python `uv.lock` + `/healthz`.
-
-Le builder historique tague `main-<run>-<sha>`. Les apps Kuberpack passent à `sha-<commit>` uniquement. Flux Image Automation et les commentaires `$imagepolicy` restent éteints. Renovate ne touche pas ces images.
+Cobaye actuel : `pepe/hello-world` (Flask, image Railpack) servi sur `hello-world.host.bzh` par Flux + chart `stateless`. Le builder historique tague `main-<run>-<sha>`. Les apps Kuberpack visent `sha-<commit>` ; ce n’est pas encore le tag poussé par `railpack-release.sh`. Flux Image Automation et les commentaires `$imagepolicy` restent éteints. Renovate ne touche pas ces images.
