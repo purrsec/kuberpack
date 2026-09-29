@@ -1,0 +1,27 @@
+image: ""
+port: 8080
+healthcheck: /
+hostname: ""
+replicas: 1
+ingressClassName: ""
+imagePullSecrets: []
+enableServiceLinks: false
+command: []
+ingress:
+  tls: false
+  annotations: {}
+networkPolicy:
+  enabled: true
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+envFrom: []
+# Railpack images often have USER root. A numeric UID is required for runAsNonRoot.
+podSecurityContext:
+  runAsUser: 65534
+  runAsGroup: 65534
+  fsGroup: 65534

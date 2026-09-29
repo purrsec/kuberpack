@@ -1,0 +1,7 @@
+.git
+bin/
+kubero-main/
+.env
+.env.*
+*.sqlite
+data/

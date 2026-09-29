@@ -1,0 +1,12 @@
+image: "git.host.bzh/pepe/web:sha-0123456789abcdef0123456789abcdef01234567@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+port: 8080
+healthcheck: /healthz
+hostname: web.example.org
+replicas: 1
+ingressClassName: traefik
+ingress:
+  tls: true
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+networkPolicy:
+  enabled: true

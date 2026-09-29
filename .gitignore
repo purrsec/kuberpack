@@ -1,0 +1,32 @@
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# Local / OS
+.DS_Store
+*.sqlite
+*.sqlite-journal
+*.db
+data/
+
+# Node
+node_modules/
+dist/
+coverage/
+
+# Go
+bin/
+vendor/
+
+# Kubero clone (reference only, not the product)
+kubero-main/
+
+# IDE
+.idea/
+.vscode/
+*.swp
