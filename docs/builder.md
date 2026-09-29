@@ -43,4 +43,7 @@ Le builder ne pousse pas dans le dépôt applicatif, ne committe pas le GitOps, 
 
 ## Code actuel
 
-`platform-deployer trigger` exécute `railpack prepare` sur la machine qui lance la CLI, puis dispatche le workflow Forgejo `app-release.yaml` (BuildKit rootless sur le runner `app-builder`). Il n’y a plus de chemin `buildctl` local dans ce dépôt.
+Kuberpack n’est pas le script homelab. `railpack-release.sh` / `app-release.yaml` sont un cobaye (SHA in, image out) à remplacer par un builder k3s.
+
+`kuberpack trigger` / `serve` : analyse du commit, dispatch cobaye, attente du digest, puis `promote` écrit GitOps `sha-<commit>@digest`. `railpack prepare` tourne sur le builder (toolchains), pas dans l’image control plane. Le cobaye tague encore `main-<run>-<sha>` ; le pin GitOps n’utilise pas ce tag comme identité. Le builder ne committe pas le dépôt GitOps.
+

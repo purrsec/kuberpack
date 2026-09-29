@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"git.host.bzh/pepe/kuberpack/internal/fetch"
 )
 
 func runGit(ctx context.Context, dir string, args ...string) (string, error) {
@@ -26,15 +28,32 @@ func runGit(ctx context.Context, dir string, args ...string) (string, error) {
 		if msg == "" {
 			msg = err.Error()
 		}
-		return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), msg)
+		return "", fmt.Errorf("git %s: %s", strings.Join(sanitizeGitArgs(args), " "), msg)
 	}
 	return strings.TrimSpace(stdout.String()), nil
 }
 
+func sanitizeGitArgs(args []string) []string {
+	out := append([]string(nil), args...)
+	for i := 0; i < len(out)-1; i++ {
+		if out[i] != "-c" {
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(out[i+1]), "http.extraheader=authorization:") {
+			out[i+1] = "http.extraHeader=Authorization: ***"
+		}
+	}
+	return out
+}
+
+func (req Request) remoteGit(ctx context.Context, dir string, args ...string) (string, error) {
+	return runGit(ctx, dir, append(fetch.TokenHeaderArgs(req.HTTPToken), args...)...)
+}
+
 func gitConfig(args ...string) []string {
 	base := []string{
-		"-c", "user.name=platform-deployer",
-		"-c", "user.email=platform-deployer@kuberpack",
+		"-c", "user.name=kuberpack",
+		"-c", "user.email=kuberpack@host.bzh",
 		"-c", "commit.gpgsign=false",
 	}
 	return append(base, args...)

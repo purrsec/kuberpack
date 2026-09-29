@@ -7,7 +7,7 @@ Un secret compromis ne doit pas ouvrir code + registre + GitOps.
 | Identité | Droit | Interdit |
 | --- | --- | --- |
 | Control plane | Lire les dépôts apps, webhooks, clés de deploy read-only, statuts / commentaires PR | Push apps, push GitOps |
-| `platform-deployer` | Écrire le dépôt GitOps (`main`, `previews`) | Dépôts apps, packages OCI, API Kubernetes |
+| Kuberpack (GitOps) | Écrire le dépôt GitOps (`main`, `previews`) | Dépôts apps, packages OCI, API Kubernetes |
 | Builder | Push d’images sur le registre configuré | GitOps, push apps |
 
 Commits signés sur `main` si le dépôt l’exige : clé du bot, pas d’un admin humain.

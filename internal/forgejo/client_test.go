@@ -123,3 +123,32 @@ func TestDispatchWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCreateHook(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/repos/pepe/hello-world/hooks", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			_ = json.NewEncoder(w).Encode([]any{})
+		case http.MethodPost:
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": 3, "config": map[string]string{"url": "https://kp/hooks/forgejo"}})
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c, err := New(srv.URL, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.HTTPClient = srv.Client()
+	hook, err := c.EnsureHook(context.Background(), "pepe", "hello-world", "https://kp/hooks/forgejo", "s3cret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hook.ID != 3 {
+		t.Fatalf("%+v", hook)
+	}
+}

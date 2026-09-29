@@ -1,6 +1,6 @@
 # API
 
-HTTP d’abord. CLI (`platformctl`) ou UI ensuite. Pas d’exposition publique sans authentification.
+HTTP d’abord. CLI (`kuberpack`) ou UI ensuite. Pas d’exposition publique sans authentification.
 
 ## Créer une application
 

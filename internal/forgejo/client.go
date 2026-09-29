@@ -112,6 +112,68 @@ func (c *Client) DispatchWorkflow(ctx context.Context, owner, repo, workflow, re
 	return c.do(ctx, http.MethodPost, path, body, http.StatusNoContent, http.StatusCreated, http.StatusOK)
 }
 
+type Hook struct {
+	ID     int64             `json:"id"`
+	Type   string            `json:"type"`
+	Active bool              `json:"active"`
+	Events []string          `json:"events"`
+	Config map[string]string `json:"config"`
+}
+
+func (c *Client) ListHooks(ctx context.Context, owner, repo string) ([]Hook, error) {
+	var hooks []Hook
+	path := "/api/v1/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/hooks"
+	if err := c.get(ctx, path, &hooks); err != nil {
+		return nil, err
+	}
+	return hooks, nil
+}
+
+func (c *Client) CreateHook(ctx context.Context, owner, repo, hookURL, secret string) (Hook, error) {
+	body, err := json.Marshal(map[string]any{
+		"type":   "gitea",
+		"active": true,
+		"events": []string{"push", "pull_request"},
+		"config": map[string]string{
+			"url":          hookURL,
+			"content_type": "json",
+			"secret":       secret,
+			"http_method":  "post",
+		},
+	})
+	if err != nil {
+		return Hook{}, err
+	}
+	var hook Hook
+	path := "/api/v1/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/hooks"
+	if err := c.doJSON(ctx, http.MethodPost, path, body, &hook, http.StatusCreated, http.StatusOK); err != nil {
+		return Hook{}, err
+	}
+	return hook, nil
+}
+
+func (c *Client) HookByURL(ctx context.Context, owner, repo, hookURL string) (Hook, bool, error) {
+	hooks, err := c.ListHooks(ctx, owner, repo)
+	if err != nil {
+		return Hook{}, false, err
+	}
+	for _, h := range hooks {
+		if h.Config["url"] == hookURL {
+			return h, true, nil
+		}
+	}
+	return Hook{}, false, nil
+}
+
+func (c *Client) EnsureHook(ctx context.Context, owner, repo, hookURL, secret string) (Hook, error) {
+	if existing, ok, err := c.HookByURL(ctx, owner, repo, hookURL); err != nil {
+		return Hook{}, err
+	} else if ok {
+		return existing, nil
+	}
+	return c.CreateHook(ctx, owner, repo, hookURL, secret)
+}
+
 func (c *Client) get(ctx context.Context, path string, dest any) error {
 	return c.doJSON(ctx, http.MethodGet, path, nil, dest, http.StatusOK)
 }

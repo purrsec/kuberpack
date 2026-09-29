@@ -57,7 +57,7 @@ Il doit :
 - répondre tout de suite (`202`) et traiter hors requête ;
 - sérialiser les builds par application et branche ;
 - dispatcher le builder, enregistrer `{image, tag, digest}` ;
-- committer le champ `image` via `platform-deployer` ;
+- committer le champ `image` ;
 - gérer la branche `previews` ;
 - publier statuts et URL sur Forgejo ;
 - garbage-collecter les previews.
@@ -70,7 +70,7 @@ Processus isolé sur k3s. Contrat : SHA in, digest out. Détail dans [builder](b
 
 ## GitOps
 
-Après un build valide, un seul écrivain automatique (`platform-deployer`) pose :
+Après un build valide, un seul écrivain automatique (Kuberpack) pose :
 
 ```text
 image: <registry>/<app>:sha-<commit>@sha256:<digest>

@@ -56,7 +56,20 @@ func runGit(ctx context.Context, dir string, extra []string, args ...string) (st
 		if msg == "" {
 			msg = err.Error()
 		}
-		return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), msg)
+		return "", fmt.Errorf("git %s: %s", strings.Join(sanitizeGitArgs(all), " "), msg)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+func sanitizeGitArgs(args []string) []string {
+	out := append([]string(nil), args...)
+	for i := 0; i < len(out)-1; i++ {
+		if out[i] != "-c" {
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(out[i+1]), "http.extraheader=authorization:") {
+			out[i+1] = "http.extraHeader=Authorization: ***"
+		}
+	}
+	return out
 }

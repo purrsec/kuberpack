@@ -4,18 +4,20 @@ Les autres pages de `docs/` décrivent **le produit visé**. Cette page décrit 
 
 ## Fait
 
-- CLI `platform-deployer` : `promote` (pin `image` dans un values GitOps), `trigger` (clone SHA → `railpack prepare` → dispatch Forgejo), `serve` (`GET /healthz`).
-- Chart Helm `charts/stateless` (Deployment, Service, Ingress, probes, optionnel NetworkPolicy).
-- Client Forgejo : lecture repo/branche + `workflow_dispatch`.
-- Cobaye : `pepe/hello-world` construit par `app-release.yaml` (k3s `app-builder`), déployé par Flux sur le VPS. URL : `https://hello-world.host.bzh/`.
+- CLI `kuberpack` : `promote`, `trigger` (pipeline digest → GitOps), `serve` (control plane HTTP).
+- `POST /api/v1/apps`, `GET /api/v1/apps`, webhook `POST /hooks/forgejo` (HMAC SHA-256, dédup, file SQLite).
+- SQLite WAL + secrets HMAC en fichiers (`--data`). Pas de secret dans SQLite.
+- Chart Helm `charts/stateless`.
+- Client Forgejo : repo, branche, `workflow_dispatch`, création de webhook.
+- Cobaye : `pepe/hello-world` sur `https://hello-world.host.bzh/` ; pin GitOps `sha-<commit>@digest` ; Flux a upgradé.
+- Control plane sur le mini-pc : `https://kuberpack.host.bzh/` (`imagePullPolicy: Never`, Flux enfant `wait: false`).
 
 ## Pas fait
 
-- Control plane HTTP (`POST /api/v1/apps`), SQLite, webhooks HMAC.
-- `promote` branché après le digest du builder.
-- Tag builder `sha-<commit>` (le runner homelab tague encore `main-<run>-<sha>`).
-- Exécuteur `uv` (détection seulement ; le build passe par Railpack).
-- Previews, image Kuberpack sur le mini-pc, Helm tests en prod.
+- Clé de deploy SSH read-only à l’enregistrement.
+- Builder Kuberpack (le dispatch `railpack-release.sh` est un cobaye).
+- Tag builder `sha-<commit>` poussé par le cobaye.
+- Exécuteur `uv`, previews, Helm tests en prod.
 
 ## Hors arbre git
 

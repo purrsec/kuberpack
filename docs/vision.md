@@ -10,7 +10,7 @@ L’expérience visée est celle de Railway ou Heroku. Le modèle d’exploitati
 - une application s’enregistre une fois (`POST /api/v1/apps`) ;
 - un push sur la branche configurée construit le SHA exact ;
 - l’artifact est une image OCI identifiée par digest ;
-- un bot Git, `platform-deployer`, est le seul écrivain automatique de ce digest dans le dépôt GitOps ;
+- un bot Git, Kuberpack, est le seul écrivain automatique de ce digest dans le dépôt GitOps ;
 - Flux et Helm Controller déploient, testent, et rollback si la release n’est pas saine ;
 - `autodeploy_pr: true` crée une preview ; fermer la PR la détruit.
 

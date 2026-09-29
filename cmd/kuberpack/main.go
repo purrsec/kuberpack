@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"git.host.bzh/pepe/kuberpack/internal/image"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
@@ -18,17 +19,17 @@ func main() {
 	switch os.Args[1] {
 	case "promote":
 		if err := runPromote(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "platform-deployer: %v\n", err)
+			fmt.Fprintf(os.Stderr, "kuberpack: %v\n", err)
 			os.Exit(1)
 		}
 	case "trigger":
 		if err := runTrigger(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "platform-deployer: %v\n", err)
+			fmt.Fprintf(os.Stderr, "kuberpack: %v\n", err)
 			os.Exit(1)
 		}
 	case "serve":
 		if err := runServe(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "platform-deployer: %v\n", err)
+			fmt.Fprintf(os.Stderr, "kuberpack: %v\n", err)
 			os.Exit(1)
 		}
 	case "-h", "-help", "--help", "help":
@@ -41,12 +42,12 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `platform-deployer: GitOps pin (promote), Forgejo dispatch (trigger), healthz (serve).
+	fmt.Fprintf(os.Stderr, `kuberpack: GitOps pin (promote), Forgejo dispatch (trigger), control plane (serve).
 
 Usage:
-  platform-deployer promote [flags]
-  platform-deployer trigger [flags]
-  platform-deployer serve [--addr :8080]
+  kuberpack promote [flags]
+  kuberpack trigger [flags]
+  kuberpack serve [--addr :8080] [--data data]
 
 promote:
   --gitops-url string
@@ -63,10 +64,23 @@ trigger (FORGEJO_TOKEN, write:repository):
   --branch string          (default main)
   --strategy auto|uv|railpack
   --start-cmd string       optional Railpack start command
+  --gitops-url string      (default KUBERPACK_GITOPS_URL)
+  --values-path string     (default kubernetes/vps/apps/<name>/values.yaml)
+  --chart string           (default charts/stateless)
+  --wait duration          (default 15m)
+  --skip-promote
 
-  Clones the SHA, runs railpack prepare, dispatches pepe/infra-homelab
-  app-release.yaml. Does not promote. uv has no executor yet: auto|uv still
-  dispatch Railpack after uv.lock --check.
+  Clones the SHA, runs railpack prepare, dispatches a cobaye builder, waits
+  for the digest, then promote writes GitOps (sha-<commit>@digest).
+  uv has no executor yet: auto|uv still dispatch Railpack after uv.lock --check.
+
+serve (FORGEJO_TOKEN, KUBERPACK_API_TOKEN):
+  POST /api/v1/apps          register (Bearer)
+  GET  /api/v1/apps[/{name}]
+  POST /hooks/forgejo        HMAC (X-Gitea-Signature)
+  GET  /healthz
+
+  SQLite + HMAC files under --data. Does not deploy itself to Flux.
 `)
 }
 
@@ -93,6 +107,7 @@ func runPromote(args []string) error {
 		GitOpsBranch: *gitopsBranch,
 		ValuesPath:   *valuesPath,
 		ChartPath:    *chartPath,
+		HTTPToken:    strings.TrimSpace(os.Getenv("FORGEJO_TOKEN")),
 		Image:        ref,
 	})
 	if err != nil {

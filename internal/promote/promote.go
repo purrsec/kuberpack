@@ -18,6 +18,7 @@ type Request struct {
 	GitOpsBranch string
 	ValuesPath   string
 	ChartPath    string
+	HTTPToken    string
 	Image        image.Ref
 	MaxAttempts  int
 }
@@ -58,7 +59,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		if err := os.RemoveAll(work); err != nil {
 			return Result{}, err
 		}
-		if _, err := runGit(ctx, "", "clone", "--branch", req.GitOpsBranch, "--single-branch", req.GitOpsURL, work); err != nil {
+		if _, err := req.remoteGit(ctx, "", "clone", "--branch", req.GitOpsBranch, "--single-branch", req.GitOpsURL, work); err != nil {
 			return Result{}, err
 		}
 
@@ -111,9 +112,9 @@ func Run(ctx context.Context, req Request) (Result, error) {
 			return Result{}, err
 		}
 
-		if _, err := runGit(ctx, work, "push", "origin", "HEAD:"+req.GitOpsBranch); err != nil {
+		if _, err := req.remoteGit(ctx, work, "push", "origin", "HEAD:"+req.GitOpsBranch); err != nil {
 			lastErr = err
-			if _, fetchErr := runGit(ctx, work, "fetch", "origin", req.GitOpsBranch); fetchErr != nil {
+			if _, fetchErr := req.remoteGit(ctx, work, "fetch", "origin", req.GitOpsBranch); fetchErr != nil {
 				return Result{}, err
 			}
 			local, _ := runGit(ctx, work, "rev-parse", "HEAD")
