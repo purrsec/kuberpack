@@ -17,6 +17,7 @@ Les autres pages de `docs/` décrivent **le produit visé**. Cette page décrit 
 - Un Job antérieur lancé à la main (`kuberpack-build-7fc1ad70955cc0e2`) avait déjà construit et servi une image ; ce n’était pas le trajet webhook.
 - `wattchman-website` enregistré (id 2, webhook Forgejo id 4). Job `kuberpack-build-a6687b543e14ceaf` Complete → pin `git.host.bzh/pepe/wattchman-website:sha-e3502759279d3a58057e7f8868a099589da6a9c8@sha256:aeb6cd9d9d4cba404b15f1a991b89c89fca0aee8abaa1dfc6e5cb66e09b85486` (commit GitOps `d6678d5`) → HelmRelease `wattchman-website` Ready → `https://test-stagging.host.bzh/` 200.
 - Receiver cobaye, workflow `app-release.yaml` et `railpack-release.sh` retirés (commit GitOps `5f084da`). Hook Forgejo `release-webhook.host.bzh` supprimé. Le namespace `wattchman` reste pour Infisical. `wattchman.fr` est encore Railway.
+- Commit status Forgejo `kuberpack/production` : `pending` au webhook, `success` (URL du hostname) après promote, `failure` si le build échoue. Un échec de l’API status n’annule pas le déploiement.
 
 ## Pas fait
 

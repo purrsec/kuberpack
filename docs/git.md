@@ -8,7 +8,8 @@ Le produit doit, sans fichier dans le dépôt applicatif :
 2. créer un hook JSON `push` + `pull_request` s’il n’existe pas ;
 3. créer une clé de deploy SSH **read-only** ;
 4. extraire le SHA (`after` sur push, `pull_request.head.sha` sur PR) ;
-5. lister branches et pull requests.
+5. lister branches et pull requests ;
+6. publier un commit status (`POST /repos/{owner}/{repo}/statuses/{sha}`), contexte `kuberpack/production` : `pending` au build, `success` avec `target_url` du hostname après promote, `failure` si le build ou le scan échoue. Ce n’est pas un commit dans le dépôt app.
 
 ## Identité de test
 

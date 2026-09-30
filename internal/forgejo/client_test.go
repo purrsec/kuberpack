@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -121,6 +122,58 @@ func TestDispatchWorkflow(t *testing.T) {
 		"sha":        "abc1234",
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCreateCommitStatus(t *testing.T) {
+	var got struct {
+		method string
+		path   string
+		body   map[string]string
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/repos/pepe/hello-world/statuses/0123456789abcdef0123456789abcdef01234567", func(w http.ResponseWriter, r *http.Request) {
+		got.method = r.Method
+		got.path = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&got.body); err != nil {
+			t.Fatal(err)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": 1, "status": got.body["state"]})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c, err := New(srv.URL, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.HTTPClient = srv.Client()
+	if err := c.CreateCommitStatus(context.Background(), "pepe", "hello-world", "0123456789ABCDEF0123456789ABCDEF01234567", CommitStatus{
+		State:       StatusPending,
+		Description: "Building",
+		TargetURL:   "https://hello-world.host.bzh/",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got.method != http.MethodPost {
+		t.Fatalf("method %s", got.method)
+	}
+	if got.body["state"] != StatusPending || got.body["context"] != ProductionContext {
+		t.Fatalf("%v", got.body)
+	}
+	if got.body["target_url"] != "https://hello-world.host.bzh/" {
+		t.Fatalf("target_url %q", got.body["target_url"])
+	}
+}
+
+func TestTruncateStatus(t *testing.T) {
+	if TruncateStatus("ok") != "ok" {
+		t.Fatal("short")
+	}
+	long := strings.Repeat("x", 200)
+	got := TruncateStatus(long)
+	if n := len([]rune(got)); n != 140 || !strings.HasSuffix(got, "…") {
+		t.Fatalf("%q runes=%d", got, n)
 	}
 }
 

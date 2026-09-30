@@ -30,6 +30,7 @@ sequenceDiagram
     B->>B: stratégie, scan
     B->>R: tag sha-<commit>
     B-->>K: digest
+    K->>F: commit status pending → success
     K->>K: SHA toujours HEAD
     K->>G: commit image pinée
     X->>G: reconcile

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -43,10 +44,32 @@ func TestWebhookHMACAndQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	statuses := make(chan map[string]string, 4)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/repos/pepe/hello-world/statuses/", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("status body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		statuses <- body
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": 1})
+	})
+	git := httptest.NewServer(mux)
+	t.Cleanup(git.Close)
+	client, err := forgejo.New(git.URL, "tok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.HTTPClient = git.Client()
+
 	ran := make(chan string, 1)
 	srv := New(Config{
 		Store:    st,
 		Secrets:  secrets,
+		Client:   client,
 		APIToken: "api",
 		Run: func(ctx context.Context, req release.Request) (release.Result, error) {
 			ran <- req.SHA
@@ -79,6 +102,26 @@ func TestWebhookHMACAndQueue(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("worker did not run")
+	}
+
+	got := map[string]int{}
+	deadline := time.After(2 * time.Second)
+	for len(got) < 2 {
+		select {
+		case st := <-statuses:
+			got[st["state"]]++
+			if st["context"] != forgejo.ProductionContext {
+				t.Fatalf("context %q", st["context"])
+			}
+			if st["target_url"] != "https://hello-world.host.bzh" {
+				t.Fatalf("target_url %q", st["target_url"])
+			}
+		case <-deadline:
+			t.Fatalf("commit statuses: %v", got)
+		}
+	}
+	if got[forgejo.StatusPending] < 1 || got[forgejo.StatusSuccess] != 1 {
+		t.Fatalf("commit statuses: %v", got)
 	}
 
 	bad := httptest.NewRequest(http.MethodPost, "/hooks/forgejo", bytes.NewReader(body))
@@ -147,6 +190,10 @@ func TestCreateAndGetApp(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": 9, "config": map[string]string{"url": "https://kp.example/hooks/forgejo"}})
 	})
+	mux.HandleFunc("/api/v1/repos/pepe/hello-world/statuses/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": 1})
+	})
 	git := httptest.NewServer(mux)
 	t.Cleanup(git.Close)
 	client, err := forgejo.New(git.URL, "tok")
@@ -207,6 +254,97 @@ func TestCreateAndGetApp(t *testing.T) {
 	case <-ran:
 	case <-time.After(2 * time.Second):
 		t.Fatal("first build was not queued")
+	}
+}
+
+func TestCommitStatusOnBuildFailure(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(filepath.Join(dir, "db.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	secrets := store.SecretsDir(filepath.Join(dir, "secrets"))
+	ctx := context.Background()
+	app, err := st.InsertApp(ctx, store.App{
+		Name:              "hello-world",
+		ForgejoRepository: "pepe/hello-world",
+		ProductionBranch:  "main",
+		Strategy:          "auto",
+		Autodeploy:        true,
+		Hostname:          "hello-world.host.bzh",
+		Port:              8080,
+		Healthcheck:       "/",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := secrets.Put(app.ID, "s3cret"); err != nil {
+		t.Fatal(err)
+	}
+
+	states := make(chan string, 4)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/repos/pepe/hello-world/statuses/", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("status body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		states <- body["state"]
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": 1})
+	})
+	git := httptest.NewServer(mux)
+	t.Cleanup(git.Close)
+	client, err := forgejo.New(git.URL, "tok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.HTTPClient = git.Client()
+
+	done := make(chan struct{}, 1)
+	srv := New(Config{
+		Store:    st,
+		Secrets:  secrets,
+		Client:   client,
+		APIToken: "api",
+		Run: func(context.Context, release.Request) (release.Result, error) {
+			done <- struct{}{}
+			return release.Result{}, errors.New("scan failed")
+		},
+	})
+	workerCtx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	srv.Start(workerCtx)
+
+	body := []byte(`{"ref":"refs/heads/main","after":"0123456789abcdef0123456789abcdef01234567","repository":{"full_name":"pepe/hello-world"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/hooks/forgejo", bytes.NewReader(body))
+	req.Header.Set("X-Gitea-Event", "push")
+	req.Header.Set("X-Gitea-Delivery", "del-fail")
+	req.Header.Set("X-Gitea-Signature", hmacsig.Hex("s3cret", body))
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status %d %s", rec.Code, rec.Body.String())
+	}
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not run")
+	}
+
+	got := map[string]int{}
+	deadline := time.After(2 * time.Second)
+	for got[forgejo.StatusFailure] < 1 {
+		select {
+		case state := <-states:
+			got[state]++
+		case <-deadline:
+			t.Fatalf("commit statuses: %v", got)
+		}
 	}
 }
 

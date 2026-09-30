@@ -240,6 +240,7 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 				CommitSHA: sha,
 				Status:    "queued",
 			}); err == nil || errors.Is(err, store.ErrDuplicate) {
+				s.publishCommitStatus(r.Context(), owner, repoName, sha, forgejo.StatusPending, "Building", app)
 				s.kick()
 			}
 		}
@@ -362,6 +363,10 @@ func (s *Server) webhook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	owner, name, parseErr := forgejo.ParseOwnerName(app.ForgejoRepository)
+	if parseErr == nil {
+		s.publishCommitStatus(r.Context(), owner, name, payload.After, forgejo.StatusPending, "Building", app)
+	}
 	s.kick()
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
 }
@@ -428,6 +433,7 @@ func (s *Server) process(ctx context.Context, d store.Delivery) {
 		_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", err.Error())
 		return
 	}
+	s.publishCommitStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusPending, "Building", app)
 
 	result, runErr := s.cfg.Run(ctx, release.Request{
 		Builder:      s.cfg.Builder,
@@ -457,6 +463,7 @@ func (s *Server) process(ctx context.Context, d store.Delivery) {
 		finished.Error = runErr.Error()
 		_ = s.cfg.Store.FinishBuild(ctx, buildID, finished)
 		_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", runErr.Error())
+		s.publishCommitStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusFailure, runErr.Error(), app)
 		log.Printf("kuberpack build %s %s: %v", app.Name, d.CommitSHA, runErr)
 		return
 	}
@@ -466,6 +473,33 @@ func (s *Server) process(ctx context.Context, d store.Delivery) {
 	finished.InfraCommitSHA = result.InfraCommitSHA
 	_ = s.cfg.Store.FinishBuild(ctx, buildID, finished)
 	_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "succeeded", "")
+	s.publishCommitStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusSuccess, "Deployed", app)
+}
+
+func (s *Server) publishCommitStatus(ctx context.Context, owner, repo, sha, state, description string, app store.App) {
+	if s.cfg.Client == nil {
+		return
+	}
+	err := s.cfg.Client.CreateCommitStatus(ctx, owner, repo, sha, forgejo.CommitStatus{
+		State:       state,
+		Context:     forgejo.ProductionContext,
+		Description: description,
+		TargetURL:   appTargetURL(app),
+	})
+	if err != nil {
+		log.Printf("kuberpack commit status %s/%s %s: %v", owner, repo, sha, err)
+	}
+}
+
+func appTargetURL(app store.App) string {
+	host := strings.TrimSpace(app.Hostname)
+	if host == "" {
+		return ""
+	}
+	if strings.Contains(host, "://") {
+		return host
+	}
+	return "https://" + host
 }
 
 func appJSON(app store.App) map[string]any {
