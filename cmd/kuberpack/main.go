@@ -83,19 +83,16 @@ trigger (FORGEJO_TOKEN, write:repository):
   --wait duration          (default 15m)
   --skip-promote
 
-  Clones the SHA, dispatches a builder, waits for the digest, then promote
-  writes GitOps (sha-<commit>@digest).
-  uv has no executor yet: auto|uv still dispatch Railpack after uv.lock --check.
+  Submits a Kubernetes build Job (same as serve). Requires a cluster builder.
 
-serve (FORGEJO_TOKEN, KUBERPACK_API_TOKEN):
+serve (FORGEJO_TOKEN, KUBERPACK_API_TOKEN, KUBERPACK_BUILDER_IMAGE):
   POST /api/v1/apps          register (Bearer)
   GET  /api/v1/apps[/{name}]
   POST /hooks/forgejo        HMAC (X-Gitea-Signature)
   GET  /healthz
 
-  SQLite + HMAC files under --data. Does not deploy itself to Flux.
-  KUBERPACK_BUILDER_IMAGE enables Kubernetes Jobs; unset uses the existing
-  Forgejo Actions builder during migration.
+  SQLite + HMAC files under --data. Register writes GitOps Helm files;
+  promote only rewrites image and enables Flux.
 `)
 }
 

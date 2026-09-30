@@ -13,6 +13,7 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/builder"
 	"git.host.bzh/pepe/kuberpack/internal/control"
 	"git.host.bzh/pepe/kuberpack/internal/forgejo"
+	"git.host.bzh/pepe/kuberpack/internal/promote"
 	"git.host.bzh/pepe/kuberpack/internal/store"
 )
 
@@ -57,24 +58,26 @@ func runServe(args []string) error {
 		runner.Timeout = *waitFor
 		jobBuilder = runner
 	}
+	if jobBuilder == nil {
+		return fmt.Errorf("KUBERPACK_BUILDER_IMAGE is required")
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	srv := control.New(control.Config{
-		Builder:          jobBuilder,
-		Store:            db,
-		Secrets:          store.SecretsDir(filepath.Join(*dataDir, "secrets")),
-		Client:           client,
-		Token:            token,
-		APIToken:         apiToken,
-		WebhookURL:       strings.TrimSpace(*webhookURL),
-		GitOpsURL:        *gitopsURL,
-		GitOpsBranch:     *gitopsBranch,
-		ChartPath:        *chartPath,
-		DispatchRepo:     getenv("KUBERPACK_DISPATCH_REPO", "pepe/infra-homelab"),
-		DispatchWorkflow: getenv("KUBERPACK_DISPATCH_WORKFLOW", "app-release.yaml"),
-		Wait:             *waitFor,
+		Builder:      jobBuilder,
+		Store:        db,
+		Secrets:      store.SecretsDir(filepath.Join(*dataDir, "secrets")),
+		Client:       client,
+		Token:        token,
+		APIToken:     apiToken,
+		WebhookURL:   strings.TrimSpace(*webhookURL),
+		GitOpsURL:    *gitopsURL,
+		GitOpsBranch: *gitopsBranch,
+		ChartPath:    *chartPath,
+		Platform:     platformFromEnv(),
+		Wait:         *waitFor,
 	})
 	srv.Start(ctx)
 
@@ -85,4 +88,37 @@ func runServe(args []string) error {
 	}
 	fmt.Printf("kuberpack listening on %s\n", *addr)
 	return httpSrv.ListenAndServe()
+}
+
+func platformFromEnv() promote.Platform {
+	return promote.Platform{
+		AppsDir:             getenv("KUBERPACK_GITOPS_APPS", "kubernetes/vps/apps"),
+		ChartRef:            getenv("KUBERPACK_GITOPS_CHART", "./kubernetes/vps/charts/stateless"),
+		SourceName:          getenv("KUBERPACK_GITOPS_SOURCE", "infra-homelab"),
+		SourceNamespace:     getenv("KUBERPACK_GITOPS_SOURCE_NAMESPACE", "flux-system"),
+		ReleaseNamespace:    getenv("KUBERPACK_RELEASE_NAMESPACE", "apps"),
+		IngressClassName:    getenv("KUBERPACK_INGRESS_CLASS", "traefik"),
+		ImagePullSecret:     getenv("KUBERPACK_IMAGE_PULL_SECRET", "forgejo-registry-pull"),
+		IngressTLS:          getenvBool("KUBERPACK_INGRESS_TLS", true),
+		ExternalDNSTarget:   os.Getenv("KUBERPACK_DNS_TARGET"),
+		ExternalDNSTTL:      getenv("KUBERPACK_DNS_TTL", "300"),
+		TraefikEntrypoint:   getenv("KUBERPACK_TRAEFIK_ENTRYPOINT", "websecure"),
+		TraefikCertResolver: getenv("KUBERPACK_CERT_RESOLVER", "letsencrypt"),
+		NetworkPolicy:       getenvBool("KUBERPACK_NETWORK_POLICY", true),
+	}
+}
+
+func getenvBool(key string, fallback bool) bool {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	switch strings.ToLower(v) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }

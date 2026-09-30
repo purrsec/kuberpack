@@ -12,7 +12,7 @@ Le produit doit, sans fichier dans le dépôt applicatif :
 
 ## Identité de test
 
-Un PAT utilisateur unique : `FORGEJO_TOKEN` avec `write:repository` (clone + dispatch du workflow `app-release.yaml`). `write:package` n’est pas requis sur ce jeton — c’est le runner k3s qui pousse l’image.
+Un PAT utilisateur unique : `FORGEJO_TOKEN` avec `write:repository` (clone + commit GitOps). `write:package` n’est pas requis sur ce jeton — c’est le Job k3s qui pousse l’image.
 
 ```text
 FORGEJO_URL=https://git.host.bzh

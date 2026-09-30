@@ -4,16 +4,16 @@ Cette page décrit **une** installation. Ce n’est pas le contrat produit.
 
 | Rôle produit | Instance |
 | --- | --- |
-| k3s control plane + builder | homelab, nœud mini-PC, namespace `ci-build` |
+| k3s control plane + builder | homelab, nœud mini-PC, namespaces `kuberpack` et `kuberpack-build` |
 | k3s production | VPS, GitOps Flux |
 | Forgejo / registre | `git.host.bzh` |
 | Dépôt GitOps | `pepe/infra-homelab` |
 | Secrets | Infisical |
 | Ingress | Traefik, `*.host.bzh` |
-| Builder cobaye (à remplacer) | `app-release.yaml`, `railpack-release.sh` |
-| Receiver à remplacer | `kubernetes/ci/release-webhook.py` |
+| Builder cobaye (Wattchman seulement) | `app-release.yaml`, `railpack-release.sh` |
+| Receiver cobaye (Wattchman seulement) | `kubernetes/ci/release-webhook.py` |
 
-Cobaye actuel : `pepe/hello-world` (Flask, image Railpack) servi sur `hello-world.host.bzh` par Flux + chart `stateless`. Le script homelab tague `main-<run>-<sha>` ; Kuberpack écrit déjà `sha-<commit>@digest` dans GitOps (pull par digest). Flux Image Automation et les commentaires `$imagepolicy` restent éteints. Renovate ne touche pas ces images.
+Hello-world : Flask Railpack sur `hello-world.host.bzh`, pin `sha-<commit>@digest`, chart `stateless`. Wattchman : encore le receiver cobaye et un Deployment brut. Flux Image Automation et les commentaires `$imagepolicy` restent éteints. Renovate ne touche pas ces images.
 
 ## Image Kuberpack
 
@@ -28,5 +28,5 @@ docker run --rm -p 8080:8080 \
   git.host.bzh/pepe/kuberpack:dev
 ```
 
-Ne pas coller Kuberpack dans le Kustomization mini-pc `wait: true`. Le déploiement GitOps est `kubernetes/kuberpack` réconcilié par Flux `kuberpack` (`wait: false`). Image locale `git.host.bzh/pepe/kuberpack:0.1.0` (`imagePullPolicy: Never`), ingress `https://kuberpack.host.bzh/`, webhook `https://kuberpack.host.bzh/hooks/forgejo`. API : `Authorization: Bearer` avec le token Infisical `app-builder-git-token`. Pas d’Authelia (HMAC + bearer).
+Ne pas coller Kuberpack dans le Kustomization mini-pc `wait: true`. Le déploiement GitOps est `kubernetes/kuberpack` réconcilié par Flux `kuberpack` (`wait: false`). Images actuellement pinnées par digest sous des tags `test-*`, ingress `https://kuberpack.host.bzh/`, webhook `https://kuberpack.host.bzh/hooks/forgejo`. API : `Authorization: Bearer` avec le token Infisical `KUBERPACK_TOKEN`. Pas d’Authelia (HMAC + bearer).
 

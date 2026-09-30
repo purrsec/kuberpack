@@ -4,22 +4,28 @@ Les autres pages de `docs/` décrivent **le produit visé**. Cette page décrit 
 
 ## Fait
 
-- CLI `kuberpack` : `promote`, `trigger` (pipeline digest → GitOps), `serve` (control plane HTTP).
+- CLI `kuberpack` : `promote`, `trigger` (pipeline digest → GitOps), `serve` (control plane HTTP), `builder` (worker du Job k3s).
 - `POST /api/v1/apps`, `GET /api/v1/apps`, webhook `POST /hooks/forgejo` (HMAC SHA-256, dédup, file SQLite).
 - SQLite WAL + secrets HMAC en fichiers (`--data`). Pas de secret dans SQLite.
 - Chart Helm `charts/stateless`.
-- Client Forgejo : repo, branche, `workflow_dispatch`, création de webhook.
-- Cobaye : `pepe/hello-world` sur `https://hello-world.host.bzh/` ; pin GitOps `sha-<commit>@digest` ; Flux a upgradé.
-- Control plane sur le mini-pc : `https://kuberpack.host.bzh/` ; la version actuellement déployée utilise encore Forgejo Actions. Flux enfant `wait: false`.
-- Dans le code : builder Railpack en Job k3s avec sidecar BuildKit rootless, Trivy, Syft et push `sha-<commit>`. Activation conditionnée par `KUBERPACK_BUILDER_IMAGE` ; le déploiement actuel utilise encore Forgejo Actions.
-- Test réel sur le mini-PC : Job `kuberpack-build-7fc1ad70955cc0e2` réussi pour `pepe/hello-world`, image de test publiée par le worker au digest `sha256:468915261411d8d2b7ad7e34393393de7a25477878a7cb541a513fc45a4398f1`. Un Pod tiré par ce digest a répondu `200` sur `/healthz`.
+- Client Forgejo : repo, branche, création de webhook. Plus de `workflow_dispatch`.
+- Control plane et builder déployés par Flux sur le mini-pc (`kubernetes/kuberpack`, Kustomization enfant `wait: false`). Ingress `https://kuberpack.host.bzh/`. Token API Infisical `KUBERPACK_TOKEN`. `KUBERPACK_BUILDER_IMAGE` est obligatoire.
+- Builder Railpack en Job k3s (`kuberpack-build`), sidecar BuildKit rootless, Trivy, Syft, push `sha-<commit>`.
+- `POST /api/v1/apps` écrit le contrat GitOps (`values.yaml`, HelmRelease, kustomization d’app). Flux n’est activé (entrée dans le kustomization parent) qu’après le premier digest. Ensuite seul `image` change. Les fichiers existants ne sont pas écrasés.
+- Cobaye `pepe/hello-world` enregistré, webhook Forgejo vers `https://kuberpack.host.bzh/hooks/forgejo`.
+- Trajet **webhook → control plane → Job → commit GitOps → Flux** prouvé : push `f10cf296` (`n: 4`) → Job `kuberpack-build-736ffeb3f6e1d4bb` Complete → pin `git.host.bzh/pepe/hello-world:sha-f10cf296ea2c210d374847d1368d0ef9c848664c@sha256:127130f2edce05a906342bba4700c43b9718a6fb81891b6af62398308d92de02` (commit GitOps `fc2727ab`) → HelmRelease `hello-world` v14 Ready → `https://hello-world.host.bzh/` répond `{"app":"flask-uv","n":4,"via":"kuberpack"}`, `/healthz` 200.
+- Un Job antérieur lancé à la main (`kuberpack-build-7fc1ad70955cc0e2`) avait déjà construit et servi une image ; ce n’était pas le trajet webhook.
 
 ## Pas fait
 
+- Déplacer `wattchman-website` (webhook et Deployment bruts encore sur le receiver cobaye) puis supprimer `railpack-release.sh`, `app-release.yaml` et `release-webhook.py`.
+- Publication durable des SBOM Syft et des logs de build (produits dans le Job, perdus à sa fin / TTL 24 h).
+- Tags durables pour les images Kuberpack (control plane et builder portent encore des tags `test-*`).
+- Déployer une image Kuberpack qui contient ce code (l’enregistrement GitOps n’est pas encore live).
 - Clé de deploy SSH read-only à l’enregistrement.
-- Mise en service GitOps du nouveau control plane et du builder : les manifests sont prêts dans `infra-homelab`, mais non poussés. Le control plane actuellement déployé n’a pas encore lancé de Job lui-même.
-- Publication durable des SBOM Syft (aujourd’hui produits dans le Job puis perdus à sa fin).
-- Exécuteur `uv`, previews, Helm tests en prod.
+- Tests Helm en prod, previews, UX.
+- Exécuteur `uv` dédié : Railpack construit déjà le cobaye Python avec `uv`.
+- Tokens builder dédiés : les Jobs montent encore les secrets Infisical cobaye `app-builder-git-token` et `app-builder-registry-token`.
 
 ## Hors arbre git
 

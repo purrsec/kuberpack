@@ -51,21 +51,16 @@ make build
 make test
 make build
 export FORGEJO_TOKEN=<pat write:repository>
-./bin/kuberpack trigger --repository pepe/hello-world --branch main --strategy railpack
-```
-
-`trigger` clone le SHA, lance `railpack prepare`, dispatche un builder cobaye, attend le digest, puis `promote` écrit le pin dans GitOps. Le script homelab `railpack-release.sh` n’est pas le produit ; il disparaîtra.
-
-```bash
-export FORGEJO_TOKEN=<pat write:repository>
 export KUBERPACK_API_TOKEN=$FORGEJO_TOKEN
 ./bin/kuberpack serve --addr :8080 --data data
 # POST /api/v1/apps  Authorization: Bearer …
 # POST /hooks/forgejo  HMAC X-Gitea-Signature
 ```
 
-`serve` est déployé sur le mini-pc (`https://kuberpack.host.bzh/`), hors du Flux `wait: true`. L’image est importée dans k3s (pas de pull Forgejo).
+`POST /api/v1/apps` écrit le YAML GitOps (hostname, port, healthcheck). Un `git push` sur la branche configurée construit, pin le digest et active Flux. Rien n’est commité dans le dépôt applicatif.
+
+`serve` est déployé sur le mini-pc (`https://kuberpack.host.bzh/`), hors du Flux `wait: true`.
 
 ## État
 
-Voir [docs/status.md](docs/status.md). En une ligne : cobaye Flux en production VPS ; control plane `serve` sur le mini-pc ; `trigger` pin le digest dans GitOps.
+Voir [docs/status.md](docs/status.md). En une ligne : hello-world passe par Kuberpack (webhook → Job → GitOps → Flux) ; Wattchman utilise encore le receiver cobaye.

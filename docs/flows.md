@@ -8,9 +8,7 @@ POST /api/v1/apps
 
 Champs : [API](api.md).
 
-Kuberpack vérifie le dépôt, l’inscrit, crée le secret HMAC (hors SQLite), pose le webhook Forgejo (`push`, `pull_request`) et une clé de deploy read-only, puis lance le premier build.
-
-Le manifeste de production initial peut être créé à la main dans le dépôt GitOps tant que le chart n’est pas stable. Ensuite Kuberpack ne change plus que le champ `image`. Rien n’est écrit dans le dépôt applicatif.
+Kuberpack vérifie le dépôt, l’inscrit, crée le secret HMAC (hors SQLite), pose le webhook Forgejo (`push`, `pull_request`), écrit le contrat GitOps (`values.yaml`, HelmRelease, kustomization) **sans l’activer dans Flux**, puis lance le premier build. Le premier digest piné ajoute l’app au kustomization parent. Ensuite Kuberpack ne change plus que le champ `image`. Rien n’est écrit dans le dépôt applicatif.
 
 ## Production
 

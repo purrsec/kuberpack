@@ -19,28 +19,30 @@ import (
 )
 
 type Request struct {
-	Builder          builder.Runner
-	BuildID          int64
-	DeliveryID       string
-	Client           *forgejo.Client
-	Token            string
-	Owner            string
-	Name             string
-	Branch           string
-	SHA              string
-	Strategy         string
-	StartCmd         string
-	DispatchRepo     string
-	DispatchWorkflow string
-	GitOpsURL        string
-	GitOpsBranch     string
-	ValuesPath       string
-	ChartPath        string
-	ImageRepository  string
-	RegistryUser     string
-	Wait             time.Duration
-	SkipPromote      bool
-	Log              func(string, ...any)
+	Builder         builder.Runner
+	BuildID         int64
+	DeliveryID      string
+	Client          *forgejo.Client
+	Token           string
+	Owner           string
+	Name            string
+	Branch          string
+	SHA             string
+	Strategy        string
+	StartCmd        string
+	GitOpsURL       string
+	GitOpsBranch    string
+	ValuesPath      string
+	ChartPath       string
+	Hostname        string
+	Port            int
+	Healthcheck     string
+	Platform        promote.Platform
+	ImageRepository string
+	RegistryUser    string
+	Wait            time.Duration
+	SkipPromote     bool
+	Log             func(string, ...any)
 }
 
 type Result struct {
@@ -59,12 +61,6 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	}
 	if req.Wait <= 0 {
 		req.Wait = 15 * time.Minute
-	}
-	if req.DispatchRepo == "" {
-		req.DispatchRepo = "pepe/infra-homelab"
-	}
-	if req.DispatchWorkflow == "" {
-		req.DispatchWorkflow = "app-release.yaml"
 	}
 	if req.GitOpsBranch == "" {
 		req.GitOpsBranch = "main"
@@ -129,24 +125,14 @@ func Run(ctx context.Context, req Request) (Result, error) {
 
 	switch plan.Kind {
 	case strategy.Railpack:
-		if req.Builder != nil {
-			log("submitting Kubernetes build Job for %s", sha)
-			if err := req.Builder.Build(ctx, builder.Request{CloneURL: repo.CloneURL, CommitSHA: sha, ImageRepository: ociRepo, RegistryUser: req.Owner, StartCmd: req.StartCmd, BuildID: req.BuildID, DeliveryID: req.DeliveryID}); err != nil {
-				return Result{}, err
-			}
-			log("Kubernetes build Job completed")
-		} else {
-			// Transitional Forgejo Actions builder, kept until the Job path is deployed.
-			log("railpack prepare deferred to workflow builder")
-			dOwner, dName, err := forgejo.ParseOwnerName(req.DispatchRepo)
-			if err != nil {
-				return Result{}, err
-			}
-			if err := req.Client.DispatchWorkflow(ctx, dOwner, dName, req.DispatchWorkflow, "main", map[string]string{"repository": repo.FullName, "sha": sha}); err != nil {
-				return Result{}, fmt.Errorf("dispatch %s %s: %w (FORGEJO_TOKEN needs write:repository)", req.DispatchRepo, req.DispatchWorkflow, err)
-			}
-			log("dispatched %s %s", req.DispatchRepo, req.DispatchWorkflow)
+		if req.Builder == nil {
+			return Result{}, fmt.Errorf("kubernetes builder is not configured (set KUBERPACK_BUILDER_IMAGE)")
 		}
+		log("submitting Kubernetes build Job for %s", sha)
+		if err := req.Builder.Build(ctx, builder.Request{CloneURL: repo.CloneURL, CommitSHA: sha, ImageRepository: ociRepo, RegistryUser: req.Owner, StartCmd: req.StartCmd, BuildID: req.BuildID, DeliveryID: req.DeliveryID}); err != nil {
+			return Result{}, err
+		}
+		log("Kubernetes build Job completed")
 	default:
 		return Result{}, fmt.Errorf("no builder configured")
 	}
@@ -165,14 +151,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		return Result{}, err
 	}
 	log("waiting for %s:%s", ociRepo, oci.TagForCommit(sha))
-	var digest string
-	if req.Builder != nil {
-		// The just-created Job has succeeded. Read only the exact tag it pushed;
-		// never accept the historical main-<run>-<sha> fallback on this path.
-		digest, err = reg.ManifestDigest(ctx, ociName, oci.TagForCommit(sha))
-	} else {
-		digest, err = reg.WaitForCommit(ctx, ociName, sha, req.Wait, 8*time.Second)
-	}
+	digest, err := reg.ManifestDigest(ctx, ociName, oci.TagForCommit(sha))
 	if err != nil {
 		return Result{}, err
 	}
@@ -200,7 +179,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 
 	values := req.ValuesPath
 	if values == "" {
-		values = filepath.ToSlash(filepath.Join("kubernetes", "vps", "apps", req.Name, "values.yaml"))
+		values = req.Platform.ValuesPath(req.Name)
 	}
 	promoted, err := promote.Run(ctx, promote.Request{
 		GitOpsURL:    req.GitOpsURL,
@@ -209,6 +188,10 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		ChartPath:    req.ChartPath,
 		HTTPToken:    req.Token,
 		Image:        ref,
+		Hostname:     req.Hostname,
+		Port:         req.Port,
+		Healthcheck:  req.Healthcheck,
+		Platform:     req.Platform,
 	})
 	if err != nil {
 		return Result{}, err

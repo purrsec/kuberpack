@@ -16,6 +16,7 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/builder"
 	"git.host.bzh/pepe/kuberpack/internal/forgejo"
 	"git.host.bzh/pepe/kuberpack/internal/hmacsig"
+	"git.host.bzh/pepe/kuberpack/internal/promote"
 	"git.host.bzh/pepe/kuberpack/internal/release"
 	"git.host.bzh/pepe/kuberpack/internal/store"
 	"git.host.bzh/pepe/kuberpack/internal/strategy"
@@ -24,20 +25,19 @@ import (
 const maxBody = 1 << 20
 
 type Config struct {
-	Builder          builder.Runner
-	Store            *store.Store
-	Secrets          store.SecretsDir
-	Client           *forgejo.Client
-	Token            string
-	APIToken         string
-	WebhookURL       string
-	GitOpsURL        string
-	GitOpsBranch     string
-	ChartPath        string
-	DispatchRepo     string
-	DispatchWorkflow string
-	Wait             time.Duration
-	Run              func(context.Context, release.Request) (release.Result, error)
+	Builder      builder.Runner
+	Store        *store.Store
+	Secrets      store.SecretsDir
+	Client       *forgejo.Client
+	Token        string
+	APIToken     string
+	WebhookURL   string
+	GitOpsURL    string
+	GitOpsBranch string
+	ChartPath    string
+	Platform     promote.Platform
+	Wait         time.Duration
+	Run          func(context.Context, release.Request) (release.Result, error)
 }
 
 type Server struct {
@@ -208,6 +208,25 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 	} else {
 		resp["webhook_configured"] = false
 		resp["webhook_secret"] = secret
+	}
+
+	if s.cfg.GitOpsURL != "" {
+		if _, err := promote.EnsureApp(r.Context(), promote.EnsureRequest{
+			GitOpsURL:    s.cfg.GitOpsURL,
+			GitOpsBranch: s.cfg.GitOpsBranch,
+			HTTPToken:    s.cfg.Token,
+			App: promote.AppSpec{
+				Name:        app.Name,
+				Hostname:    app.Hostname,
+				Port:        app.Port,
+				Healthcheck: app.Healthcheck,
+			},
+			Platform: s.cfg.Platform,
+		}); err != nil {
+			http.Error(w, "created app but gitops failed: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		resp["gitops_configured"] = true
 	}
 
 	if auto {
@@ -411,24 +430,26 @@ func (s *Server) process(ctx context.Context, d store.Delivery) {
 	}
 
 	result, runErr := s.cfg.Run(ctx, release.Request{
-		Builder:          s.cfg.Builder,
-		BuildID:          buildID,
-		DeliveryID:       d.ID,
-		Client:           s.cfg.Client,
-		Token:            s.cfg.Token,
-		Owner:            owner,
-		Name:             name,
-		Branch:           app.ProductionBranch,
-		SHA:              d.CommitSHA,
-		Strategy:         app.Strategy,
-		StartCmd:         app.StartCommand,
-		DispatchRepo:     s.cfg.DispatchRepo,
-		DispatchWorkflow: s.cfg.DispatchWorkflow,
-		GitOpsURL:        s.cfg.GitOpsURL,
-		GitOpsBranch:     s.cfg.GitOpsBranch,
-		ChartPath:        s.cfg.ChartPath,
-		Wait:             s.cfg.Wait,
-		Log:              func(format string, args ...any) { log.Printf(format, args...) },
+		Builder:      s.cfg.Builder,
+		BuildID:      buildID,
+		DeliveryID:   d.ID,
+		Client:       s.cfg.Client,
+		Token:        s.cfg.Token,
+		Owner:        owner,
+		Name:         name,
+		Branch:       app.ProductionBranch,
+		SHA:          d.CommitSHA,
+		Strategy:     app.Strategy,
+		StartCmd:     app.StartCommand,
+		GitOpsURL:    s.cfg.GitOpsURL,
+		GitOpsBranch: s.cfg.GitOpsBranch,
+		ChartPath:    s.cfg.ChartPath,
+		Hostname:     app.Hostname,
+		Port:         app.Port,
+		Healthcheck:  app.Healthcheck,
+		Platform:     s.cfg.Platform,
+		Wait:         s.cfg.Wait,
+		Log:          func(format string, args ...any) { log.Printf(format, args...) },
 	})
 	finished := store.Build{Status: "succeeded"}
 	if runErr != nil {

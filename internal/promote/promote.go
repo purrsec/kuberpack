@@ -21,6 +21,10 @@ type Request struct {
 	HTTPToken    string
 	Image        image.Ref
 	MaxAttempts  int
+	Hostname     string
+	Port         int
+	Healthcheck  string
+	Platform     Platform
 }
 
 // Result is the GitOps commit that pins the image, if a commit was needed.
@@ -64,26 +68,38 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		}
 
 		valuesFile := filepath.Join(work, filepath.FromSlash(req.ValuesPath))
+		if _, err := os.Stat(valuesFile); os.IsNotExist(err) {
+			spec, err := normalizeSpec(AppSpec{
+				Name:        app,
+				Hostname:    req.Hostname,
+				Port:        req.Port,
+				Healthcheck: req.Healthcheck,
+			})
+			if err != nil {
+				return Result{}, fmt.Errorf("read values %s: %w", req.ValuesPath, err)
+			}
+			if _, err := writeMissingAppFiles(work, spec, req.Platform); err != nil {
+				return Result{}, err
+			}
+		}
 		current, err := os.ReadFile(valuesFile)
 		if err != nil {
 			return Result{}, fmt.Errorf("read values %s: %w", req.ValuesPath, err)
 		}
 
-		if alreadyPinned(current, imageStr) {
-			sha, err := runGit(ctx, work, "rev-parse", "HEAD")
+		pinned := alreadyPinned(current, imageStr)
+		if !pinned {
+			patched, err := PatchImage(current, imageStr)
 			if err != nil {
 				return Result{}, err
 			}
-			result.InfraCommitSHA = sha
-			result.Changed = false
-			return result, nil
+			if err := os.WriteFile(valuesFile, patched, 0o644); err != nil {
+				return Result{}, err
+			}
 		}
 
-		patched, err := PatchImage(current, imageStr)
+		parentChanged, err := enableInParent(work, app, req.Platform)
 		if err != nil {
-			return Result{}, err
-		}
-		if err := os.WriteFile(valuesFile, patched, 0o644); err != nil {
 			return Result{}, err
 		}
 
@@ -91,11 +107,12 @@ func Run(ctx context.Context, req Request) (Result, error) {
 			return Result{}, err
 		}
 
-		status, err := runGit(ctx, work, "status", "--porcelain", "--", req.ValuesPath)
+		add := existingGitPaths(work, req.ValuesPath, req.Platform.withDefaults().AppDir(app), req.Platform.ParentPath())
+		status, err := runGit(ctx, work, append([]string{"status", "--porcelain", "--"}, add...)...)
 		if err != nil {
 			return Result{}, err
 		}
-		if status == "" {
+		if status == "" && pinned && !parentChanged {
 			sha, err := runGit(ctx, work, "rev-parse", "HEAD")
 			if err != nil {
 				return Result{}, err
@@ -105,7 +122,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 			return result, nil
 		}
 
-		if _, err := runGit(ctx, work, gitConfig("add", "--", req.ValuesPath)...); err != nil {
+		if _, err := runGit(ctx, work, gitConfig(append([]string{"add", "--"}, add...)...)...); err != nil {
 			return Result{}, err
 		}
 		if _, err := runGit(ctx, work, gitConfig("commit", "-m", commitMessage(app, imageStr))...); err != nil {
@@ -161,4 +178,17 @@ func validateRequest(req Request) error {
 		return fmt.Errorf("image is incomplete")
 	}
 	return nil
+}
+
+func existingGitPaths(work string, paths ...string) []string {
+	var out []string
+	for _, p := range paths {
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(work, filepath.FromSlash(p))); err == nil {
+			out = append(out, p)
+		}
+	}
+	return out
 }
