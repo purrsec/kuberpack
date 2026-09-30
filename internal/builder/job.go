@@ -16,6 +16,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+
+	"git.host.bzh/pepe/kuberpack/internal/fail"
 )
 
 const defaultBuildkitImage = "docker.io/moby/buildkit:v0.33.0-rootless@sha256:80b15f0735e87bab7bf59ec4d695dfb4a7cfb25521cf56dc75d6f256285b63ef"
@@ -65,17 +67,17 @@ func InCluster(image string) (*JobRunner, error) {
 func (r *JobRunner) Build(ctx context.Context, req Request) error {
 	job, err := r.NewJob(req)
 	if err != nil {
-		return err
+		return fail.Stage(fail.Job, err)
 	}
 	created, err := r.Client.BatchV1().Jobs(job.Namespace).Create(ctx, job, metav1.CreateOptions{})
 	if apierrors.IsAlreadyExists(err) && job.Name != "" {
 		created, err = r.Client.BatchV1().Jobs(job.Namespace).Get(ctx, job.Name, metav1.GetOptions{})
 		if err == nil && created.Annotations["kuberpack.dev/request"] != job.Annotations["kuberpack.dev/request"] {
-			return fmt.Errorf("existing Job %s belongs to a different request", job.Name)
+			return fail.Text(fail.Job, "existing job belongs to a different request")
 		}
 	}
 	if err != nil {
-		return fmt.Errorf("create build Job: %w", err)
+		return fail.Stage(fail.Job, err)
 	}
 	fmt.Printf("kuberpack build Job: %s/%s\n", created.Namespace, created.Name)
 	interval := r.PollInterval
@@ -91,20 +93,20 @@ func (r *JobRunner) Build(ctx context.Context, req Request) error {
 	for {
 		current, err := r.Client.BatchV1().Jobs(created.Namespace).Get(ctx, created.Name, metav1.GetOptions{})
 		if err != nil {
-			return fmt.Errorf("get build Job %s: %w", created.Name, err)
+			return fail.Stage(fail.Job, err)
 		}
 		if current.Status.Succeeded > 0 {
 			return nil
 		}
 		if current.Status.Failed > 0 || jobCondition(current.Status.Conditions, batchv1.JobFailed) {
 			if msg := r.podFailureMessage(ctx, created); msg != "" {
-				return fmt.Errorf("%s", msg)
+				return fail.Text("", msg)
 			}
-			return fmt.Errorf("build Job %s failed; inspect its pod logs in namespace %s", created.Name, created.Namespace)
+			return fail.Text(fail.Job, "failed")
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("build Job %s: %w", created.Name, ctx.Err())
+			return fail.Text(fail.Job, "timeout")
 		case <-time.After(interval):
 		}
 	}

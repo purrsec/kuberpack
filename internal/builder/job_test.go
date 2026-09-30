@@ -120,7 +120,7 @@ func TestBuildFailedUsesTerminationMessage(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "build-pod", Namespace: "kuberpack-build", Labels: map[string]string{"job-name": "kuberpack-build-test"}},
 		Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
 			Name:  "builder",
-			State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1, Message: "Trivy: CVE-2025-68121 in stdlib (v1.22.12 → 1.24.13)"}},
+			State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1, Message: "trivy: CVE-2025-68121 in stdlib (v1.22.12 → 1.24.13)"}},
 		}}},
 	}
 	if err := client.Tracker().Add(pod); err != nil {
@@ -128,7 +128,7 @@ func TestBuildFailedUsesTerminationMessage(t *testing.T) {
 	}
 	r := &JobRunner{Client: client, Image: "builder:1", PollInterval: time.Millisecond}
 	err := r.Build(context.Background(), testRequest())
-	if err == nil || err.Error() != "Trivy: CVE-2025-68121 in stdlib (v1.22.12 → 1.24.13)" {
+	if err == nil || err.Error() != "trivy: CVE-2025-68121 in stdlib (v1.22.12 → 1.24.13)" {
 		t.Fatalf("got %v", err)
 	}
 }

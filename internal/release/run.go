@@ -2,7 +2,6 @@ package release
 
 import (
 	"context"
-	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"git.host.bzh/pepe/kuberpack/internal/builder"
+	"git.host.bzh/pepe/kuberpack/internal/fail"
 	"git.host.bzh/pepe/kuberpack/internal/fetch"
 	"git.host.bzh/pepe/kuberpack/internal/forgejo"
 	"git.host.bzh/pepe/kuberpack/internal/image"
@@ -70,39 +70,39 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		req.ChartPath = "charts/stateless"
 	}
 	if req.Client == nil {
-		return Result{}, fmt.Errorf("forgejo client is nil")
+		return Result{}, fail.Text(fail.Clone, "forgejo client is nil")
 	}
 
 	kind, err := strategy.ParseKind(req.Strategy)
 	if err != nil {
-		return Result{}, err
+		return Result{}, fail.Stage(fail.Strategy, err)
 	}
 
 	repo, err := req.Client.Repo(ctx, req.Owner, req.Name)
 	if err != nil {
-		return Result{}, err
+		return Result{}, fail.Stage(fail.Clone, err)
 	}
 	sha := strings.ToLower(strings.TrimSpace(req.SHA))
 	if sha == "" {
 		sha, err = req.Client.BranchSHA(ctx, req.Owner, req.Name, req.Branch)
 		if err != nil {
-			return Result{}, err
+			return Result{}, fail.Stage(fail.Clone, err)
 		}
 	}
 
 	parent, err := os.MkdirTemp("", "kuberpack-release-*")
 	if err != nil {
-		return Result{}, err
+		return Result{}, fail.Stage(fail.Job, err)
 	}
 	defer os.RemoveAll(parent)
 	dest := filepath.Join(parent, "src")
 
 	if err := fetch.Checkout(ctx, repo.CloneURL, sha, dest, fetch.TokenHeaderArgs(req.Token)); err != nil {
-		return Result{}, err
+		return Result{}, fail.Stage(fail.Clone, err)
 	}
 	plan, err := strategy.Resolve(dest, kind)
 	if err != nil {
-		return Result{}, err
+		return Result{}, fail.Stage(fail.Strategy, err)
 	}
 
 	log("repository: %s", repo.FullName)
@@ -113,7 +113,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 
 	if plan.Kind == strategy.UV {
 		if err := strategy.CheckLock(dest); err != nil {
-			return Result{}, err
+			return Result{}, fail.Stage(fail.Strategy, err)
 		}
 		log("uv executor not implemented; building with railpack")
 		plan.Kind = strategy.Railpack
@@ -121,26 +121,26 @@ func Run(ctx context.Context, req Request) (Result, error) {
 
 	ociRepo, err := ImageRepository(req.ImageRepository, req.Client.BaseURL, req.Owner, req.Name)
 	if err != nil {
-		return Result{}, err
+		return Result{}, fail.Stage(fail.Image, err)
 	}
 
 	switch plan.Kind {
 	case strategy.Railpack:
 		if req.Builder == nil {
-			return Result{}, fmt.Errorf("kubernetes builder is not configured (set KUBERPACK_BUILDER_IMAGE)")
+			return Result{}, fail.Text(fail.Job, "builder image is not configured")
 		}
 		log("submitting Kubernetes build Job for %s", sha)
 		if err := req.Builder.Build(ctx, builder.Request{CloneURL: repo.CloneURL, CommitSHA: sha, ImageRepository: ociRepo, RegistryUser: req.Owner, StartCmd: req.StartCmd, BuildID: req.BuildID, DeliveryID: req.DeliveryID}); err != nil {
-			return Result{}, err
+			return Result{}, fail.Stage(fail.Job, err)
 		}
 		log("Kubernetes build Job completed")
 	default:
-		return Result{}, fmt.Errorf("no builder configured")
+		return Result{}, fail.Text(fail.Job, "no builder configured")
 	}
 
 	_, ociName, err := oci.SplitRepository(ociRepo)
 	if err != nil {
-		return Result{}, err
+		return Result{}, fail.Stage(fail.Image, err)
 	}
 
 	regUser := req.RegistryUser
@@ -149,26 +149,26 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	}
 	reg, err := oci.New(req.Client.BaseURL, regUser, req.Token)
 	if err != nil {
-		return Result{}, err
+		return Result{}, fail.Stage(fail.Push, err)
 	}
 	log("waiting for %s:%s", ociRepo, oci.TagForCommit(sha))
 	digest, err := reg.ManifestDigest(ctx, ociName, oci.TagForCommit(sha))
 	if err != nil {
-		return Result{}, err
+		return Result{}, fail.Stage(fail.Push, err)
 	}
 	ref, err := image.Pin(ociRepo, sha, digest)
 	if err != nil {
-		return Result{}, err
+		return Result{}, fail.Stage(fail.Image, err)
 	}
 	log("digest: %s", ref.Digest)
 	log("image: %s", ref.String())
 
 	head, err := req.Client.BranchSHA(ctx, req.Owner, req.Name, req.Branch)
 	if err != nil {
-		return Result{}, err
+		return Result{}, fail.Stage(fail.Clone, err)
 	}
 	if head != sha {
-		return Result{}, fmt.Errorf("sha %s is no longer HEAD of %s (%s); not promoting", sha, req.Branch, head)
+		return Result{}, fail.Text(fail.GitOps, "commit is no longer branch HEAD")
 	}
 
 	result := Result{SHA: sha, Image: ref}
@@ -195,7 +195,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		Platform:     req.Platform,
 	})
 	if err != nil {
-		return Result{}, err
+		return Result{}, fail.Stage(fail.GitOps, err)
 	}
 	result.App = promoted.App
 	result.InfraCommitSHA = promoted.InfraCommitSHA
@@ -214,7 +214,7 @@ func ImageRepository(explicit, forgejoURL, owner, name string) (string, error) {
 	}
 	host := RegistryHost(forgejoURL)
 	if host == "" {
-		return "", fmt.Errorf("cannot derive image repository from Forgejo URL %q", forgejoURL)
+		return "", fail.Text(fail.Image, "cannot derive registry host")
 	}
 	return host + "/" + owner + "/" + name, nil
 }

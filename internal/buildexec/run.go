@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"git.host.bzh/pepe/kuberpack/internal/fail"
 	"git.host.bzh/pepe/kuberpack/internal/fetch"
 	"git.host.bzh/pepe/kuberpack/internal/oci"
 	"git.host.bzh/pepe/kuberpack/internal/railpack"
@@ -35,11 +36,11 @@ type Request struct {
 // rootless sidecar; the resulting application image never contains these tools.
 func Run(ctx context.Context, req Request) (string, error) {
 	if req.CloneURL == "" || req.ImageRepository == "" || req.RegistryUser == "" || !shaPattern.MatchString(req.CommitSHA) {
-		return "", fmt.Errorf("clone URL, full lowercase commit SHA, image repository and registry user are required")
+		return "", fail.Text(fail.Clone, "URL, SHA, repository and registry user are required")
 	}
 	host, name, err := oci.SplitRepository(req.ImageRepository)
 	if err != nil {
-		return "", err
+		return "", fail.Stage(fail.Image, err)
 	}
 	if req.GitTokenFile == "" {
 		req.GitTokenFile = "/secrets/git-token"
@@ -49,43 +50,43 @@ func Run(ctx context.Context, req Request) (string, error) {
 	}
 	gitToken, err := readToken(req.GitTokenFile)
 	if err != nil {
-		return "", err
+		return "", fail.Stage(fail.Auth, err)
 	}
 	registryToken, err := readToken(req.RegistryTokenFile)
 	if err != nil {
-		return "", err
+		return "", fail.Stage(fail.Auth, err)
 	}
 	work, err := os.MkdirTemp("/work", "build-*")
 	if err != nil {
-		return "", err
+		return "", fail.Stage(fail.Job, err)
 	}
 	defer os.RemoveAll(work)
 	authDir := filepath.Join(work, "auth")
 	if err := os.MkdirAll(authDir, 0o700); err != nil {
-		return "", err
+		return "", fail.Stage(fail.Auth, err)
 	}
 	authFile := filepath.Join(authDir, "config.json")
 	auth := base64.StdEncoding.EncodeToString([]byte(req.RegistryUser + ":" + registryToken))
 	data, err := json.Marshal(map[string]any{"auths": map[string]any{host: map[string]string{"auth": auth}}})
 	if err != nil {
-		return "", err
+		return "", fail.Stage(fail.Auth, err)
 	}
 	if err := os.WriteFile(authFile, data, 0o600); err != nil {
-		return "", err
+		return "", fail.Stage(fail.Auth, err)
 	}
 	if err := os.Setenv("DOCKER_CONFIG", authDir); err != nil {
-		return "", err
+		return "", fail.Stage(fail.Auth, err)
 	}
 	source := filepath.Join(work, "src")
 	if err := fetch.Checkout(ctx, req.CloneURL, req.CommitSHA, source, fetch.TokenHeaderArgs(gitToken)); err != nil {
-		return "", err
+		return "", fail.Stage(fail.Clone, err)
 	}
 	fmt.Printf("checked out %s\n", req.CommitSHA)
 	if _, err := railpack.Prepare(ctx, railpack.Request{Dir: source, WorkDir: work, StartCmd: req.StartCmd}); err != nil {
-		return "", err
+		return "", fail.Stage(fail.Railpack, err)
 	}
 	if err := waitForBuildkit(ctx, time.Minute); err != nil {
-		return "", err
+		return "", fail.Stage(fail.Buildkit, err)
 	}
 
 	tag := "sha-" + req.CommitSHA
@@ -98,52 +99,52 @@ func Run(ctx context.Context, req Request) (string, error) {
 		"--import-cache", "type=registry,ref="+cache,
 		"--export-cache", "type=registry,ref="+cache+",mode=max",
 		"--output", "type=oci,dest="+filepath.Join(work, "image.tar")+",name="+image); err != nil {
-		return "", err
+		return "", fail.Stage(fail.Image, err)
 	}
 	ociDir := filepath.Join(work, "oci")
 	if err := os.MkdirAll(ociDir, 0o700); err != nil {
-		return "", err
+		return "", fail.Stage(fail.Image, err)
 	}
 	if err := command(ctx, "tar", "-C", ociDir, "-xf", filepath.Join(work, "image.tar")); err != nil {
-		return "", err
+		return "", fail.Stage(fail.Image, err)
 	}
 	scanArchive := filepath.Join(work, "scan.tar")
 	if err := command(ctx, "skopeo", "copy", "oci:"+ociDir, "docker-archive:"+scanArchive+":"+image); err != nil {
-		return "", err
+		return "", fail.Stage(fail.Trivy, err)
 	}
 	scanReport := filepath.Join(work, "trivy.json")
 	if err := command(ctx, "trivy", "image", "--input", scanArchive, "--exit-code", "1", "--severity", "CRITICAL", "--ignore-unfixed", "--pkg-types", "library", "--scanners", "vuln", "--format", "json", "--output", scanReport); err != nil {
 		if summary := summarizeTrivyFile(scanReport); summary != "" {
-			return "", fmt.Errorf("%s", summary)
+			return "", fail.Text(fail.Trivy, summary)
 		}
-		return "", err
+		return "", fail.Stage(fail.Trivy, err)
 	}
 	if err := validateScanReport(scanReport); err != nil {
-		return "", err
+		return "", fail.Stage(fail.Trivy, err)
 	}
 	sbom := filepath.Join(work, "sbom.spdx.json")
 	if err := command(ctx, "syft", "oci-dir:"+ociDir, "--output", "spdx-json="+sbom); err != nil {
-		return "", err
+		return "", fail.Stage(fail.SBOM, err)
 	}
 	info, err := os.Stat(sbom)
 	if err != nil {
-		return "", fmt.Errorf("Syft did not create an SBOM: %w", err)
+		return "", fail.Stage(fail.SBOM, err)
 	}
 	if info.Size() == 0 {
-		return "", fmt.Errorf("Syft created an empty SBOM")
+		return "", fail.Text(fail.SBOM, "empty report")
 	}
 
 	if err := command(ctx, "skopeo", "copy", "--authfile", authFile, "oci:"+ociDir, "docker://"+image); err != nil {
-		return "", err
+		return "", fail.Stage(fail.Push, err)
 	}
 	cmd := exec.CommandContext(ctx, "skopeo", "inspect", "--authfile", authFile, "--format", "{{.Digest}}", "docker://"+image)
 	output, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("inspect published image: %w", err)
+		return "", fail.Stage(fail.Push, err)
 	}
 	digest := strings.TrimSpace(string(output))
 	if !strings.HasPrefix(digest, "sha256:") {
-		return "", fmt.Errorf("registry returned invalid digest %q", digest)
+		return "", fail.Text(fail.Push, "invalid digest")
 	}
 	fmt.Printf("published %s@%s (Trivy passed; Syft SBOM generated)\n", image, digest)
 	return digest, nil

@@ -2,9 +2,9 @@ package release
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
+	"git.host.bzh/pepe/kuberpack/internal/fail"
 	"git.host.bzh/pepe/kuberpack/internal/image"
 	"git.host.bzh/pepe/kuberpack/internal/oci"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
@@ -14,11 +14,11 @@ import (
 // It does not build and does not require the SHA to be branch HEAD.
 func PinExisting(ctx context.Context, req Request) (Result, error) {
 	if req.Client == nil {
-		return Result{}, fmt.Errorf("forgejo client is nil")
+		return Result{}, fail.Text(fail.Clone, "forgejo client is nil")
 	}
 	sha := strings.ToLower(strings.TrimSpace(req.SHA))
 	if sha == "" {
-		return Result{}, fmt.Errorf("commit SHA is empty")
+		return Result{}, fail.Text(fail.Clone, "commit SHA is empty")
 	}
 	if req.GitOpsBranch == "" {
 		req.GitOpsBranch = "main"
@@ -29,11 +29,11 @@ func PinExisting(ctx context.Context, req Request) (Result, error) {
 
 	ociRepo, err := ImageRepository(req.ImageRepository, req.Client.BaseURL, req.Owner, req.Name)
 	if err != nil {
-		return Result{}, err
+		return Result{}, fail.Stage(fail.Image, err)
 	}
 	_, ociName, err := oci.SplitRepository(ociRepo)
 	if err != nil {
-		return Result{}, err
+		return Result{}, fail.Stage(fail.Image, err)
 	}
 	regUser := req.RegistryUser
 	if regUser == "" {
@@ -43,16 +43,16 @@ func PinExisting(ctx context.Context, req Request) (Result, error) {
 	if digest == "" {
 		reg, err := oci.New(req.Client.BaseURL, regUser, req.Token)
 		if err != nil {
-			return Result{}, err
+			return Result{}, fail.Stage(fail.Push, err)
 		}
 		digest, err = reg.DigestForCommit(ctx, ociName, sha)
 		if err != nil {
-			return Result{}, err
+			return Result{}, fail.Stage(fail.Push, err)
 		}
 	}
 	ref, err := image.Pin(ociRepo, sha, digest)
 	if err != nil {
-		return Result{}, err
+		return Result{}, fail.Stage(fail.Image, err)
 	}
 	values := req.ValuesPath
 	if values == "" {
@@ -71,7 +71,7 @@ func PinExisting(ctx context.Context, req Request) (Result, error) {
 		Platform:     req.Platform,
 	})
 	if err != nil {
-		return Result{}, err
+		return Result{}, fail.Stage(fail.GitOps, err)
 	}
 	return Result{
 		SHA:            sha,

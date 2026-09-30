@@ -7,8 +7,6 @@ import (
 	"strings"
 )
 
-const maxStatus = 140
-
 type trivyReport struct {
 	Results []struct {
 		Vulnerabilities []trivyFinding `json:"Vulnerabilities"`
@@ -53,7 +51,7 @@ func summarizeTrivy(data []byte) string {
 	}
 	first := findings[0]
 	pkg := strings.TrimSpace(first.PkgName)
-	msg := "Trivy: " + first.VulnerabilityID
+	msg := first.VulnerabilityID
 	if pkg != "" {
 		msg += " in " + pkg
 	}
@@ -66,10 +64,6 @@ func summarizeTrivy(data []byte) string {
 	}
 	if extra := len(findings) - 1; extra > 0 {
 		msg += " +" + strconv.Itoa(extra)
-	}
-	if len([]rune(msg)) > maxStatus {
-		runes := []rune(msg)
-		return string(runes[:maxStatus-1]) + "…"
 	}
 	return msg
 }
