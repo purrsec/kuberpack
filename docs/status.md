@@ -15,13 +15,13 @@ Les autres pages de `docs/` décrivent **le produit visé**. Cette page décrit 
 - Cobaye `pepe/hello-world` enregistré, webhook Forgejo vers `https://kuberpack.host.bzh/hooks/forgejo`.
 - Trajet **webhook → control plane → Job → commit GitOps → Flux** prouvé : push `f10cf296` (`n: 4`) → Job `kuberpack-build-736ffeb3f6e1d4bb` Complete → pin `git.host.bzh/pepe/hello-world:sha-f10cf296ea2c210d374847d1368d0ef9c848664c@sha256:127130f2edce05a906342bba4700c43b9718a6fb81891b6af62398308d92de02` (commit GitOps `fc2727ab`) → HelmRelease `hello-world` v14 Ready → `https://hello-world.host.bzh/` répond `{"app":"flask-uv","n":4,"via":"kuberpack"}`, `/healthz` 200.
 - Un Job antérieur lancé à la main (`kuberpack-build-7fc1ad70955cc0e2`) avait déjà construit et servi une image ; ce n’était pas le trajet webhook.
+- `wattchman-website` enregistré (id 2, webhook Forgejo id 4). Job `kuberpack-build-a6687b543e14ceaf` Complete → pin `git.host.bzh/pepe/wattchman-website:sha-e3502759279d3a58057e7f8868a099589da6a9c8@sha256:aeb6cd9d9d4cba404b15f1a991b89c89fca0aee8abaa1dfc6e5cb66e09b85486` (commit GitOps `d6678d5`) → HelmRelease `wattchman-website` Ready → `https://test-stagging.host.bzh/` 200.
+- Receiver cobaye, workflow `app-release.yaml` et `railpack-release.sh` retirés (commit GitOps `5f084da`). Hook Forgejo `release-webhook.host.bzh` supprimé. Le namespace `wattchman` reste pour Infisical. `wattchman.fr` est encore Railway.
 
 ## Pas fait
 
-- Déplacer `wattchman-website` (webhook et Deployment bruts encore sur le receiver cobaye) puis supprimer `railpack-release.sh`, `app-release.yaml` et `release-webhook.py`.
 - Publication durable des SBOM Syft et des logs de build (produits dans le Job, perdus à sa fin / TTL 24 h).
 - Tags durables pour les images Kuberpack (control plane et builder portent encore des tags `test-*`).
-- Déployer une image Kuberpack qui contient ce code (l’enregistrement GitOps n’est pas encore live).
 - Clé de deploy SSH read-only à l’enregistrement.
 - Tests Helm en prod, previews, UX.
 - Exécuteur `uv` dédié : Railpack construit déjà le cobaye Python avec `uv`.

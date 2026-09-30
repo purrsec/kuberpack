@@ -6,7 +6,7 @@ Une app enregistrée sans toucher à son dépôt. Un push construit une image sc
 
 ## Phases
 
-1. **Promotion Git** — `kuberpack trigger` attend le digest et `promote` pin `sha-<commit>@sha256:…`. Le builder cobaye homelab n’est pas le produit.
+1. **Promotion Git** — `kuberpack trigger` attend le digest et `promote` pin `sha-<commit>@sha256:…`. Le builder k3s est le chemin produit.
 2. **Chart Helm stateless** — probes, test, `remediation.rollback`. Le stateful reste hors chart.
 3. **Control plane** — `serve` : SQLite, HMAC, `POST /api/v1/apps`, file. Pas encore d’image k3s.
 4. **Previews** — branche générée, `prune: true`, GC.

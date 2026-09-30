@@ -10,10 +10,8 @@ Cette page décrit **une** installation. Ce n’est pas le contrat produit.
 | Dépôt GitOps | `pepe/infra-homelab` |
 | Secrets | Infisical |
 | Ingress | Traefik, `*.host.bzh` |
-| Builder cobaye (Wattchman seulement) | `app-release.yaml`, `railpack-release.sh` |
-| Receiver cobaye (Wattchman seulement) | `kubernetes/ci/release-webhook.py` |
 
-Hello-world : Flask Railpack sur `hello-world.host.bzh`, pin `sha-<commit>@digest`, chart `stateless`. Wattchman : encore le receiver cobaye et un Deployment brut. Flux Image Automation et les commentaires `$imagepolicy` restent éteints. Renovate ne touche pas ces images.
+Hello-world : Flask Railpack sur `hello-world.host.bzh`, pin `sha-<commit>@digest`, chart `stateless`. Wattchman : Vite/Caddy Railpack sur `test-stagging.host.bzh` (HelmRelease `apps/wattchman-website`) ; `wattchman.fr` reste Railway. Flux Image Automation et les commentaires `$imagepolicy` restent éteints. Renovate ne touche pas ces images.
 
 ## Image Kuberpack
 

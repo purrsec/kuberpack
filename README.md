@@ -63,4 +63,4 @@ export KUBERPACK_API_TOKEN=$FORGEJO_TOKEN
 
 ## État
 
-Voir [docs/status.md](docs/status.md). En une ligne : hello-world passe par Kuberpack (webhook → Job → GitOps → Flux) ; Wattchman utilise encore le receiver cobaye.
+Voir [docs/status.md](docs/status.md). En une ligne : hello-world et wattchman-website passent par Kuberpack (webhook → Job → GitOps → Flux). Le receiver cobaye est retiré.
