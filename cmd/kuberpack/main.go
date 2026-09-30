@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"git.host.bzh/pepe/kuberpack/internal/buildexec"
 	"git.host.bzh/pepe/kuberpack/internal/image"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
 )
@@ -32,6 +33,17 @@ func main() {
 			fmt.Fprintf(os.Stderr, "kuberpack: %v\n", err)
 			os.Exit(1)
 		}
+	case "builder":
+		if _, err := buildexec.Run(context.Background(), buildexec.Request{
+			CloneURL:        os.Getenv("KUBERPACK_CLONE_URL"),
+			CommitSHA:       os.Getenv("KUBERPACK_COMMIT_SHA"),
+			ImageRepository: os.Getenv("KUBERPACK_IMAGE_REPOSITORY"),
+			RegistryUser:    os.Getenv("KUBERPACK_REGISTRY_USER"),
+			StartCmd:        os.Getenv("KUBERPACK_START_CMD"),
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "kuberpack builder: %v\n", err)
+			os.Exit(1)
+		}
 	case "-h", "-help", "--help", "help":
 		usage()
 	default:
@@ -42,12 +54,13 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `kuberpack: GitOps pin (promote), Forgejo dispatch (trigger), control plane (serve).
+	fmt.Fprintf(os.Stderr, `kuberpack: GitOps pin (promote), release trigger, control plane (serve), build Job worker (builder).
 
 Usage:
   kuberpack promote [flags]
   kuberpack trigger [flags]
   kuberpack serve [--addr :8080] [--data data]
+  kuberpack builder           (inside a Kuberpack Kubernetes Job)
 
 promote:
   --gitops-url string
@@ -70,8 +83,8 @@ trigger (FORGEJO_TOKEN, write:repository):
   --wait duration          (default 15m)
   --skip-promote
 
-  Clones the SHA, runs railpack prepare, dispatches a cobaye builder, waits
-  for the digest, then promote writes GitOps (sha-<commit>@digest).
+  Clones the SHA, dispatches a builder, waits for the digest, then promote
+  writes GitOps (sha-<commit>@digest).
   uv has no executor yet: auto|uv still dispatch Railpack after uv.lock --check.
 
 serve (FORGEJO_TOKEN, KUBERPACK_API_TOKEN):
@@ -81,6 +94,8 @@ serve (FORGEJO_TOKEN, KUBERPACK_API_TOKEN):
   GET  /healthz
 
   SQLite + HMAC files under --data. Does not deploy itself to Flux.
+  KUBERPACK_BUILDER_IMAGE enables Kubernetes Jobs; unset uses the existing
+  Forgejo Actions builder during migration.
 `)
 }
 

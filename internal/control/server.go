@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	"git.host.bzh/pepe/kuberpack/internal/builder"
 	"git.host.bzh/pepe/kuberpack/internal/forgejo"
 	"git.host.bzh/pepe/kuberpack/internal/hmacsig"
 	"git.host.bzh/pepe/kuberpack/internal/release"
@@ -23,6 +24,7 @@ import (
 const maxBody = 1 << 20
 
 type Config struct {
+	Builder          builder.Runner
 	Store            *store.Store
 	Secrets          store.SecretsDir
 	Client           *forgejo.Client
@@ -409,6 +411,9 @@ func (s *Server) process(ctx context.Context, d store.Delivery) {
 	}
 
 	result, runErr := s.cfg.Run(ctx, release.Request{
+		Builder:          s.cfg.Builder,
+		BuildID:          buildID,
+		DeliveryID:       d.ID,
 		Client:           s.cfg.Client,
 		Token:            s.cfg.Token,
 		Owner:            owner,

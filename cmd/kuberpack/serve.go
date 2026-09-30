@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"git.host.bzh/pepe/kuberpack/internal/builder"
 	"git.host.bzh/pepe/kuberpack/internal/control"
 	"git.host.bzh/pepe/kuberpack/internal/forgejo"
 	"git.host.bzh/pepe/kuberpack/internal/store"
@@ -44,11 +45,24 @@ func runServe(args []string) error {
 		return err
 	}
 	defer db.Close()
+	var jobBuilder builder.Runner
+	if image := strings.TrimSpace(os.Getenv("KUBERPACK_BUILDER_IMAGE")); image != "" {
+		runner, err := builder.InCluster(image)
+		if err != nil {
+			return err
+		}
+		runner.Namespace = getenv("KUBERPACK_BUILDER_NAMESPACE", "kuberpack-build")
+		runner.SecretName = getenv("KUBERPACK_BUILDER_SECRET", "kuberpack-builder")
+		runner.PullSecretName = getenv("KUBERPACK_BUILDER_PULL_SECRET", "kuberpack-builder-pull")
+		runner.Timeout = *waitFor
+		jobBuilder = runner
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	srv := control.New(control.Config{
+		Builder:          jobBuilder,
 		Store:            db,
 		Secrets:          store.SecretsDir(filepath.Join(*dataDir, "secrets")),
 		Client:           client,

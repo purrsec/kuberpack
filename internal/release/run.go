@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"git.host.bzh/pepe/kuberpack/internal/builder"
 	"git.host.bzh/pepe/kuberpack/internal/fetch"
 	"git.host.bzh/pepe/kuberpack/internal/forgejo"
 	"git.host.bzh/pepe/kuberpack/internal/image"
@@ -18,6 +19,9 @@ import (
 )
 
 type Request struct {
+	Builder          builder.Runner
+	BuildID          int64
+	DeliveryID       string
 	Client           *forgejo.Client
 	Token            string
 	Owner            string
@@ -118,31 +122,35 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		plan.Kind = strategy.Railpack
 	}
 
-	switch plan.Kind {
-	case strategy.Railpack:
-		// railpack prepare needs mise/toolchains. Those live on the builder,
-		// not in the control-plane image. The cobaye workflow runs railpack.
-		log("railpack prepare deferred to builder")
-
-		dOwner, dName, err := forgejo.ParseOwnerName(req.DispatchRepo)
-		if err != nil {
-			return Result{}, err
-		}
-		if err := req.Client.DispatchWorkflow(ctx, dOwner, dName, req.DispatchWorkflow, "main", map[string]string{
-			"repository": repo.FullName,
-			"sha":        sha,
-		}); err != nil {
-			return Result{}, fmt.Errorf("dispatch %s %s: %w (FORGEJO_TOKEN needs write:repository)", req.DispatchRepo, req.DispatchWorkflow, err)
-		}
-		log("dispatched %s %s", req.DispatchRepo, req.DispatchWorkflow)
-	default:
-		return Result{}, fmt.Errorf("no builder configured")
-	}
-
 	ociRepo, err := ImageRepository(req.ImageRepository, req.Client.BaseURL, req.Owner, req.Name)
 	if err != nil {
 		return Result{}, err
 	}
+
+	switch plan.Kind {
+	case strategy.Railpack:
+		if req.Builder != nil {
+			log("submitting Kubernetes build Job for %s", sha)
+			if err := req.Builder.Build(ctx, builder.Request{CloneURL: repo.CloneURL, CommitSHA: sha, ImageRepository: ociRepo, RegistryUser: req.Owner, StartCmd: req.StartCmd, BuildID: req.BuildID, DeliveryID: req.DeliveryID}); err != nil {
+				return Result{}, err
+			}
+			log("Kubernetes build Job completed")
+		} else {
+			// Transitional Forgejo Actions builder, kept until the Job path is deployed.
+			log("railpack prepare deferred to workflow builder")
+			dOwner, dName, err := forgejo.ParseOwnerName(req.DispatchRepo)
+			if err != nil {
+				return Result{}, err
+			}
+			if err := req.Client.DispatchWorkflow(ctx, dOwner, dName, req.DispatchWorkflow, "main", map[string]string{"repository": repo.FullName, "sha": sha}); err != nil {
+				return Result{}, fmt.Errorf("dispatch %s %s: %w (FORGEJO_TOKEN needs write:repository)", req.DispatchRepo, req.DispatchWorkflow, err)
+			}
+			log("dispatched %s %s", req.DispatchRepo, req.DispatchWorkflow)
+		}
+	default:
+		return Result{}, fmt.Errorf("no builder configured")
+	}
+
 	_, ociName, err := oci.SplitRepository(ociRepo)
 	if err != nil {
 		return Result{}, err
@@ -157,7 +165,14 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		return Result{}, err
 	}
 	log("waiting for %s:%s", ociRepo, oci.TagForCommit(sha))
-	digest, err := reg.WaitForCommit(ctx, ociName, sha, req.Wait, 8*time.Second)
+	var digest string
+	if req.Builder != nil {
+		// The just-created Job has succeeded. Read only the exact tag it pushed;
+		// never accept the historical main-<run>-<sha> fallback on this path.
+		digest, err = reg.ManifestDigest(ctx, ociName, oci.TagForCommit(sha))
+	} else {
+		digest, err = reg.WaitForCommit(ctx, ociName, sha, req.Wait, 8*time.Second)
+	}
 	if err != nil {
 		return Result{}, err
 	}
