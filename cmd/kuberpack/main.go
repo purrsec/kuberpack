@@ -41,6 +41,7 @@ func main() {
 			RegistryUser:    os.Getenv("KUBERPACK_REGISTRY_USER"),
 			StartCmd:        os.Getenv("KUBERPACK_START_CMD"),
 		}); err != nil {
+			buildexec.WriteTermination(err.Error())
 			fmt.Fprintf(os.Stderr, "kuberpack builder: %v\n", err)
 			os.Exit(1)
 		}

@@ -241,7 +241,7 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 				CommitSHA: sha,
 				Status:    "queued",
 			}); err == nil || errors.Is(err, store.ErrDuplicate) {
-				s.publishCommitStatus(r.Context(), owner, repoName, sha, forgejo.StatusPending, "Building", app)
+				s.publishCommitStatus(r.Context(), owner, repoName, sha, forgejo.StatusPending, "Building", app, false)
 				s.kick()
 			}
 		}
@@ -366,7 +366,7 @@ func (s *Server) webhook(w http.ResponseWriter, r *http.Request) {
 	}
 	owner, name, parseErr := forgejo.ParseOwnerName(app.ForgejoRepository)
 	if parseErr == nil {
-		s.publishCommitStatus(r.Context(), owner, name, payload.After, forgejo.StatusPending, "Building", app)
+		s.publishCommitStatus(r.Context(), owner, name, payload.After, forgejo.StatusPending, "Building", app, false)
 	}
 	s.kick()
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
@@ -438,7 +438,7 @@ func (s *Server) process(ctx context.Context, d store.Delivery) {
 		_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", err.Error())
 		return
 	}
-	s.publishCommitStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusPending, "Building", app)
+	s.publishCommitStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusPending, "Building", app, false)
 
 	track := s.trackFor(ctx, app)
 	skipPromote := !track.FollowsMain() && !track.MatchesCommit(d.CommitSHA)
@@ -472,7 +472,7 @@ func (s *Server) process(ctx context.Context, d store.Delivery) {
 		finished.Error = runErr.Error()
 		_ = s.cfg.Store.FinishBuild(ctx, buildID, finished)
 		_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", runErr.Error())
-		s.publishCommitStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusFailure, runErr.Error(), app)
+		s.publishCommitStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusFailure, runErr.Error(), app, true)
 		log.Printf("kuberpack build %s %s: %v", app.Name, d.CommitSHA, runErr)
 		return
 	}
@@ -483,26 +483,38 @@ func (s *Server) process(ctx context.Context, d store.Delivery) {
 	_ = s.cfg.Store.FinishBuild(ctx, buildID, finished)
 	_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "succeeded", "")
 	if skipPromote {
-		s.publishCommitStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusWarning, "Built, frozen at "+track.Short(), app)
+		s.publishCommitStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusWarning, "Built, frozen at "+track.Short(), app, false)
 	} else {
-		s.publishCommitStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusSuccess, "Deployed", app)
+		s.publishCommitStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusSuccess, "Deployed", app, false)
 	}
 	s.alignTrack(ctx, app)
 }
 
-func (s *Server) publishCommitStatus(ctx context.Context, owner, repo, sha, state, description string, app store.App) {
+func (s *Server) publishCommitStatus(ctx context.Context, owner, repo, sha, state, description string, app store.App, failed bool) {
 	if s.cfg.Client == nil {
 		return
+	}
+	target := appTargetURL(app)
+	if failed {
+		target = commitURL(s.cfg.Client.BaseURL, owner, repo, sha)
 	}
 	err := s.cfg.Client.CreateCommitStatus(ctx, owner, repo, sha, forgejo.CommitStatus{
 		State:       state,
 		Context:     forgejo.ProductionContext,
 		Description: description,
-		TargetURL:   appTargetURL(app),
+		TargetURL:   target,
 	})
 	if err != nil {
 		log.Printf("kuberpack commit status %s/%s %s: %v", owner, repo, sha, err)
 	}
+}
+
+func commitURL(base, owner, repo, sha string) string {
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
+	if base == "" || owner == "" || repo == "" || sha == "" {
+		return ""
+	}
+	return base + "/" + owner + "/" + repo + "/commit/" + sha
 }
 
 func appTargetURL(app store.App) string {

@@ -109,6 +109,6 @@ func (s *Server) alignTrack(ctx context.Context, app store.App) {
 	}
 	if result.Changed {
 		log.Printf("kuberpack froze %s at %s (%s)", app.Name, result.Image, result.InfraCommitSHA)
-		s.publishCommitStatus(ctx, owner, name, sha, forgejo.StatusSuccess, "Deployed", app)
+		s.publishCommitStatus(ctx, owner, name, sha, forgejo.StatusSuccess, "Deployed", app, false)
 	}
 }

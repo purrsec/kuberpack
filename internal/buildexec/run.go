@@ -113,6 +113,9 @@ func Run(ctx context.Context, req Request) (string, error) {
 	}
 	scanReport := filepath.Join(work, "trivy.json")
 	if err := command(ctx, "trivy", "image", "--input", scanArchive, "--exit-code", "1", "--severity", "CRITICAL", "--ignore-unfixed", "--pkg-types", "library", "--scanners", "vuln", "--format", "json", "--output", scanReport); err != nil {
+		if summary := summarizeTrivyFile(scanReport); summary != "" {
+			return "", fmt.Errorf("%s", summary)
+		}
 		return "", err
 	}
 	if err := validateScanReport(scanReport); err != nil {
@@ -202,4 +205,19 @@ func command(ctx context.Context, name string, args ...string) error {
 		return fmt.Errorf("%s failed: %w", name, err)
 	}
 	return nil
+}
+
+const terminationLog = "/dev/termination-log"
+
+// WriteTermination records a short failure reason for the Job (kubelet, 4KiB).
+func WriteTermination(msg string) {
+	msg = strings.TrimSpace(msg)
+	if msg == "" {
+		return
+	}
+	runes := []rune(msg)
+	if len(runes) > 4096 {
+		msg = string(runes[:4096])
+	}
+	_ = os.WriteFile(terminationLog, []byte(msg), 0o644)
 }

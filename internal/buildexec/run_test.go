@@ -6,6 +6,21 @@ import (
 	"testing"
 )
 
+func TestSummarizeTrivyCondensesCritical(t *testing.T) {
+	got := summarizeTrivy([]byte(`{"Results":[{"Vulnerabilities":[
+		{"VulnerabilityID":"CVE-2025-68121","PkgName":"stdlib","InstalledVersion":"v1.22.12","FixedVersion":"1.24.13, 1.25.7","Severity":"CRITICAL"},
+		{"VulnerabilityID":"CVE-2025-68121","PkgName":"stdlib","InstalledVersion":"v1.22.12","FixedVersion":"1.24.13","Severity":"CRITICAL"},
+		{"VulnerabilityID":"CVE-9999-1","PkgName":"stdlib","InstalledVersion":"v1.22.12","FixedVersion":"1.24.13","Severity":"CRITICAL"}
+	]}]}`))
+	want := "Trivy: CVE-2025-68121 in stdlib (v1.22.12 → 1.24.13) +1"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+	if summarizeTrivy([]byte(`{"Results":[]}`)) != "" {
+		t.Fatal("empty report")
+	}
+}
+
 func TestValidateScanReportRequiresImageTarget(t *testing.T) {
 	for _, tc := range []struct {
 		name      string

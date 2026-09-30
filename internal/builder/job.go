@@ -97,6 +97,9 @@ func (r *JobRunner) Build(ctx context.Context, req Request) error {
 			return nil
 		}
 		if current.Status.Failed > 0 || jobCondition(current.Status.Conditions, batchv1.JobFailed) {
+			if msg := r.podFailureMessage(ctx, created); msg != "" {
+				return fmt.Errorf("%s", msg)
+			}
 			return fmt.Errorf("build Job %s failed; inspect its pod logs in namespace %s", created.Name, created.Namespace)
 		}
 		select {
@@ -114,6 +117,27 @@ func jobCondition(conditions []batchv1.JobCondition, kind batchv1.JobConditionTy
 		}
 	}
 	return false
+}
+
+func (r *JobRunner) podFailureMessage(ctx context.Context, job *batchv1.Job) string {
+	pods, err := r.Client.CoreV1().Pods(job.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "job-name=" + job.Name})
+	if err != nil || len(pods.Items) == 0 {
+		pods, err = r.Client.CoreV1().Pods(job.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "batch.kubernetes.io/job-name=" + job.Name})
+	}
+	if err != nil {
+		return ""
+	}
+	for _, pod := range pods.Items {
+		for _, cs := range pod.Status.ContainerStatuses {
+			if cs.Name != "builder" || cs.State.Terminated == nil {
+				continue
+			}
+			if msg := strings.TrimSpace(cs.State.Terminated.Message); msg != "" {
+				return msg
+			}
+		}
+	}
+	return ""
 }
 
 func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {

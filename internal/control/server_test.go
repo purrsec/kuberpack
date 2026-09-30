@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -367,6 +368,7 @@ func TestCommitStatusOnBuildFailure(t *testing.T) {
 	}
 
 	states := make(chan string, 4)
+	targets := make(chan string, 4)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/repos/pepe/hello-world/statuses/", func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]string
@@ -376,6 +378,9 @@ func TestCommitStatusOnBuildFailure(t *testing.T) {
 			return
 		}
 		states <- body["state"]
+		if body["state"] == forgejo.StatusFailure {
+			targets <- body["target_url"]
+		}
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": 1})
 	})
@@ -428,6 +433,14 @@ func TestCommitStatusOnBuildFailure(t *testing.T) {
 		case <-deadline:
 			t.Fatalf("commit statuses: %v", got)
 		}
+	}
+	select {
+	case target := <-targets:
+		if !strings.Contains(target, "/pepe/hello-world/commit/0123456789abcdef0123456789abcdef01234567") {
+			t.Fatalf("failure target_url %q", target)
+		}
+	default:
+		t.Fatal("missing failure target_url")
 	}
 }
 
