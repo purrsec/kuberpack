@@ -20,7 +20,10 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/fail"
 )
 
-const defaultBuildkitImage = "docker.io/moby/buildkit:v0.33.0-rootless@sha256:80b15f0735e87bab7bf59ec4d695dfb4a7cfb25521cf56dc75d6f256285b63ef"
+const (
+	defaultBuildkitImage = "docker.io/moby/buildkit:v0.33.0-rootless@sha256:80b15f0735e87bab7bf59ec4d695dfb4a7cfb25521cf56dc75d6f256285b63ef"
+	terminationWait      = 20 * time.Second
+)
 
 var commitPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
 
@@ -90,6 +93,7 @@ func (r *JobRunner) Build(ctx context.Context, req Request) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
+	var failedAt time.Time
 	for {
 		current, err := r.Client.BatchV1().Jobs(created.Namespace).Get(ctx, created.Name, metav1.GetOptions{})
 		if err != nil {
@@ -102,10 +106,19 @@ func (r *JobRunner) Build(ctx context.Context, req Request) error {
 			if msg := r.podFailureMessage(ctx, created); msg != "" {
 				return fail.Text("", msg)
 			}
-			return fail.Text(fail.Job, "failed")
+			// kubelet often marks the Job failed before Terminated.Message is visible.
+			if failedAt.IsZero() {
+				failedAt = time.Now()
+			}
+			if time.Since(failedAt) >= terminationWait {
+				return fail.Text(fail.Job, "failed")
+			}
 		}
 		select {
 		case <-ctx.Done():
+			if !failedAt.IsZero() {
+				return fail.Text(fail.Job, "failed")
+			}
 			return fail.Text(fail.Job, "timeout")
 		case <-time.After(interval):
 		}
