@@ -92,7 +92,7 @@ serve (FORGEJO_TOKEN, KUBERPACK_API_TOKEN, KUBERPACK_BUILDER_IMAGE):
   GET  /healthz
 
   SQLite + HMAC files under --data. Register writes GitOps Helm files;
-  promote only rewrites image and enables Flux.
+  promote only rewrites image (track stays human-owned) and enables Flux.
 `)
 }
 

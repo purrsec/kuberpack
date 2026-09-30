@@ -196,6 +196,7 @@ func valuesYAML(spec AppSpec, p Platform) string {
 	p = p.withDefaults()
 	var b strings.Builder
 	b.WriteString("# Desired runtime. Kuberpack only rewrites `image`.\n")
+	b.WriteString("track: main\n")
 	b.WriteString("image: \"\"\n")
 	b.WriteString("port: " + strconv.Itoa(spec.Port) + "\n")
 	b.WriteString("healthcheck: " + spec.Healthcheck + "\n")

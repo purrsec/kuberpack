@@ -76,6 +76,8 @@ Après un build valide, un seul écrivain automatique (Kuberpack) pose :
 image: <registry>/<app>:sha-<commit>@sha256:<digest>
 ```
 
+Le champ `track` du même `values.yaml` dit quel commit est désiré (`main` ou un SHA). Kuberpack ne réécrit que `image`. Un `track` figé réutilise le digest déjà publié, sans Job.
+
 Le commit est petit, message explicite, manifeste rendu (`helm template` / kustomize) **avant** le push. Pas de tag mutable `main` comme source de déploiement.
 
 Les apps PaaS sont des `HelmRelease` d’un chart **stateless** : Deployment, Service, Ingress, probes, PSA `restricted`, `envFrom`, ressources, NetworkPolicy, Helm test HTTP.

@@ -42,6 +42,7 @@ type Request struct {
 	RegistryUser    string
 	Wait            time.Duration
 	SkipPromote     bool
+	KnownDigest     string
 	Log             func(string, ...any)
 }
 

@@ -52,6 +52,8 @@ Un `Procfile` est optionnel. Aucun fichier de plateforme n’est exigé dans le 
 
 À l’enregistrement, Kuberpack matérialise ce JSON en YAML GitOps (`kubernetes/vps/apps/<name>/`). Ingress, pull secret, TLS et DNS viennent des défauts plateforme (`KUBERPACK_DNS_TARGET`, …), pas du dépôt app. Flux ne voit l’app qu’après le premier pin `image`.
 
+Le YAML GitOps est le contrat runtime. `track: main` (défaut, ou vide / `latest`) suit la branche de production. `track: <sha>` gèle la prod sur ce commit : les nouveaux pushes peuvent encore construire, mais ne changent plus `image`. Kuberpack repose alors le digest déjà publié (`sha-<commit>@sha256:…`), sans rebuild. `image:` reste un digest ; ce n’est pas un tag mutable.
+
 ## Suite (après le MVP HTTP)
 
 `GET/DELETE /api/v1/apps`, liste des builds, URL de preview, `rolled_back`, redeploy, rollback manuel.

@@ -29,6 +29,9 @@ func TestEnsureAppWritesContractAndPromoteEnablesFlux(t *testing.T) {
 	if !strings.Contains(values, `image: ""`) {
 		t.Fatalf("expected empty image:\n%s", values)
 	}
+	if !strings.Contains(values, "track: main") {
+		t.Fatalf("expected track: main:\n%s", values)
+	}
 	if strings.Contains(values, "command:") {
 		t.Fatal("values must not set command")
 	}

@@ -266,6 +266,31 @@ FROM webhook_deliveries WHERE status IN ('queued', 'running') ORDER BY received_
 	return out, rows.Err()
 }
 
+func (s *Store) SucceededBuildByCommit(ctx context.Context, appID int64, sha string) (Build, error) {
+	sha = strings.ToLower(strings.TrimSpace(sha))
+	if sha == "" {
+		return Build{}, ErrNotFound
+	}
+	row := s.db.QueryRowContext(ctx, `
+SELECT id, app_id, delivery_id, environment, commit_sha, image_repository, image_tag, image_digest, infra_commit_sha, status, error, created_at, finished_at
+FROM builds
+WHERE app_id = ? AND status = 'succeeded' AND image_digest != ''
+  AND (commit_sha = ? OR commit_sha LIKE ?)
+ORDER BY finished_at DESC LIMIT 1`, appID, sha, sha+"%")
+	var b Build
+	var created, finished string
+	err := row.Scan(&b.ID, &b.AppID, &b.DeliveryID, &b.Environment, &b.CommitSHA, &b.ImageRepository, &b.ImageTag, &b.ImageDigest, &b.InfraCommitSHA, &b.Status, &b.Error, &created, &finished)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Build{}, ErrNotFound
+	}
+	if err != nil {
+		return Build{}, err
+	}
+	b.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+	b.FinishedAt, _ = time.Parse(time.RFC3339Nano, finished)
+	return b, nil
+}
+
 func (s *Store) InsertBuild(ctx context.Context, b Build) (int64, error) {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	res, err := s.db.ExecContext(ctx, `

@@ -125,6 +125,46 @@ func TestDispatchWorkflow(t *testing.T) {
 	}
 }
 
+func TestRepoOwnerNameFromURL(t *testing.T) {
+	owner, name, err := RepoOwnerNameFromURL("https://git.host.bzh/pepe/infra-homelab.git")
+	if err != nil || owner != "pepe" || name != "infra-homelab" {
+		t.Fatalf("%s %s %v", owner, name, err)
+	}
+}
+
+func TestRawFileAndResolveCommit(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/repos/pepe/infra-homelab/raw/kubernetes/vps/apps/site/values.yaml", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("ref") != "main" {
+			t.Errorf("ref %q", r.URL.Query().Get("ref"))
+		}
+		_, _ = w.Write([]byte("track: main\nimage: \"\"\n"))
+	})
+	mux.HandleFunc("/api/v1/repos/pepe/hello-world/git/commits/8c06814", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{"sha": "8c06814474971005530a724e665ab765b69feb05"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c, err := New(srv.URL, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.HTTPClient = srv.Client()
+	raw, err := c.RawFile(context.Background(), "pepe", "infra-homelab", "kubernetes/vps/apps/site/values.yaml", "main")
+	if err != nil || string(raw) != "track: main\nimage: \"\"\n" {
+		t.Fatalf("%q %v", raw, err)
+	}
+	sha, err := c.ResolveCommit(context.Background(), "pepe", "hello-world", "8c06814")
+	if err != nil || sha != "8c06814474971005530a724e665ab765b69feb05" {
+		t.Fatalf("%q %v", sha, err)
+	}
+	full := "0123456789abcdef0123456789abcdef01234567"
+	got, err := c.ResolveCommit(context.Background(), "pepe", "hello-world", full)
+	if err != nil || got != full {
+		t.Fatalf("%q %v", got, err)
+	}
+}
+
 func TestCreateCommitStatus(t *testing.T) {
 	var got struct {
 		method string

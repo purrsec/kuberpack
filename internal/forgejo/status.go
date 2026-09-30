@@ -14,6 +14,7 @@ const (
 	StatusSuccess = "success"
 	StatusFailure = "failure"
 	StatusError   = "error"
+	StatusWarning = "warning"
 
 	ProductionContext = "kuberpack/production"
 	maxStatusDesc     = 140

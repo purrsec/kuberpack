@@ -38,6 +38,7 @@ type Config struct {
 	Platform     promote.Platform
 	Wait         time.Duration
 	Run          func(context.Context, release.Request) (release.Result, error)
+	GitOpsFile   func(context.Context, store.App) ([]byte, error)
 }
 
 type Server struct {
@@ -379,12 +380,16 @@ func (s *Server) kick() {
 }
 
 func (s *Server) worker(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
 	for {
 		s.drain(ctx)
+		s.alignTracks(ctx)
 		select {
 		case <-ctx.Done():
 			return
 		case <-s.wake:
+		case <-ticker.C:
 		}
 	}
 }
@@ -435,6 +440,9 @@ func (s *Server) process(ctx context.Context, d store.Delivery) {
 	}
 	s.publishCommitStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusPending, "Building", app)
 
+	track := s.trackFor(ctx, app)
+	skipPromote := !track.FollowsMain() && !track.MatchesCommit(d.CommitSHA)
+
 	result, runErr := s.cfg.Run(ctx, release.Request{
 		Builder:      s.cfg.Builder,
 		BuildID:      buildID,
@@ -455,6 +463,7 @@ func (s *Server) process(ctx context.Context, d store.Delivery) {
 		Healthcheck:  app.Healthcheck,
 		Platform:     s.cfg.Platform,
 		Wait:         s.cfg.Wait,
+		SkipPromote:  skipPromote,
 		Log:          func(format string, args ...any) { log.Printf(format, args...) },
 	})
 	finished := store.Build{Status: "succeeded"}
@@ -473,7 +482,12 @@ func (s *Server) process(ctx context.Context, d store.Delivery) {
 	finished.InfraCommitSHA = result.InfraCommitSHA
 	_ = s.cfg.Store.FinishBuild(ctx, buildID, finished)
 	_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "succeeded", "")
-	s.publishCommitStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusSuccess, "Deployed", app)
+	if skipPromote {
+		s.publishCommitStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusWarning, "Built, frozen at "+track.Short(), app)
+	} else {
+		s.publishCommitStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusSuccess, "Deployed", app)
+	}
+	s.alignTrack(ctx, app)
 }
 
 func (s *Server) publishCommitStatus(ctx context.Context, owner, repo, sha, state, description string, app store.App) {

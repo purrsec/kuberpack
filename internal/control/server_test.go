@@ -145,6 +145,89 @@ func TestWebhookHMACAndQueue(t *testing.T) {
 	}
 }
 
+func TestFrozenTrackSkipsPromote(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(filepath.Join(dir, "db.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	secrets := store.SecretsDir(filepath.Join(dir, "secrets"))
+	ctx := context.Background()
+	app, err := st.InsertApp(ctx, store.App{
+		Name:              "hello-world",
+		ForgejoRepository: "pepe/hello-world",
+		ProductionBranch:  "main",
+		Strategy:          "auto",
+		Autodeploy:        true,
+		Hostname:          "hello-world.host.bzh",
+		Port:              8080,
+		Healthcheck:       "/",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := secrets.Put(app.ID, "s3cret"); err != nil {
+		t.Fatal(err)
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/repos/pepe/hello-world/statuses/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": 1})
+	})
+	git := httptest.NewServer(mux)
+	t.Cleanup(git.Close)
+	client, err := forgejo.New(git.URL, "tok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.HTTPClient = git.Client()
+
+	skip := make(chan bool, 1)
+	srv := New(Config{
+		Store:    st,
+		Secrets:  secrets,
+		Client:   client,
+		APIToken: "api",
+		GitOpsFile: func(context.Context, store.App) ([]byte, error) {
+			return []byte(`track: f10cf296ea2c210d374847d1368d0ef9c848664c
+image: "git.host.bzh/pepe/hello-world:sha-f10cf296ea2c210d374847d1368d0ef9c848664c@sha256:127130f2edce05a906342bba4700c43b9718a6fb81891b6af62398308d92de02"
+`), nil
+		},
+		Run: func(ctx context.Context, req release.Request) (release.Result, error) {
+			skip <- req.SkipPromote
+			ref, err := image.Pin("git.host.bzh/pepe/hello-world", req.SHA, "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+			if err != nil {
+				return release.Result{}, err
+			}
+			return release.Result{SHA: req.SHA, Image: ref}, nil
+		},
+	})
+	workerCtx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	srv.Start(workerCtx)
+
+	body := []byte(`{"ref":"refs/heads/main","after":"0123456789abcdef0123456789abcdef01234567","repository":{"full_name":"pepe/hello-world"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/hooks/forgejo", bytes.NewReader(body))
+	req.Header.Set("X-Gitea-Event", "push")
+	req.Header.Set("X-Gitea-Delivery", "del-frozen")
+	req.Header.Set("X-Gitea-Signature", hmacsig.Hex("s3cret", body))
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status %d %s", rec.Code, rec.Body.String())
+	}
+	select {
+	case got := <-skip:
+		if !got {
+			t.Fatal("expected SkipPromote")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not run")
+	}
+}
+
 func TestCreateAppUnauthorized(t *testing.T) {
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "db.sqlite"))

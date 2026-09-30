@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 )
@@ -73,6 +74,13 @@ func TestAppsAndDeliveries(t *testing.T) {
 	}
 	if err := s.FinishBuild(ctx, id, Build{Status: "succeeded", ImageDigest: "sha256:x"}); err != nil {
 		t.Fatal(err)
+	}
+	gotBuild, err := s.SucceededBuildByCommit(ctx, app.ID, "abc")
+	if err != nil || gotBuild.ImageDigest != "sha256:x" {
+		t.Fatalf("%+v %v", gotBuild, err)
+	}
+	if _, err := s.SucceededBuildByCommit(ctx, app.ID, "ffff"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing: %v", err)
 	}
 }
 
