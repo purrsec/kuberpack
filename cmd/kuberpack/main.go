@@ -40,6 +40,9 @@ func main() {
 			ImageRepository: os.Getenv("KUBERPACK_IMAGE_REPOSITORY"),
 			RegistryUser:    os.Getenv("KUBERPACK_REGISTRY_USER"),
 			StartCmd:        os.Getenv("KUBERPACK_START_CMD"),
+			BuildsGitURL:    os.Getenv("KUBERPACK_BUILDS_GIT_URL"),
+			AppName:         os.Getenv("KUBERPACK_APP_NAME"),
+			Environment:     os.Getenv("KUBERPACK_ENVIRONMENT"),
 		}); err != nil {
 			buildexec.WriteTermination(err.Error())
 			fmt.Fprintf(os.Stderr, "kuberpack builder: %v\n", err)
@@ -88,8 +91,11 @@ trigger (FORGEJO_TOKEN, write:repository):
 
 serve (FORGEJO_TOKEN, KUBERPACK_API_TOKEN, KUBERPACK_BUILDER_IMAGE):
   POST /api/v1/apps          register (Bearer)
-  GET  /api/v1/apps[/{name}]
-  POST /hooks/forgejo        HMAC (X-Gitea-Signature)
+  GET/PATCH/DELETE /api/v1/apps[/{name}]
+  GET  /api/v1/apps/{name}/builds
+  POST /api/v1/apps/{name}/redeploy
+  POST /hooks/forgejo        HMAC (push, pull_request)
+  POST /hooks/flux           HelmRelease rollback → rolled_back
   GET  /healthz
 
   SQLite + HMAC files under --data. Register writes GitOps Helm files;

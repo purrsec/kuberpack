@@ -37,14 +37,15 @@ type App struct {
 }
 
 type Delivery struct {
-	ID        string
-	AppID     int64
-	EventType string
-	Action    string
-	CommitSHA string
-	Received  time.Time
-	Status    string
-	Error     string
+	ID          string
+	AppID       int64
+	EventType   string
+	Action      string
+	CommitSHA   string
+	Received    time.Time
+	Status      string
+	Error       string
+	PullRequest int
 }
 
 type Build struct {
@@ -59,8 +60,19 @@ type Build struct {
 	InfraCommitSHA  string
 	Status          string
 	Error           string
+	ArchiveURL      string
 	CreatedAt       time.Time
 	FinishedAt      time.Time
+}
+
+type Preview struct {
+	AppID       int64
+	PullRequest int
+	HeadSHA     string
+	BuildID     int64
+	Hostname    string
+	Status      string
+	UpdatedAt   time.Time
 }
 
 func Open(path string) (*Store, error) {
@@ -113,7 +125,8 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
   commit_sha TEXT NOT NULL,
   received_at TEXT NOT NULL,
   status TEXT NOT NULL,
-  error TEXT NOT NULL DEFAULT ''
+  error TEXT NOT NULL DEFAULT '',
+  pull_request INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS builds (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -127,11 +140,33 @@ CREATE TABLE IF NOT EXISTS builds (
   infra_commit_sha TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL,
   error TEXT NOT NULL DEFAULT '',
+  archive_url TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   finished_at TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS previews (
+  app_id INTEGER NOT NULL REFERENCES apps(id),
+  pull_request_number INTEGER NOT NULL,
+  head_sha TEXT NOT NULL,
+  build_id INTEGER NOT NULL DEFAULT 0,
+  hostname TEXT NOT NULL,
+  status TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (app_id, pull_request_number)
+);
 `)
-	return err
+	if err != nil {
+		return err
+	}
+	for _, stmt := range []string{
+		`ALTER TABLE webhook_deliveries ADD COLUMN pull_request INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE builds ADD COLUMN archive_url TEXT NOT NULL DEFAULT ''`,
+	} {
+		if _, alterErr := s.db.Exec(stmt); alterErr != nil && !strings.Contains(strings.ToLower(alterErr.Error()), "duplicate column") {
+			return alterErr
+		}
+	}
+	return nil
 }
 
 func (s *Store) InsertApp(ctx context.Context, app App) (App, error) {
@@ -227,9 +262,9 @@ func scanAppRow(rows *sql.Rows) (App, error) {
 func (s *Store) InsertDelivery(ctx context.Context, d Delivery) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO webhook_deliveries (delivery_id, app_id, event_type, action, commit_sha, received_at, status, error)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		d.ID, d.AppID, d.EventType, d.Action, d.CommitSHA, now, d.Status, d.Error,
+INSERT INTO webhook_deliveries (delivery_id, app_id, event_type, action, commit_sha, received_at, status, error, pull_request)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		d.ID, d.AppID, d.EventType, d.Action, d.CommitSHA, now, d.Status, d.Error, d.PullRequest,
 	)
 	if err != nil {
 		if isUnique(err) {
@@ -247,7 +282,7 @@ func (s *Store) SetDeliveryStatus(ctx context.Context, id, status, errMsg string
 
 func (s *Store) QueuedDeliveries(ctx context.Context) ([]Delivery, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT delivery_id, app_id, event_type, action, commit_sha, received_at, status, error
+SELECT delivery_id, app_id, event_type, action, commit_sha, received_at, status, error, pull_request
 FROM webhook_deliveries WHERE status IN ('queued', 'running') ORDER BY received_at`)
 	if err != nil {
 		return nil, err
@@ -257,7 +292,7 @@ FROM webhook_deliveries WHERE status IN ('queued', 'running') ORDER BY received_
 	for rows.Next() {
 		var d Delivery
 		var received string
-		if err := rows.Scan(&d.ID, &d.AppID, &d.EventType, &d.Action, &d.CommitSHA, &received, &d.Status, &d.Error); err != nil {
+		if err := rows.Scan(&d.ID, &d.AppID, &d.EventType, &d.Action, &d.CommitSHA, &received, &d.Status, &d.Error, &d.PullRequest); err != nil {
 			return nil, err
 		}
 		d.Received, _ = time.Parse(time.RFC3339Nano, received)
@@ -272,14 +307,14 @@ func (s *Store) SucceededBuildByCommit(ctx context.Context, appID int64, sha str
 		return Build{}, ErrNotFound
 	}
 	row := s.db.QueryRowContext(ctx, `
-SELECT id, app_id, delivery_id, environment, commit_sha, image_repository, image_tag, image_digest, infra_commit_sha, status, error, created_at, finished_at
+SELECT id, app_id, delivery_id, environment, commit_sha, image_repository, image_tag, image_digest, infra_commit_sha, status, error, archive_url, created_at, finished_at
 FROM builds
 WHERE app_id = ? AND status = 'succeeded' AND image_digest != ''
   AND (commit_sha = ? OR commit_sha LIKE ?)
 ORDER BY finished_at DESC LIMIT 1`, appID, sha, sha+"%")
 	var b Build
 	var created, finished string
-	err := row.Scan(&b.ID, &b.AppID, &b.DeliveryID, &b.Environment, &b.CommitSHA, &b.ImageRepository, &b.ImageTag, &b.ImageDigest, &b.InfraCommitSHA, &b.Status, &b.Error, &created, &finished)
+	err := row.Scan(&b.ID, &b.AppID, &b.DeliveryID, &b.Environment, &b.CommitSHA, &b.ImageRepository, &b.ImageTag, &b.ImageDigest, &b.InfraCommitSHA, &b.Status, &b.Error, &b.ArchiveURL, &created, &finished)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Build{}, ErrNotFound
 	}
@@ -294,9 +329,9 @@ ORDER BY finished_at DESC LIMIT 1`, appID, sha, sha+"%")
 func (s *Store) InsertBuild(ctx context.Context, b Build) (int64, error) {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	res, err := s.db.ExecContext(ctx, `
-INSERT INTO builds (app_id, delivery_id, environment, commit_sha, image_repository, image_tag, image_digest, infra_commit_sha, status, error, created_at, finished_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		b.AppID, b.DeliveryID, b.Environment, b.CommitSHA, b.ImageRepository, b.ImageTag, b.ImageDigest, b.InfraCommitSHA, b.Status, b.Error, now, "",
+INSERT INTO builds (app_id, delivery_id, environment, commit_sha, image_repository, image_tag, image_digest, infra_commit_sha, status, error, archive_url, created_at, finished_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		b.AppID, b.DeliveryID, b.Environment, b.CommitSHA, b.ImageRepository, b.ImageTag, b.ImageDigest, b.InfraCommitSHA, b.Status, b.Error, b.ArchiveURL, now, "",
 	)
 	if err != nil {
 		return 0, err
@@ -307,11 +342,138 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 func (s *Store) FinishBuild(ctx context.Context, id int64, b Build) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	_, err := s.db.ExecContext(ctx, `
-UPDATE builds SET image_repository=?, image_tag=?, image_digest=?, infra_commit_sha=?, status=?, error=?, finished_at=?
+UPDATE builds SET image_repository=?, image_tag=?, image_digest=?, infra_commit_sha=?, status=?, error=?, archive_url=?, finished_at=?
 WHERE id=?`,
-		b.ImageRepository, b.ImageTag, b.ImageDigest, b.InfraCommitSHA, b.Status, b.Error, now, id,
+		b.ImageRepository, b.ImageTag, b.ImageDigest, b.InfraCommitSHA, b.Status, b.Error, b.ArchiveURL, now, id,
 	)
 	return err
+}
+
+func (s *Store) ListBuilds(ctx context.Context, appID int64) ([]Build, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, app_id, delivery_id, environment, commit_sha, image_repository, image_tag, image_digest, infra_commit_sha, status, error, archive_url, created_at, finished_at
+FROM builds WHERE app_id = ? ORDER BY id DESC`, appID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Build
+	for rows.Next() {
+		var b Build
+		var created, finished string
+		if err := rows.Scan(&b.ID, &b.AppID, &b.DeliveryID, &b.Environment, &b.CommitSHA, &b.ImageRepository, &b.ImageTag, &b.ImageDigest, &b.InfraCommitSHA, &b.Status, &b.Error, &b.ArchiveURL, &created, &finished); err != nil {
+			return nil, err
+		}
+		b.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+		b.FinishedAt, _ = time.Parse(time.RFC3339Nano, finished)
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) LatestProductionBuild(ctx context.Context, appID int64) (Build, error) {
+	row := s.db.QueryRowContext(ctx, `
+SELECT id, app_id, delivery_id, environment, commit_sha, image_repository, image_tag, image_digest, infra_commit_sha, status, error, archive_url, created_at, finished_at
+FROM builds WHERE app_id = ? AND environment = 'production' ORDER BY id DESC LIMIT 1`, appID)
+	var b Build
+	var created, finished string
+	err := row.Scan(&b.ID, &b.AppID, &b.DeliveryID, &b.Environment, &b.CommitSHA, &b.ImageRepository, &b.ImageTag, &b.ImageDigest, &b.InfraCommitSHA, &b.Status, &b.Error, &b.ArchiveURL, &created, &finished)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Build{}, ErrNotFound
+	}
+	if err != nil {
+		return Build{}, err
+	}
+	b.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+	b.FinishedAt, _ = time.Parse(time.RFC3339Nano, finished)
+	return b, nil
+}
+
+func (s *Store) MarkRolledBack(ctx context.Context, id int64, errMsg string) error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := s.db.ExecContext(ctx, `UPDATE builds SET status = 'rolled_back', error = ?, finished_at = CASE WHEN finished_at = '' THEN ? ELSE finished_at END WHERE id = ?`, errMsg, now, id)
+	return err
+}
+
+func (s *Store) UpdateApp(ctx context.Context, app App) error {
+	_, err := s.db.ExecContext(ctx, `
+UPDATE apps SET production_branch=?, strategy=?, autodeploy=?, autodeploy_pr=?, hostname=?, port=?, healthcheck=?, start_command=?
+WHERE id=?`,
+		app.ProductionBranch, app.Strategy, boolInt(app.Autodeploy), boolInt(app.AutodeployPR),
+		app.Hostname, app.Port, app.Healthcheck, app.StartCommand, app.ID,
+	)
+	return err
+}
+
+func (s *Store) DeleteApp(ctx context.Context, id int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM previews WHERE app_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM builds WHERE app_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM webhook_deliveries WHERE app_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM apps WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) UpsertPreview(ctx context.Context, p Preview) error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO previews (app_id, pull_request_number, head_sha, build_id, hostname, status, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(app_id, pull_request_number) DO UPDATE SET
+  head_sha=excluded.head_sha, build_id=excluded.build_id, hostname=excluded.hostname, status=excluded.status, updated_at=excluded.updated_at`,
+		p.AppID, p.PullRequest, p.HeadSHA, p.BuildID, p.Hostname, p.Status, now,
+	)
+	return err
+}
+
+func (s *Store) Preview(ctx context.Context, appID int64, pr int) (Preview, error) {
+	row := s.db.QueryRowContext(ctx, `
+SELECT app_id, pull_request_number, head_sha, build_id, hostname, status, updated_at
+FROM previews WHERE app_id = ? AND pull_request_number = ?`, appID, pr)
+	var p Preview
+	var updated string
+	err := row.Scan(&p.AppID, &p.PullRequest, &p.HeadSHA, &p.BuildID, &p.Hostname, &p.Status, &updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Preview{}, ErrNotFound
+	}
+	if err != nil {
+		return Preview{}, err
+	}
+	p.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
+	return p, nil
+}
+
+func (s *Store) ListOpenPreviews(ctx context.Context) ([]Preview, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT app_id, pull_request_number, head_sha, build_id, hostname, status, updated_at
+FROM previews WHERE status NOT IN ('closed', 'pruned')`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Preview
+	for rows.Next() {
+		var p Preview
+		var updated string
+		if err := rows.Scan(&p.AppID, &p.PullRequest, &p.HeadSHA, &p.BuildID, &p.Hostname, &p.Status, &updated); err != nil {
+			return nil, err
+		}
+		p.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }
 
 func boolInt(v bool) int {

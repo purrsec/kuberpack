@@ -17,6 +17,7 @@ const (
 	StatusWarning = "warning"
 
 	ProductionContext = "kuberpack/production"
+	PreviewContext    = "kuberpack/preview"
 	maxStatusDesc     = 140
 )
 

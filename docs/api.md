@@ -54,6 +54,19 @@ Un `Procfile` est optionnel. Aucun fichier de plateforme n’est exigé dans le 
 
 Le YAML GitOps est le contrat runtime. `track: main` (défaut, ou vide / `latest`) suit la branche de production. `track: <sha>` gèle la prod sur ce commit : les nouveaux pushes peuvent encore construire, mais ne changent plus `image`. Kuberpack repose alors le digest déjà publié (`sha-<commit>@sha256:…`), sans rebuild. `image:` reste un digest ; ce n’est pas un tag mutable.
 
-## Suite (après le MVP HTTP)
+## Suite HTTP
 
-`GET/DELETE /api/v1/apps`, liste des builds, URL de preview, `rolled_back`, redeploy, rollback manuel.
+`PATCH /api/v1/apps/{name}` — champs optionnels : `branch`, `strategy`, `autodeploy`, `autodeploy_pr`, `hostname`, `port`, `healthcheck`, `start_command`. Ne réécrit pas GitOps (`image` reste le seul champ que le bot change).
+
+`DELETE /api/v1/apps/{name}` — retire le webhook, la clé HMAC, l’entrée SQLite, et enlève l’app du kustomization parent (Flux prune).
+
+`GET /api/v1/apps/{name}/builds` — historique SQLite (`status` : `running`, `succeeded`, `failed`, `rolled_back`).
+
+`POST /api/v1/apps/{name}/redeploy` — enfile un build du HEAD courant.
+
+`POST /hooks/flux` — notification HelmRelease en erreur → `rolled_back` + statut Forgejo `warning`. Secret `KUBERPACK_FLUX_WEBHOOK_SECRET` (HMAC ou `Authorization: Bearer`). Kuberpack n’a pas le kubeconfig du VPS ; le rollback Helm reste celui du HelmRelease.
+
+Previews : URL `https://pr-<n>.<app>.<KUBERPACK_PREVIEW_DOMAIN>`.
+
+CLI ou UI : plus tard (`docs/roadmap.md` phase 5). Pas de logs UI sur le control plane.
+

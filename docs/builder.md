@@ -15,7 +15,7 @@ Kuberpack n’exécute pas le compilateur. Il lance un travail sur k3s et attend
 
 Le mécanisme (Actions, `Job`, autre) n’est pas le produit. Le contrat l’est.
 
-La séparation entre sélection de stratégie, recette et exécuteur est détaillée dans [Stratégies de build](strategies.md), à partir du code local de Kubero.
+La séparation entre stratégie (`auto` / `uv` / `railpack`) et exécuteur (toujours Railpack) est dans [Stratégies de build](strategies.md).
 
 ## Références d’image
 
@@ -35,7 +35,7 @@ Le tag documente le commit ; le digest identifie l'image. Un tag OCI n'est pas i
 | Autre dépôt que Railpack sait préparer | Railpack + frontend BuildKit |
 | Image déjà construite ailleurs | hors Kuberpack |
 
-`uv` : Python depuis `.python-version` ou `requires-python` ; lockfile obligatoire et vérifié avec `uv lock --check` ou `--locked` ; processus non-root ; start/port dans l’enregistrement Kuberpack.
+`uv` : le lockfile est obligatoire et vérifié ; Railpack construit l’image. Start/port se configurent à l’enregistrement Kuberpack.
 
 Nixpacks n’est pas une stratégie du produit.
 
@@ -47,6 +47,6 @@ Le code du builder k3s est dans `internal/buildexec` et `internal/builder`. `Doc
 
 Le builder se configure avec `KUBERPACK_BUILDER_IMAGE` sur `serve`. Il faut d’abord publier l’image puis installer `deploy/kuberpack-build.yaml`, affecter le ServiceAccount `kuberpack` au Deployment du control plane et autoriser son montage de token. L’image builder actuelle cible `linux/amd64`. Le Job garde ses logs pendant 24 h, puis est supprimé par TTL. La SBOM n’est pas encore publiée hors du Job.
 
-Le webhook de `pepe/hello-world` a déjà déclenché un Job réel (`kuberpack-build-736ffeb3f6e1d4bb`) pour le SHA `f10cf296ea2c210d374847d1368d0ef9c848664c`. Le worker a publié `git.host.bzh/pepe/hello-world:sha-<commit>` au digest `sha256:127130f2edce05a906342bba4700c43b9718a6fb81891b6af62398308d92de02` ; `serve` a committé ce pin dans GitOps et Flux l’a déployé. Un Job antérieur lancé à la main (`kuberpack-build-7fc1ad70955cc0e2`) avait seulement prouvé le worker, pas le webhook. La publication des images Kuberpack vers Forgejo utilise Skopeo en format Docker v2 : le push direct de l’index OCI par Apple `container` a produit une référence que k3s ne pouvait pas tirer.
+Le Job garde ses logs pendant 24 h, puis est supprimé par TTL. Si `KUBERPACK_BUILDS_GIT_URL` est défini, le worker pousse SBOM SPDX et un extrait de log dans ce dépôt (Flux ne le watch jamais). Sinon l’archive est un no-op.
 
-`serve` exige `KUBERPACK_BUILDER_IMAGE` et lit uniquement le tag `sha-<commit>`. Le builder ne committe jamais le dépôt GitOps. Le receiver cobaye (`railpack-release.sh`, `app-release.yaml`, `release-webhook.py`) a été retiré du homelab.
+`serve` exige `KUBERPACK_BUILDER_IMAGE` et lit uniquement le tag `sha-<commit>`. Le builder ne committe jamais le dépôt GitOps applicatif.

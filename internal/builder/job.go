@@ -30,11 +30,16 @@ var commitPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
 type Request struct {
 	DeliveryID      string
 	CloneURL        string
+	SSHURL          string
 	CommitSHA       string
 	ImageRepository string
 	RegistryUser    string
 	StartCmd        string
 	BuildID         int64
+	SSHPrivateKey   string
+	BuildsGitURL    string
+	AppName         string
+	Environment     string
 }
 
 type Runner interface {
@@ -48,6 +53,7 @@ type JobRunner struct {
 	BuildkitImage  string
 	SecretName     string
 	PullSecretName string
+	BuildsGitURL   string
 	Timeout        time.Duration
 	PollInterval   time.Duration
 }
@@ -159,11 +165,18 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 	if r.Image == "" || r.Client == nil {
 		return nil, fmt.Errorf("builder image and Kubernetes client are required")
 	}
-	if !commitPattern.MatchString(req.CommitSHA) || req.CloneURL == "" || req.ImageRepository == "" || req.RegistryUser == "" {
-		return nil, fmt.Errorf("full lowercase commit SHA, clone URL, image repository and registry user are required")
+	if !commitPattern.MatchString(req.CommitSHA) || req.ImageRepository == "" || req.RegistryUser == "" {
+		return nil, fmt.Errorf("full lowercase commit SHA, image repository and registry user are required")
 	}
-	if !strings.HasPrefix(req.CloneURL, "https://") {
-		return nil, fmt.Errorf("builder clone URL must use HTTPS")
+	cloneURL := req.CloneURL
+	if req.SSHPrivateKey != "" && req.SSHURL != "" {
+		cloneURL = req.SSHURL
+	}
+	if cloneURL == "" {
+		return nil, fmt.Errorf("clone URL is required")
+	}
+	if req.SSHPrivateKey == "" && !strings.HasPrefix(cloneURL, "https://") {
+		return nil, fmt.Errorf("builder clone URL must use HTTPS unless an SSH deploy key is mounted")
 	}
 	namespace := r.Namespace
 	if namespace == "" {
@@ -198,7 +211,24 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 	cacheSize := resource.MustParse("8Gi")
 	workSize := resource.MustParse("8Gi")
 	tmpSize := resource.MustParse("2Gi")
-	requestDigest := sha256.Sum256([]byte(req.CloneURL + "\x00" + req.CommitSHA + "\x00" + req.ImageRepository + "\x00" + req.RegistryUser + "\x00" + req.StartCmd))
+	requestDigest := sha256.Sum256([]byte(cloneURL + "\x00" + req.CommitSHA + "\x00" + req.ImageRepository + "\x00" + req.RegistryUser + "\x00" + req.StartCmd))
+	buildsURL := strings.TrimSpace(req.BuildsGitURL)
+	if buildsURL == "" {
+		buildsURL = strings.TrimSpace(r.BuildsGitURL)
+	}
+	env := []corev1.EnvVar{
+		{Name: "KUBERPACK_CLONE_URL", Value: cloneURL},
+		{Name: "KUBERPACK_COMMIT_SHA", Value: req.CommitSHA},
+		{Name: "KUBERPACK_IMAGE_REPOSITORY", Value: req.ImageRepository},
+		{Name: "KUBERPACK_REGISTRY_USER", Value: req.RegistryUser},
+		{Name: "KUBERPACK_START_CMD", Value: req.StartCmd},
+		{Name: "KUBERPACK_BUILDS_GIT_URL", Value: buildsURL},
+		{Name: "KUBERPACK_APP_NAME", Value: req.AppName},
+		{Name: "KUBERPACK_ENVIRONMENT", Value: req.Environment},
+		{Name: "HOME", Value: "/work"},
+		{Name: "TMPDIR", Value: "/work"},
+		{Name: "TRIVY_CACHE_DIR", Value: "/work/trivy-cache"},
+	}
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:    namespace,
@@ -231,7 +261,7 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 					Containers: []corev1.Container{{
 						Name: "builder", Image: r.Image, ImagePullPolicy: corev1.PullIfNotPresent,
 						Command:         []string{"/usr/bin/kuberpack", "builder"},
-						Env:             []corev1.EnvVar{{Name: "KUBERPACK_CLONE_URL", Value: req.CloneURL}, {Name: "KUBERPACK_COMMIT_SHA", Value: req.CommitSHA}, {Name: "KUBERPACK_IMAGE_REPOSITORY", Value: req.ImageRepository}, {Name: "KUBERPACK_REGISTRY_USER", Value: req.RegistryUser}, {Name: "KUBERPACK_START_CMD", Value: req.StartCmd}, {Name: "HOME", Value: "/work"}, {Name: "TMPDIR", Value: "/work"}, {Name: "TRIVY_CACHE_DIR", Value: "/work/trivy-cache"}},
+						Env:             env,
 						WorkingDir:      "/work",
 						SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: &noEscalation, RunAsNonRoot: &allowEscalation, RunAsUser: &uid, RunAsGroup: &uid, ReadOnlyRootFilesystem: &readOnly, Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},
 						VolumeMounts:    []corev1.VolumeMount{{Name: "buildkit-socket", MountPath: "/run/buildkit"}, {Name: "work", MountPath: "/work"}, {Name: "tmp", MountPath: "/tmp"}, {Name: "tmp", MountPath: "/var/tmp"}, {Name: "secrets", MountPath: "/secrets", ReadOnly: true}},
@@ -249,7 +279,7 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 		},
 	}
 	if req.DeliveryID != "" {
-		id := sha256.Sum256([]byte(req.CloneURL + "\x00" + req.DeliveryID))
+		id := sha256.Sum256([]byte(cloneURL + "\x00" + req.DeliveryID))
 		job.Name = "kuberpack-build-" + hex.EncodeToString(id[:8])
 		job.GenerateName = ""
 	}

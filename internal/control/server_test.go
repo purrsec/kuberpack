@@ -15,6 +15,7 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/forgejo"
 	"git.host.bzh/pepe/kuberpack/internal/hmacsig"
 	"git.host.bzh/pepe/kuberpack/internal/image"
+	"git.host.bzh/pepe/kuberpack/internal/promote"
 	"git.host.bzh/pepe/kuberpack/internal/release"
 	"git.host.bzh/pepe/kuberpack/internal/store"
 )
@@ -252,6 +253,10 @@ func TestCreateAppUnauthorized(t *testing.T) {
 
 func TestCreateAndGetApp(t *testing.T) {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/repos/pepe/hello-world/keys", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": 1, "read_only": true})
+	})
 	mux.HandleFunc("/api/v1/repos/pepe/hello-world", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"full_name": "pepe/hello-world",
@@ -441,6 +446,232 @@ func TestCommitStatusOnBuildFailure(t *testing.T) {
 		}
 	default:
 		t.Fatal("missing failure target_url")
+	}
+}
+
+func TestPullRequestPreviewAndForkDenied(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(filepath.Join(dir, "db.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	secrets := store.SecretsDir(filepath.Join(dir, "secrets"))
+	ctx := context.Background()
+	app, err := st.InsertApp(ctx, store.App{
+		Name:              "hello-world",
+		ForgejoRepository: "pepe/hello-world",
+		ProductionBranch:  "main",
+		Strategy:          "auto",
+		Autodeploy:        true,
+		AutodeployPR:      true,
+		Hostname:          "hello-world.host.bzh",
+		Port:              8080,
+		Healthcheck:       "/",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := secrets.Put(app.ID, "s3cret"); err != nil {
+		t.Fatal(err)
+	}
+	contexts := make(chan string, 8)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/repos/pepe/hello-world/statuses/", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		contexts <- body["context"]
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": 1})
+	})
+	git := httptest.NewServer(mux)
+	t.Cleanup(git.Close)
+	client, err := forgejo.New(git.URL, "tok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.HTTPClient = git.Client()
+	ran := make(chan bool, 1)
+	srv := New(Config{
+		Store:    st,
+		Secrets:  secrets,
+		Client:   client,
+		APIToken: "api",
+		Platform: promote.Platform{PreviewDomain: "preview.host.bzh"},
+		Run: func(ctx context.Context, req release.Request) (release.Result, error) {
+			ran <- req.AllowNonHEAD
+			ref, err := image.Pin("git.host.bzh/pepe/hello-world", req.SHA, "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+			if err != nil {
+				return release.Result{}, err
+			}
+			return release.Result{SHA: req.SHA, Image: ref}, nil
+		},
+	})
+	workerCtx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	srv.Start(workerCtx)
+
+	body := []byte(`{"action":"opened","number":7,"pull_request":{"number":7,"head":{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","repo":{"full_name":"pepe/hello-world","fork":false}},"base":{"repo":{"full_name":"pepe/hello-world"}}},"repository":{"full_name":"pepe/hello-world"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/hooks/forgejo", bytes.NewReader(body))
+	req.Header.Set("X-Gitea-Event", "pull_request")
+	req.Header.Set("X-Gitea-Delivery", "pr-7")
+	req.Header.Set("X-Gitea-Signature", hmacsig.Hex("s3cret", body))
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status %d %s", rec.Code, rec.Body.String())
+	}
+	select {
+	case allow := <-ran:
+		if !allow {
+			t.Fatal("preview must skip production HEAD check")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("preview worker did not run")
+	}
+	deadline := time.After(2 * time.Second)
+	sawPreview := false
+	for !sawPreview {
+		select {
+		case c := <-contexts:
+			if c == forgejo.PreviewContext {
+				sawPreview = true
+			}
+		case <-deadline:
+			t.Fatal("missing kuberpack/preview status")
+		}
+	}
+
+	fork := []byte(`{"action":"opened","number":8,"pull_request":{"number":8,"head":{"sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","repo":{"full_name":"evil/hello-world","fork":true}},"base":{"repo":{"full_name":"pepe/hello-world"}}},"repository":{"full_name":"pepe/hello-world"}}`)
+	forkReq := httptest.NewRequest(http.MethodPost, "/hooks/forgejo", bytes.NewReader(fork))
+	forkReq.Header.Set("X-Gitea-Event", "pull_request")
+	forkReq.Header.Set("X-Gitea-Delivery", "pr-fork")
+	forkReq.Header.Set("X-Gitea-Signature", hmacsig.Hex("s3cret", fork))
+	forkRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(forkRec, forkReq)
+	if forkRec.Code != http.StatusNoContent {
+		t.Fatalf("fork: %d", forkRec.Code)
+	}
+}
+
+func TestPatchDeleteAndListBuilds(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(filepath.Join(dir, "db.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	ctx := context.Background()
+	app, err := st.InsertApp(ctx, store.App{
+		Name: "web", ForgejoRepository: "pepe/web", ProductionBranch: "main",
+		Strategy: "auto", Autodeploy: true, Hostname: "web.example.org", Port: 8080, Healthcheck: "/",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := st.InsertBuild(ctx, store.Build{AppID: app.ID, Environment: "production", CommitSHA: "abc", Status: "running"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.FinishBuild(ctx, id, store.Build{Status: "succeeded", ImageDigest: "sha256:x"}); err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/repos/pepe/web/hooks/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	git := httptest.NewServer(mux)
+	t.Cleanup(git.Close)
+	client, err := forgejo.New(git.URL, "tok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.HTTPClient = git.Client()
+	srv := New(Config{Store: st, Secrets: store.SecretsDir(filepath.Join(dir, "secrets")), Client: client, APIToken: "api"})
+
+	patch := httptest.NewRequest(http.MethodPatch, "/api/v1/apps/web", bytes.NewReader([]byte(`{"autodeploy_pr":true,"port":9090}`)))
+	patch.Header.Set("Authorization", "Bearer api")
+	patchRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(patchRec, patch)
+	if patchRec.Code != http.StatusOK {
+		t.Fatalf("patch %d %s", patchRec.Code, patchRec.Body.String())
+	}
+
+	list := httptest.NewRequest(http.MethodGet, "/api/v1/apps/web/builds", nil)
+	list.Header.Set("Authorization", "Bearer api")
+	listRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(listRec, list)
+	if listRec.Code != http.StatusOK || !strings.Contains(listRec.Body.String(), `"succeeded"`) {
+		t.Fatalf("builds %d %s", listRec.Code, listRec.Body.String())
+	}
+
+	del := httptest.NewRequest(http.MethodDelete, "/api/v1/apps/web", nil)
+	del.Header.Set("Authorization", "Bearer api")
+	delRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(delRec, del)
+	if delRec.Code != http.StatusNoContent {
+		t.Fatalf("delete %d %s", delRec.Code, delRec.Body.String())
+	}
+}
+
+func TestFluxHookMarksRolledBack(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(filepath.Join(dir, "db.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	ctx := context.Background()
+	app, err := st.InsertApp(ctx, store.App{
+		Name: "hello-world", ForgejoRepository: "pepe/hello-world", ProductionBranch: "main",
+		Strategy: "auto", Autodeploy: true, Hostname: "hello-world.host.bzh", Port: 8080, Healthcheck: "/",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := st.InsertBuild(ctx, store.Build{AppID: app.ID, Environment: "production", CommitSHA: "0123456789abcdef0123456789abcdef01234567", Status: "running"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.FinishBuild(ctx, id, store.Build{Status: "succeeded", ImageDigest: "sha256:x"}); err != nil {
+		t.Fatal(err)
+	}
+	states := make(chan string, 2)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/repos/pepe/hello-world/statuses/", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		states <- body["state"]
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": 1})
+	})
+	git := httptest.NewServer(mux)
+	t.Cleanup(git.Close)
+	client, err := forgejo.New(git.URL, "tok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.HTTPClient = git.Client()
+	srv := New(Config{Store: st, Client: client, APIToken: "api", FluxSecret: "flux-secret"})
+	body := []byte(`{"severity":"error","message":"Helm test failed","involvedObject":{"kind":"HelmRelease","name":"hello-world","namespace":"apps"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/hooks/flux", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer flux-secret")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("flux %d %s", rec.Code, rec.Body.String())
+	}
+	select {
+	case state := <-states:
+		if state != forgejo.StatusWarning {
+			t.Fatalf("state %s", state)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("missing warning status")
+	}
+	got, err := st.LatestProductionBuild(ctx, app.ID)
+	if err != nil || got.Status != "rolled_back" {
+		t.Fatalf("%+v %v", got, err)
 	}
 }
 

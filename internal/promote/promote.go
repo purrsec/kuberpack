@@ -74,6 +74,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 				Hostname:    req.Hostname,
 				Port:        req.Port,
 				Healthcheck: req.Healthcheck,
+				Preview:     strings.Contains(filepath.ToSlash(req.ValuesPath), "/previews/"),
 			})
 			if err != nil {
 				return Result{}, fmt.Errorf("read values %s: %w", req.ValuesPath, err)

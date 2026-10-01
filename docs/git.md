@@ -6,18 +6,19 @@ Le produit doit, sans fichier dans le dépôt applicatif :
 
 1. lire le dépôt (`GET /repos/{owner}/{repo}`) ;
 2. créer un hook JSON `push` + `pull_request` s’il n’existe pas ;
-3. créer une clé de deploy SSH **read-only** ;
+3. créer une clé de deploy SSH **read-only** (à l’enregistrement) ;
 4. extraire le SHA (`after` sur push, `pull_request.head.sha` sur PR) ;
 5. lister branches et pull requests ;
-6. publier un commit status (`POST /repos/{owner}/{repo}/statuses/{sha}`), contexte `kuberpack/production` : `pending` au build, `success` avec `target_url` du hostname après promote, `failure` si le build ou le scan échoue. Ce n’est pas un commit dans le dépôt app.
+6. publier un commit status : contexte `kuberpack/production` (prod) ou `kuberpack/preview` (PR). `target_url` : hostname, commit d’échec, ou commit d’archive de build si configuré.
 
-## Identité de test
+## Identités
 
-Un PAT utilisateur unique : `FORGEJO_TOKEN` avec `write:repository` (clone + commit GitOps). `write:package` n’est pas requis sur ce jeton — c’est le Job k3s qui pousse l’image.
+Un PAT control plane (`FORGEJO_TOKEN`) pour API + GitOps. Des jetons builder dédiés (`kuberpack-builder-git-token`, `kuberpack-builder-registry-token`) dans Infisical, pas dans SQLite. La clone des apps se fait de préférence par la clé SSH read-only créée à l’enregistrement.
 
 ```text
 FORGEJO_URL=https://git.host.bzh
-FORGEJO_TOKEN=<pat>
+FORGEJO_TOKEN=<pat write:repository>
+KUBERPACK_BUILDS_GIT_URL=https://git.host.bzh/pepe/kuberpack-builds.git
 ```
 
 Création : Forgejo → Paramètres → Applications → générer un jeton, case `write:repository`.
@@ -30,7 +31,7 @@ Ne pas re-sérialiser le JSON pour calculer la signature. Les implémentations q
 
 ## Inspiration, pas dépendance
 
-Kubero a déjà enchaîné dépôt Gitea → clé read-only → webhook → reconstruction de l'application. Son rebuild automatique transmet la branche configurée au fetcher ; Kuberpack doit, lui, transmettre le SHA exact de l'événement jusqu'au builder.
+Kubero a déjà enchaîné dépôt Gitea → clé read-only → webhook → reconstruction. Kuberpack n’est pas un client Kubero : SHA exact jusqu’au builder, HMAC sur le body brut, promotion Git par digest.
 
 On ne reprend pas : operator, CRD, UI, Nixpacks, Buildah, patch in-cluster de l’application, HMAC basé sur un JSON reformaté.
 

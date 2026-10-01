@@ -23,7 +23,7 @@ Le CLI, le chart et le contrat sont ici. Ce qui est réellement implémenté : [
 | [API](docs/api.md) | Contrat HTTP |
 | [Données](docs/data-model.md) | SQLite opérationnel |
 | [Builder](docs/builder.md) | Stratégies, tags, scans |
-| [Stratégies de build](docs/strategies.md) | Analyse du code Kubero et contrat proposé |
+| [Stratégies de build](docs/strategies.md) | `auto` / `uv` / `railpack` : Railpack exécute toujours |
 | [Sécurité](docs/security.md) | Tokens, webhooks, runtime |
 | [Erreurs](docs/errors.md) | Comportement en échec |
 | [Git Forgejo](docs/git.md) | Contrat API repris de l’écosystème Gitea |
@@ -63,4 +63,4 @@ export KUBERPACK_API_TOKEN=$FORGEJO_TOKEN
 
 ## État
 
-Voir [docs/status.md](docs/status.md). En une ligne : hello-world et wattchman-website passent par Kuberpack (webhook → Job → GitOps → Flux). Le receiver cobaye est retiré.
+Voir [docs/status.md](docs/status.md). En une ligne : webhook → Job Railpack → pin digest → Flux, avec previews PR, `rolled_back` via notification Flux, et archive de build optionnelle.

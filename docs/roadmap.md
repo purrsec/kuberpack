@@ -9,12 +9,12 @@ Une app enregistrée sans toucher à son dépôt. Un push construit une image sc
 1. **Promotion Git** — `kuberpack trigger` attend le digest et `promote` pin `sha-<commit>@sha256:…`. Le builder k3s est le chemin produit.
 2. **Chart Helm stateless** — probes, test, `remediation.rollback`. Le stateful reste hors chart.
 3. **Control plane** — `serve` : SQLite, HMAC, `POST /api/v1/apps`, file. Pas encore d’image k3s.
-4. **Previews** — branche générée, `prune: true`, GC.
-5. **UX** — CLI ou UI : liste, logs, redeploy, rollback.
+4. **Previews** — branche générée, `prune: true`, GC. Implémenté côté control plane.
+5. **UX** — CLI ou UI : liste, redeploy ; logs UI hors `serve`.
 
 ## Plus tard
 
-Couverture de langages au-delà de Railpack et `uv`. Jobs k3s à la place d’un workflow Git. Namespace par preview. Revert Git après rollback Helm. Progressive delivery.
+Jobs k3s à la place d’un workflow Git (déjà le chemin produit). Namespace par preview. Revert Git après rollback Helm. Progressive delivery. Pins `sha-<commit>` pour les images Kuberpack elles-mêmes.
 
 ## Décisions produit
 

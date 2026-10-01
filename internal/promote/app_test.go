@@ -38,6 +38,10 @@ func TestEnsureAppWritesContractAndPromoteEnablesFlux(t *testing.T) {
 	if !strings.Contains(readFile(t, clone, "kubernetes/vps/apps/site/helmrelease.yaml"), "name: site") {
 		t.Fatal("missing helmrelease")
 	}
+	hr := readFile(t, clone, "kubernetes/vps/apps/site/helmrelease.yaml")
+	if !strings.Contains(hr, "enable: true") || !strings.Contains(hr, "strategy: rollback") {
+		t.Fatalf("HelmRelease must enable tests and rollback:\n%s", hr)
+	}
 	parent := readFile(t, clone, "kubernetes/vps/apps/kustomization.yaml")
 	if listedInKustomization([]byte(parent), "site") {
 		t.Fatal("Flux must not see the app before an image pin")
@@ -128,6 +132,10 @@ func TestListedInKustomization(t *testing.T) {
 	out := appendKustomizationResource(raw, "site")
 	if !listedInKustomization(out, "site") {
 		t.Fatalf("append failed:\n%s", out)
+	}
+	out = removeKustomizationResource(out, "site")
+	if listedInKustomization(out, "site") {
+		t.Fatal("remove failed")
 	}
 }
 

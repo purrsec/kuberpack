@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -82,6 +83,20 @@ func TestAppsAndDeliveries(t *testing.T) {
 	if _, err := s.SucceededBuildByCommit(ctx, app.ID, "ffff"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing: %v", err)
 	}
+	if err := s.MarkRolledBack(ctx, id, "helm test failed"); err != nil {
+		t.Fatal(err)
+	}
+	builds, err := s.ListBuilds(ctx, app.ID)
+	if err != nil || len(builds) != 1 || builds[0].Status != "rolled_back" {
+		t.Fatalf("%+v %v", builds, err)
+	}
+	if err := s.UpsertPreview(ctx, Preview{AppID: app.ID, PullRequest: 4, HeadSHA: "abc", Hostname: "pr-4.web.example.org", Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	prev, err := s.Preview(ctx, app.ID, 4)
+	if err != nil || prev.Hostname != "pr-4.web.example.org" {
+		t.Fatalf("%+v %v", prev, err)
+	}
 }
 
 func TestSecretsDir(t *testing.T) {
@@ -92,5 +107,12 @@ func TestSecretsDir(t *testing.T) {
 	got, err := d.Get(3)
 	if err != nil || got != "s3cret" {
 		t.Fatalf("%q %v", got, err)
+	}
+	if err := d.PutDeployKey(3, "-----BEGIN OPENSSH PRIVATE KEY-----\n"); err != nil {
+		t.Fatal(err)
+	}
+	key, err := d.GetDeployKey(3)
+	if err != nil || !strings.Contains(key, "OPENSSH") {
+		t.Fatalf("%q %v", key, err)
 	}
 }

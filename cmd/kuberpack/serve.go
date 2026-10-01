@@ -55,6 +55,7 @@ func runServe(args []string) error {
 		runner.Namespace = getenv("KUBERPACK_BUILDER_NAMESPACE", "kuberpack-build")
 		runner.SecretName = getenv("KUBERPACK_BUILDER_SECRET", "kuberpack-builder")
 		runner.PullSecretName = getenv("KUBERPACK_BUILDER_PULL_SECRET", "kuberpack-builder-pull")
+		runner.BuildsGitURL = strings.TrimSpace(os.Getenv("KUBERPACK_BUILDS_GIT_URL"))
 		runner.Timeout = *waitFor
 		jobBuilder = runner
 	}
@@ -78,6 +79,8 @@ func runServe(args []string) error {
 		ChartPath:    *chartPath,
 		Platform:     platformFromEnv(),
 		Wait:         *waitFor,
+		BuildsGitURL: strings.TrimSpace(os.Getenv("KUBERPACK_BUILDS_GIT_URL")),
+		FluxSecret:   strings.TrimSpace(os.Getenv("KUBERPACK_FLUX_WEBHOOK_SECRET")),
 	})
 	srv.Start(ctx)
 
@@ -105,6 +108,7 @@ func platformFromEnv() promote.Platform {
 		TraefikEntrypoint:   getenv("KUBERPACK_TRAEFIK_ENTRYPOINT", "websecure"),
 		TraefikCertResolver: getenv("KUBERPACK_CERT_RESOLVER", "letsencrypt"),
 		NetworkPolicy:       getenvBool("KUBERPACK_NETWORK_POLICY", true),
+		PreviewDomain:       getenv("KUBERPACK_PREVIEW_DOMAIN", "preview.host.bzh"),
 	}
 }
 

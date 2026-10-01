@@ -2,7 +2,6 @@ package oci
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -65,21 +64,14 @@ func TestDigestForCommitPrefersProductTag(t *testing.T) {
 	}
 }
 
-func TestDigestForCommitCobayeTag(t *testing.T) {
+func TestDigestForCommitRequiresProductTag(t *testing.T) {
 	sha := "d45ace010726ffffffffffffffffffffffffffff"
-	cobaye := "main-1413-d45ace010726"
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v2/pepe/hello-world/manifests/"+TagForCommit(sha), func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	})
-	mux.HandleFunc("/v2/pepe/hello-world/manifests/"+cobaye, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Docker-Content-Digest", testDigest)
-		w.WriteHeader(http.StatusOK)
-	})
 	mux.HandleFunc("/v2/pepe/hello-world/tags/list", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"tags": []string{"buildcache", cobaye, "main-1400-deadbeefdead"},
-		})
+		t.Fatal("must not fall back to other tags")
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -88,12 +80,8 @@ func TestDigestForCommitCobayeTag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := reg.DigestForCommit(context.Background(), "pepe/hello-world", sha)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != testDigest {
-		t.Fatalf("got %q", got)
+	if _, err := reg.DigestForCommit(context.Background(), "pepe/hello-world", sha); !IsNotFound(err) {
+		t.Fatalf("got %v", err)
 	}
 }
 

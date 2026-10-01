@@ -1,33 +1,25 @@
-# État du code (pas le contrat produit)
+# État du code
 
 Les autres pages de `docs/` décrivent **le produit visé**. Cette page décrit **ce qui est implémenté**.
 
 ## Fait
 
-- CLI `kuberpack` : `promote`, `trigger` (pipeline digest → GitOps), `serve` (control plane HTTP), `builder` (worker du Job k3s).
-- `POST /api/v1/apps`, `GET /api/v1/apps`, webhook `POST /hooks/forgejo` (HMAC SHA-256, dédup, file SQLite).
-- SQLite WAL + secrets HMAC en fichiers (`--data`). Pas de secret dans SQLite.
-- Chart Helm `charts/stateless`.
-- Client Forgejo : repo, branche, création de webhook. Plus de `workflow_dispatch`.
-- Control plane et builder déployés par Flux sur le mini-pc (`kubernetes/kuberpack`, Kustomization enfant `wait: false`). Ingress `https://kuberpack.host.bzh/`. Token API Infisical `KUBERPACK_TOKEN`. `KUBERPACK_BUILDER_IMAGE` est obligatoire.
-- Builder Railpack en Job k3s (`kuberpack-build`), sidecar BuildKit rootless, Trivy, Syft, push `sha-<commit>`.
-- `POST /api/v1/apps` écrit le contrat GitOps (`values.yaml`, HelmRelease, kustomization d’app). Flux n’est activé (entrée dans le kustomization parent) qu’après le premier digest. Ensuite seul `image` change. Les fichiers existants ne sont pas écrasés.
-- Cobaye `pepe/hello-world` enregistré, webhook Forgejo vers `https://kuberpack.host.bzh/hooks/forgejo`.
-- Trajet **webhook → control plane → Job → commit GitOps → Flux** prouvé : push `f10cf296` (`n: 4`) → Job `kuberpack-build-736ffeb3f6e1d4bb` Complete → pin `git.host.bzh/pepe/hello-world:sha-f10cf296ea2c210d374847d1368d0ef9c848664c@sha256:127130f2edce05a906342bba4700c43b9718a6fb81891b6af62398308d92de02` (commit GitOps `fc2727ab`) → HelmRelease `hello-world` v14 Ready → `https://hello-world.host.bzh/` répond `{"app":"flask-uv","n":4,"via":"kuberpack"}`, `/healthz` 200.
-- Un Job antérieur lancé à la main (`kuberpack-build-7fc1ad70955cc0e2`) avait déjà construit et servi une image ; ce n’était pas le trajet webhook.
-- `wattchman-website` enregistré (id 2, webhook Forgejo id 4). Job `kuberpack-build-a6687b543e14ceaf` Complete → pin `git.host.bzh/pepe/wattchman-website:sha-e3502759279d3a58057e7f8868a099589da6a9c8@sha256:aeb6cd9d9d4cba404b15f1a991b89c89fca0aee8abaa1dfc6e5cb66e09b85486` (commit GitOps `d6678d5`) → HelmRelease `wattchman-website` Ready → `https://test-stagging.host.bzh/` 200.
-- Receiver cobaye, workflow `app-release.yaml` et `railpack-release.sh` retirés (commit GitOps `5f084da`). Hook Forgejo `release-webhook.host.bzh` supprimé. Le namespace `wattchman` reste pour Infisical. `wattchman.fr` est encore Railway.
-- Commit status Forgejo `kuberpack/production` : `pending` au webhook, `success` (URL du hostname) après promote, `failure` si le build échoue. Un échec de l’API status n’annule pas le déploiement.
-- `track` dans `values.yaml` : `main` suit les pushes ; un SHA gèle la prod et réutilise le digest déjà publié (pas de rebuild).
+- CLI `kuberpack` : `promote`, `trigger`, `serve`, `builder`.
+- HTTP : `POST/GET/PATCH/DELETE /api/v1/apps`, `GET /api/v1/apps/{name}/builds`, `POST /api/v1/apps/{name}/redeploy`, webhook Forgejo (`push` + `pull_request`), webhook Flux (`POST /hooks/flux`) pour `rolled_back`.
+- SQLite WAL + secrets HMAC et clé SSH de deploy en fichiers (`--data`). Pas de secret dans SQLite.
+- Chart Helm `charts/stateless` avec Helm test HTTP. Les HelmRelease générées ont `test.enable: true` et `upgrade.remediation.strategy: rollback`.
+- Préviews `autodeploy_pr` : branche GitOps `previews`, release `<app>-pr-<n>`, hôte `pr-<n>.<app>.<preview-domain>`, forks refusés, GC TTL, statut Forgejo `kuberpack/preview`.
+- Builder Railpack (Job k3s) : sidecar BuildKit rootless, Trivy, Syft, tag `sha-<commit>` uniquement. `uv` n’est pas un exécuteur séparé ; Railpack consomme `uv.lock`.
+- Archive de build optionnelle : `KUBERPACK_BUILDS_GIT_URL` (no-op si vide). Ce dépôt ne doit jamais être une source Flux.
+- Identité d’image : digest. GitOps ne réécrit que `image` + `track` humain.
+- `track` : `main` suit les pushes ; un SHA gèle la prod et réutilise le digest publié.
 
-## Pas fait
+## Pas fait / hors ce dépôt
 
-- Publication durable des SBOM Syft et des logs de build (produits dans le Job, perdus à sa fin / TTL 24 h).
-- Tags durables pour les images Kuberpack (control plane et builder portent encore des tags `test-*`).
-- Clé de deploy SSH read-only à l’enregistrement.
-- Tests Helm en prod, previews, UX.
-- Exécuteur `uv` dédié : Railpack construit déjà le cobaye Python avec `uv`.
-- Tokens builder dédiés : les Jobs montent encore les secrets Infisical cobaye `app-builder-git-token` et `app-builder-registry-token`.
+- CLI/UI au-delà de HTTP (phase 5).
+- Publication live des images control plane/builder sous `sha-<commit>` (les pins GitOps homelab portent encore des tags `test-*` jusqu’à la prochaine publication).
+- `wattchman.fr` est encore Railway (hors kuberpack).
+- UI de logs sur `serve` : hors produit.
 
 ## Hors arbre git
 

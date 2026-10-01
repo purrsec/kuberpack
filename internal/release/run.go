@@ -42,7 +42,11 @@ type Request struct {
 	RegistryUser    string
 	Wait            time.Duration
 	SkipPromote     bool
+	AllowNonHEAD    bool
 	KnownDigest     string
+	SSHPrivateKey   string
+	BuildsGitURL    string
+	Environment     string
 	Log             func(string, ...any)
 }
 
@@ -96,8 +100,15 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	}
 	defer os.RemoveAll(parent)
 	dest := filepath.Join(parent, "src")
-
-	if err := fetch.Checkout(ctx, repo.CloneURL, sha, dest, fetch.TokenHeaderArgs(req.Token)); err != nil {
+	if req.SSHPrivateKey != "" && repo.SSHURL != "" {
+		keyFile := filepath.Join(parent, "id_ed25519")
+		if err := os.WriteFile(keyFile, []byte(req.SSHPrivateKey), 0o600); err != nil {
+			return Result{}, fail.Stage(fail.Clone, err)
+		}
+		if err := fetch.CheckoutWithSSH(ctx, repo.SSHURL, sha, dest, keyFile); err != nil {
+			return Result{}, fail.Stage(fail.Clone, err)
+		}
+	} else if err := fetch.Checkout(ctx, repo.CloneURL, sha, dest, fetch.TokenHeaderArgs(req.Token)); err != nil {
 		return Result{}, fail.Stage(fail.Clone, err)
 	}
 	plan, err := strategy.Resolve(dest, kind)
@@ -115,8 +126,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		if err := strategy.CheckLock(dest); err != nil {
 			return Result{}, fail.Stage(fail.Strategy, err)
 		}
-		log("uv executor not implemented; building with railpack")
-		plan.Kind = strategy.Railpack
+		log("uv.lock present; Railpack consumes the lockfile")
 	}
 
 	ociRepo, err := ImageRepository(req.ImageRepository, req.Client.BaseURL, req.Owner, req.Name)
@@ -124,19 +134,28 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		return Result{}, fail.Stage(fail.Image, err)
 	}
 
-	switch plan.Kind {
-	case strategy.Railpack:
-		if req.Builder == nil {
-			return Result{}, fail.Text(fail.Job, "builder image is not configured")
-		}
-		log("submitting Kubernetes build Job for %s", sha)
-		if err := req.Builder.Build(ctx, builder.Request{CloneURL: repo.CloneURL, CommitSHA: sha, ImageRepository: ociRepo, RegistryUser: req.Owner, StartCmd: req.StartCmd, BuildID: req.BuildID, DeliveryID: req.DeliveryID}); err != nil {
-			return Result{}, fail.Stage(fail.Job, err)
-		}
-		log("Kubernetes build Job completed")
-	default:
-		return Result{}, fail.Text(fail.Job, "no builder configured")
+	if req.Builder == nil {
+		return Result{}, fail.Text(fail.Job, "builder image is not configured")
 	}
+	log("submitting Kubernetes build Job for %s", sha)
+	buildReq := builder.Request{
+		CloneURL:        repo.CloneURL,
+		SSHURL:          repo.SSHURL,
+		CommitSHA:       sha,
+		ImageRepository: ociRepo,
+		RegistryUser:    req.Owner,
+		StartCmd:        req.StartCmd,
+		BuildID:         req.BuildID,
+		DeliveryID:      req.DeliveryID,
+		SSHPrivateKey:   req.SSHPrivateKey,
+		BuildsGitURL:    req.BuildsGitURL,
+		AppName:         req.Name,
+		Environment:     req.Environment,
+	}
+	if err := req.Builder.Build(ctx, buildReq); err != nil {
+		return Result{}, fail.Stage(fail.Job, err)
+	}
+	log("Kubernetes build Job completed")
 
 	_, ociName, err := oci.SplitRepository(ociRepo)
 	if err != nil {
@@ -163,12 +182,14 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	log("digest: %s", ref.Digest)
 	log("image: %s", ref.String())
 
-	head, err := req.Client.BranchSHA(ctx, req.Owner, req.Name, req.Branch)
-	if err != nil {
-		return Result{}, fail.Stage(fail.Clone, err)
-	}
-	if head != sha {
-		return Result{}, fail.Text(fail.GitOps, "commit is no longer branch HEAD")
+	if !req.AllowNonHEAD {
+		head, err := req.Client.BranchSHA(ctx, req.Owner, req.Name, req.Branch)
+		if err != nil {
+			return Result{}, fail.Stage(fail.Clone, err)
+		}
+		if head != sha {
+			return Result{}, fail.Text(fail.GitOps, "commit is no longer branch HEAD")
+		}
 	}
 
 	result := Result{SHA: sha, Image: ref}

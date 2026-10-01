@@ -10,8 +10,7 @@ import (
 	"path/filepath"
 )
 
-// Frontend is the BuildKit frontend pinned in the homelab builder.
-// Same digest as kubernetes/ci/railpack-release.sh.
+// Frontend is the BuildKit frontend used by the k3s builder Job.
 const Frontend = "ghcr.io/railwayapp/railpack-frontend:v0.39.0@sha256:db24dc37640b6887c3d455b40876ea30f75182964479670cba6e4cde7ffef103"
 
 const transientExit = 75

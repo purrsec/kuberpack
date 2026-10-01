@@ -18,6 +18,7 @@ type AppSpec struct {
 	Port        int
 	Healthcheck string
 	Replicas    int
+	Preview     bool
 }
 
 // EnsureRequest creates GitOps files for a new app. It does not enable Flux
@@ -139,7 +140,11 @@ func normalizeSpec(spec AppSpec) (AppSpec, error) {
 		spec.Healthcheck = "/" + spec.Healthcheck
 	}
 	if spec.Replicas <= 0 {
-		spec.Replicas = 1
+		if spec.Preview {
+			spec.Replicas = 1
+		} else {
+			spec.Replicas = 1
+		}
 	}
 	return spec, nil
 }
@@ -178,9 +183,14 @@ func enableInParent(work string, name string, p Platform) (bool, error) {
 	path := filepath.Join(work, filepath.FromSlash(p.ParentPath()))
 	raw, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return false, nil
-	}
-	if err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return false, err
+		}
+		raw = []byte("apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n")
+		if err := os.WriteFile(path, raw, 0o644); err != nil {
+			return false, err
+		}
+	} else if err != nil {
 		return false, fmt.Errorf("read %s: %w", p.ParentPath(), err)
 	}
 	if listedInKustomization(raw, name) {
@@ -233,6 +243,15 @@ func valuesYAML(spec AppSpec, p Platform) string {
 	} else {
 		b.WriteString("  enabled: false\n")
 	}
+	if spec.Preview {
+		b.WriteString("resources:\n")
+		b.WriteString("  requests:\n")
+		b.WriteString("    cpu: 25m\n")
+		b.WriteString("    memory: 32Mi\n")
+		b.WriteString("  limits:\n")
+		b.WriteString("    cpu: 200m\n")
+		b.WriteString("    memory: 128Mi\n")
+	}
 	return b.String()
 }
 
@@ -269,7 +288,7 @@ spec:
       strategy: rollback
       remediateLastFailure: true
   test:
-    enable: false
+    enable: true
 `, spec.Name, p.ReleaseNamespace, p.ChartRef, p.SourceName, p.SourceNamespace, spec.Name)
 }
 

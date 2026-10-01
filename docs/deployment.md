@@ -26,5 +26,9 @@ docker run --rm -p 8080:8080 \
   git.host.bzh/pepe/kuberpack:dev
 ```
 
-Ne pas coller Kuberpack dans le Kustomization mini-pc `wait: true`. Le déploiement GitOps est `kubernetes/kuberpack` réconcilié par Flux `kuberpack` (`wait: false`). Images actuellement pinnées par digest sous des tags `test-*`, ingress `https://kuberpack.host.bzh/`, webhook `https://kuberpack.host.bzh/hooks/forgejo`. API : `Authorization: Bearer` avec le token Infisical `KUBERPACK_TOKEN`. Pas d’Authelia (HMAC + bearer).
+Ne pas coller Kuberpack dans le Kustomization mini-pc `wait: true`. Le déploiement GitOps est `kubernetes/kuberpack` réconcilié par Flux `kuberpack` (`wait: false`). Pinner control plane et builder comme les apps : `sha-<commit>@sha256:…` (pas de tag `test-*` pour une nouvelle publication). Ingress `https://kuberpack.host.bzh/`, webhook `https://kuberpack.host.bzh/hooks/forgejo`. API : `Authorization: Bearer` (`KUBERPACK_API_TOKEN`). Pas d’Authelia (HMAC + bearer).
+
+Tokens builder dédiés (Infisical → Secret `kuberpack-builder`) : `kuberpack-builder-git-token` (clone HTTPS de secours / archive git) et `kuberpack-builder-registry-token` (`write:package`). Ce ne sont pas le PAT du control plane. À l’enregistrement, Kuberpack pose une clé SSH read-only sur le dépôt app.
+
+Archive de builds : `KUBERPACK_BUILDS_GIT_URL` (dépôt dédié, jamais une source Flux). Secret Flux vers Kuberpack : `KUBERPACK_FLUX_WEBHOOK_SECRET`. Previews : `KUBERPACK_PREVIEW_DOMAIN` (défaut `preview.host.bzh`).
 

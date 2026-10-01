@@ -84,8 +84,8 @@ spec:
       template:
         engineVersion: v1
         data:
-          git-token: '{{ (index . "app-builder-git-token").Value }}'
-          registry-token: '{{ (index . "app-builder-registry-token").Value }}'
+          git-token: '{{ (index . "kuberpack-builder-git-token").Value }}'
+          registry-token: '{{ (index . "kuberpack-builder-registry-token").Value }}'
     - kind: Secret
       name: kuberpack-builder-pull
       namespace: kuberpack-build
@@ -95,7 +95,7 @@ spec:
         engineVersion: v1
         data:
           .dockerconfigjson: |
-            {"auths":{"git.host.bzh":{"username":"pepe","password":"{{ (index . "app-builder-registry-token").Value }}"}}}
+            {"auths":{"git.host.bzh":{"username":"pepe","password":"{{ (index . "kuberpack-builder-registry-token").Value }}"}}}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

@@ -174,6 +174,38 @@ func (c *Client) EnsureHook(ctx context.Context, owner, repo, hookURL, secret st
 	return c.CreateHook(ctx, owner, repo, hookURL, secret)
 }
 
+func (c *Client) DeleteHook(ctx context.Context, owner, repo string, id int64) error {
+	if id <= 0 {
+		return nil
+	}
+	path := "/api/v1/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/hooks/" + fmt.Sprint(id)
+	return c.do(ctx, http.MethodDelete, path, nil, http.StatusNoContent, http.StatusOK, http.StatusNotFound)
+}
+
+type DeployKey struct {
+	ID       int64  `json:"id"`
+	Title    string `json:"title"`
+	Key      string `json:"key"`
+	ReadOnly bool   `json:"read_only"`
+}
+
+func (c *Client) CreateDeployKey(ctx context.Context, owner, repo, title, publicKey string) (DeployKey, error) {
+	body, err := json.Marshal(map[string]any{
+		"title":     title,
+		"key":       strings.TrimSpace(publicKey),
+		"read_only": true,
+	})
+	if err != nil {
+		return DeployKey{}, err
+	}
+	var key DeployKey
+	path := "/api/v1/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/keys"
+	if err := c.doJSON(ctx, http.MethodPost, path, body, &key, http.StatusCreated, http.StatusOK); err != nil {
+		return DeployKey{}, err
+	}
+	return key, nil
+}
+
 func (c *Client) get(ctx context.Context, path string, dest any) error {
 	return c.doJSON(ctx, http.MethodGet, path, nil, dest, http.StatusOK)
 }

@@ -18,6 +18,7 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/hmacsig"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
 	"git.host.bzh/pepe/kuberpack/internal/release"
+	"git.host.bzh/pepe/kuberpack/internal/sshkey"
 	"git.host.bzh/pepe/kuberpack/internal/store"
 	"git.host.bzh/pepe/kuberpack/internal/strategy"
 )
@@ -37,6 +38,9 @@ type Config struct {
 	ChartPath    string
 	Platform     promote.Platform
 	Wait         time.Duration
+	PreviewTTL   time.Duration
+	BuildsGitURL string
+	FluxSecret   string
 	Run          func(context.Context, release.Request) (release.Result, error)
 	GitOpsFile   func(context.Context, store.App) ([]byte, error)
 }
@@ -53,6 +57,9 @@ func New(cfg Config) *Server {
 	if cfg.Wait <= 0 {
 		cfg.Wait = 15 * time.Minute
 	}
+	if cfg.PreviewTTL <= 0 {
+		cfg.PreviewTTL = 72 * time.Hour
+	}
 	return &Server{cfg: cfg, wake: make(chan struct{}, 1)}
 }
 
@@ -62,7 +69,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/apps", s.withAPI(s.createApp))
 	mux.HandleFunc("GET /api/v1/apps", s.withAPI(s.listApps))
 	mux.HandleFunc("GET /api/v1/apps/{name}", s.withAPI(s.getApp))
+	mux.HandleFunc("PATCH /api/v1/apps/{name}", s.withAPI(s.patchApp))
+	mux.HandleFunc("DELETE /api/v1/apps/{name}", s.withAPI(s.deleteApp))
+	mux.HandleFunc("GET /api/v1/apps/{name}/builds", s.withAPI(s.listBuilds))
+	mux.HandleFunc("POST /api/v1/apps/{name}/redeploy", s.withAPI(s.redeployApp))
 	mux.HandleFunc("POST /hooks/forgejo", s.webhook)
+	mux.HandleFunc("POST /hooks/flux", s.fluxHook)
 	return mux
 }
 
@@ -190,6 +202,16 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 	if err := s.cfg.Secrets.Put(app.ID, secret); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if pair, err := sshkey.Generate(); err == nil {
+		if err := s.cfg.Secrets.PutDeployKey(app.ID, pair.PrivatePEM); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if _, err := s.cfg.Client.CreateDeployKey(r.Context(), owner, repoName, "kuberpack", pair.Public); err != nil {
+			http.Error(w, "created app but deploy key failed: "+err.Error(), http.StatusBadGateway)
+			return
+		}
 	}
 
 	resp := appJSON(app)
@@ -330,46 +352,14 @@ func (s *Server) webhook(w http.ResponseWriter, r *http.Request) {
 	if event == "" {
 		event = "push"
 	}
-	if event != "push" {
+	switch event {
+	case "push":
+		s.queuePush(w, r, app, payload, body)
+	case "pull_request":
+		s.queuePullRequest(w, r, app, body)
+	default:
 		w.WriteHeader(http.StatusNoContent)
-		return
 	}
-	if !app.Autodeploy || payload.Deleted || payload.After == "" || strings.Trim(payload.After, "0") == "" {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	wantRef := "refs/heads/" + app.ProductionBranch
-	if payload.Ref != wantRef {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-
-	delivery := hmacsig.DeliveryID(r.Header)
-	if delivery == "" {
-		delivery = event + "-" + payload.After
-	}
-	err = s.cfg.Store.InsertDelivery(r.Context(), store.Delivery{
-		ID:        delivery,
-		AppID:     app.ID,
-		EventType: event,
-		Action:    payload.Action,
-		CommitSHA: strings.ToLower(payload.After),
-		Status:    "queued",
-	})
-	if errors.Is(err, store.ErrDuplicate) {
-		writeJSON(w, http.StatusAccepted, map[string]string{"status": "duplicate"})
-		return
-	}
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	owner, name, parseErr := forgejo.ParseOwnerName(app.ForgejoRepository)
-	if parseErr == nil {
-		s.publishCommitStatus(r.Context(), owner, name, payload.After, forgejo.StatusPending, "Building", app, false)
-	}
-	s.kick()
-	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
 }
 
 func (s *Server) kick() {
@@ -385,6 +375,7 @@ func (s *Server) worker(ctx context.Context) {
 	for {
 		s.drain(ctx)
 		s.alignTracks(ctx)
+		s.gcPreviews(ctx)
 		select {
 		case <-ctx.Done():
 			return
@@ -417,6 +408,14 @@ func (s *Server) process(ctx context.Context, d store.Delivery) {
 		log.Printf("kuberpack delivery %s: %v", d.ID, err)
 		return
 	}
+	if d.EventType == "pull_request" {
+		s.processPreview(ctx, d)
+		return
+	}
+	s.processProduction(ctx, d)
+}
+
+func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 	app, err := s.cfg.Store.AppByID(ctx, d.AppID)
 	if err != nil {
 		_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", err.Error())
@@ -438,41 +437,49 @@ func (s *Server) process(ctx context.Context, d store.Delivery) {
 		_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", err.Error())
 		return
 	}
-	s.publishCommitStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusPending, "Building", app, false)
+	s.publishStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusPending, "Building", forgejo.ProductionContext, appTargetURL(app))
 
 	track := s.trackFor(ctx, app)
 	skipPromote := !track.FollowsMain() && !track.MatchesCommit(d.CommitSHA)
+	sshKey, _ := s.cfg.Secrets.GetDeployKey(app.ID)
 
 	result, runErr := s.cfg.Run(ctx, release.Request{
-		Builder:      s.cfg.Builder,
-		BuildID:      buildID,
-		DeliveryID:   d.ID,
-		Client:       s.cfg.Client,
-		Token:        s.cfg.Token,
-		Owner:        owner,
-		Name:         name,
-		Branch:       app.ProductionBranch,
-		SHA:          d.CommitSHA,
-		Strategy:     app.Strategy,
-		StartCmd:     app.StartCommand,
-		GitOpsURL:    s.cfg.GitOpsURL,
-		GitOpsBranch: s.cfg.GitOpsBranch,
-		ChartPath:    s.cfg.ChartPath,
-		Hostname:     app.Hostname,
-		Port:         app.Port,
-		Healthcheck:  app.Healthcheck,
-		Platform:     s.cfg.Platform,
-		Wait:         s.cfg.Wait,
-		SkipPromote:  skipPromote,
-		Log:          func(format string, args ...any) { log.Printf(format, args...) },
+		Builder:       s.cfg.Builder,
+		BuildID:       buildID,
+		DeliveryID:    d.ID,
+		Client:        s.cfg.Client,
+		Token:         s.cfg.Token,
+		Owner:         owner,
+		Name:          name,
+		Branch:        app.ProductionBranch,
+		SHA:           d.CommitSHA,
+		Strategy:      app.Strategy,
+		StartCmd:      app.StartCommand,
+		GitOpsURL:     s.cfg.GitOpsURL,
+		GitOpsBranch:  s.cfg.GitOpsBranch,
+		ChartPath:     s.cfg.ChartPath,
+		Hostname:      app.Hostname,
+		Port:          app.Port,
+		Healthcheck:   app.Healthcheck,
+		Platform:      s.cfg.Platform,
+		Wait:          s.cfg.Wait,
+		SkipPromote:   skipPromote,
+		SSHPrivateKey: sshKey,
+		BuildsGitURL:  s.cfg.BuildsGitURL,
+		Environment:   "production",
+		Log:           func(format string, args ...any) { log.Printf(format, args...) },
 	})
-	finished := store.Build{Status: "succeeded"}
+	finished := store.Build{Status: "succeeded", ArchiveURL: archiveURL(s.cfg.BuildsGitURL, name, d.CommitSHA)}
 	if runErr != nil {
 		finished.Status = "failed"
 		finished.Error = runErr.Error()
 		_ = s.cfg.Store.FinishBuild(ctx, buildID, finished)
 		_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", runErr.Error())
-		s.publishCommitStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusFailure, runErr.Error(), app, true)
+		target := finished.ArchiveURL
+		if target == "" {
+			target = commitURL(s.cfg.Client.BaseURL, owner, name, d.CommitSHA)
+		}
+		s.publishStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusFailure, runErr.Error(), forgejo.ProductionContext, target)
 		log.Printf("kuberpack build %s %s: %v", app.Name, d.CommitSHA, runErr)
 		return
 	}
@@ -482,25 +489,38 @@ func (s *Server) process(ctx context.Context, d store.Delivery) {
 	finished.InfraCommitSHA = result.InfraCommitSHA
 	_ = s.cfg.Store.FinishBuild(ctx, buildID, finished)
 	_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "succeeded", "")
+	target := appTargetURL(app)
+	if finished.ArchiveURL != "" {
+		target = finished.ArchiveURL
+	} else if skipPromote {
+		target = appTargetURL(app)
+	}
 	if skipPromote {
-		s.publishCommitStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusWarning, "Built, frozen at "+track.Short(), app, false)
+		s.publishStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusWarning, "Built, frozen at "+track.Short(), forgejo.ProductionContext, appTargetURL(app))
 	} else {
-		s.publishCommitStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusSuccess, "Deployed", app, false)
+		s.publishStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusSuccess, "Deployed", forgejo.ProductionContext, target)
 	}
 	s.alignTrack(ctx, app)
 }
 
 func (s *Server) publishCommitStatus(ctx context.Context, owner, repo, sha, state, description string, app store.App, failed bool) {
-	if s.cfg.Client == nil {
-		return
-	}
 	target := appTargetURL(app)
 	if failed {
 		target = commitURL(s.cfg.Client.BaseURL, owner, repo, sha)
 	}
+	s.publishStatus(ctx, owner, repo, sha, state, description, forgejo.ProductionContext, target)
+}
+
+func (s *Server) publishStatus(ctx context.Context, owner, repo, sha, state, description, contextName, target string) {
+	if s.cfg.Client == nil {
+		return
+	}
+	if contextName == "" {
+		contextName = forgejo.ProductionContext
+	}
 	err := s.cfg.Client.CreateCommitStatus(ctx, owner, repo, sha, forgejo.CommitStatus{
 		State:       state,
-		Context:     forgejo.ProductionContext,
+		Context:     contextName,
 		Description: description,
 		TargetURL:   target,
 	})
