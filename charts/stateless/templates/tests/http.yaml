@@ -19,11 +19,17 @@ spec:
     - name: http
       image: busybox:1.37
       command:
-        - wget
-        - -q
-        - -O
-        - /dev/null
-        - {{ printf "http://%s:%v%s" (include "stateless.fullname" .) .Values.port .Values.healthcheck | quote }}
+        - /bin/sh
+        - -c
+        - |
+          url={{ printf "http://%s:%v%s" (include "stateless.fullname" .) .Values.port .Values.healthcheck | quote }}
+          i=0
+          while [ "$i" -lt 30 ]; do
+            wget -q -O /dev/null "$url" && exit 0
+            i=$((i + 1))
+            sleep 2
+          done
+          exit 1
       securityContext:
         allowPrivilegeEscalation: false
         readOnlyRootFilesystem: true
