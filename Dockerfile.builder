@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Builder image for one Kubernetes Job. The application image is produced by
 # the rootless BuildKit sidecar, not by this Dockerfile.
-FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS go-build
+FROM --platform=$BUILDPLATFORM golang:1.24.13-alpine AS go-build
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 WORKDIR /src
@@ -37,7 +37,7 @@ RUN set -eu; work="$(mktemp -d)"; \
 FROM docker.io/moby/buildkit:v0.33.0-rootless@sha256:80b15f0735e87bab7bf59ec4d695dfb4a7cfb25521cf56dc75d6f256285b63ef AS buildkit
 
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates git skopeo tar bash coreutils nodejs \
+RUN apk add --no-cache ca-certificates git skopeo tar bash coreutils \
     && addgroup -g 1000 kuberpack \
     && adduser -D -u 1000 -G kuberpack kuberpack \
     && mkdir -p /work \

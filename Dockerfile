@@ -4,9 +4,9 @@
 
 # syntax=docker/dockerfile:1
 
-ARG GO_VERSION=1.23
+ARG GO_VERSION=1.24.13
 ARG RAILPACK_VERSION=0.39.0
-ARG BUILDKIT_VERSION=v0.23.2
+ARG BUILDKIT_VERSION=v0.33.0
 ARG UV_VERSION=0.8.22
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
@@ -39,7 +39,7 @@ RUN set -eux; \
     bin="$(find /tmp -type f -name railpack | head -n1)"; \
     install -m0755 "${bin}" /railpack
 
-FROM moby/buildkit:${BUILDKIT_VERSION} AS buildkit
+FROM docker.io/moby/buildkit:${BUILDKIT_VERSION}-rootless@sha256:80b15f0735e87bab7bf59ec4d695dfb4a7cfb25521cf56dc75d6f256285b63ef AS buildkit
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 
 FROM cgr.dev/chainguard/git:latest
