@@ -11,7 +11,7 @@ import (
 func TestEnsureAppWritesContractAndPromoteEnablesFlux(t *testing.T) {
 	bare := setupAppsGitOps(t)
 	spec := AppSpec{Name: "site", Hostname: "site.example.org", Port: 8080, Healthcheck: "/healthz"}
-	platform := Platform{NetworkPolicy: true, IngressTLS: true, ExternalDNSTarget: "1.2.3.4"}
+	platform := Platform{NetworkPolicy: true, IngressTLS: true, ExternalDNSTarget: "95.111.234.93,2a02:c207:2312:1564::1"}
 
 	reg, err := EnsureApp(context.Background(), EnsureRequest{GitOpsURL: bare, GitOpsBranch: "main", App: spec, Platform: platform})
 	if err != nil {
@@ -37,6 +37,12 @@ func TestEnsureAppWritesContractAndPromoteEnablesFlux(t *testing.T) {
 	}
 	if !strings.Contains(values, "name: app-site") {
 		t.Fatalf("expected envFrom secret app-site:\n%s", values)
+	}
+	if !strings.Contains(values, "2a02:c207:2312:1564::1") {
+		t.Fatalf("expected AAAA ExternalDNS target:\n%s", values)
+	}
+	if strings.Contains(values, "95.111.234.93") {
+		t.Fatal("values must not publish an IPv4 ExternalDNS target")
 	}
 	if !strings.Contains(readFile(t, clone, "kubernetes/vps/apps/site/helmrelease.yaml"), "name: site") {
 		t.Fatal("missing helmrelease")

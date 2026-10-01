@@ -103,7 +103,7 @@ func platformFromEnv() promote.Platform {
 		IngressClassName:    getenv("KUBERPACK_INGRESS_CLASS", "traefik"),
 		ImagePullSecret:     getenv("KUBERPACK_IMAGE_PULL_SECRET", "forgejo-registry-pull"),
 		IngressTLS:          getenvBool("KUBERPACK_INGRESS_TLS", true),
-		ExternalDNSTarget:   os.Getenv("KUBERPACK_DNS_TARGET"),
+		ExternalDNSTarget:   promote.IPv6DNSTargets(os.Getenv("KUBERPACK_DNS_TARGET")),
 		ExternalDNSTTL:      getenv("KUBERPACK_DNS_TTL", "300"),
 		TraefikEntrypoint:   getenv("KUBERPACK_TRAEFIK_ENTRYPOINT", "websecure"),
 		TraefikCertResolver: getenv("KUBERPACK_CERT_RESOLVER", "letsencrypt"),

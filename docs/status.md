@@ -13,6 +13,7 @@ Les autres pages de `docs/` décrivent **le produit visé**. Cette page décrit 
 - Archive de build optionnelle : `KUBERPACK_BUILDS_GIT_URL` (no-op si vide). Ce dépôt ne doit jamais être une source Flux.
 - Identité d’image : digest. GitOps ne réécrit que `image` + `track` humain.
 - `track` : `main` suit les pushes ; un SHA gèle la prod et réutilise le digest publié.
+- ExternalDNS : `KUBERPACK_DNS_TARGET` filtré IPv6 (AAAA seulement).
 
 ## Pas fait / hors ce dépôt
 

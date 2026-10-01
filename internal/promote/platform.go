@@ -1,6 +1,7 @@
 package promote
 
 import (
+	"net"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -55,6 +56,7 @@ func (p Platform) withDefaults() Platform {
 	if p.ImagePullSecret == "" {
 		p.ImagePullSecret = "forgejo-registry-pull"
 	}
+	p.ExternalDNSTarget = IPv6DNSTargets(p.ExternalDNSTarget)
 	if p.ExternalDNSTTL == "" {
 		p.ExternalDNSTTL = "300"
 	}
@@ -101,4 +103,21 @@ func PreviewHostname(app string, pr int, domain string) string {
 		return ""
 	}
 	return "pr-" + strconv.Itoa(pr) + "." + app + "." + strings.TrimPrefix(domain, ".")
+}
+
+// IPv6DNSTargets keeps only IPv6 addresses so ExternalDNS publishes AAAA, never A.
+func IPv6DNSTargets(raw string) string {
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		ip := net.ParseIP(part)
+		if ip == nil || ip.To4() != nil {
+			continue
+		}
+		out = append(out, part)
+	}
+	return strings.Join(out, ",")
 }
