@@ -35,6 +35,9 @@ func TestEnsureAppWritesContractAndPromoteEnablesFlux(t *testing.T) {
 	if strings.Contains(values, "command:") {
 		t.Fatal("values must not set command")
 	}
+	if !strings.Contains(values, "name: app-site") {
+		t.Fatalf("expected envFrom secret app-site:\n%s", values)
+	}
 	if !strings.Contains(readFile(t, clone, "kubernetes/vps/apps/site/helmrelease.yaml"), "name: site") {
 		t.Fatal("missing helmrelease")
 	}

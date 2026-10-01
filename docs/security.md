@@ -33,7 +33,7 @@ Code non fiable : pas de secret de production, pas de token large, pas de socket
 - non-root ; si l’image a un USER numérique, on le garde ; les images Railpack `USER root` passent à `65534` (chart) ;
 - Pod Security `restricted` ;
 - `allowPrivilegeEscalation: false` sauf le builder ;
-- secrets via `envFrom` / `secretKeyRef`, pas de SDK de secrets dans l’app.
+- secrets via `envFrom` du Secret `app-<name>` (prod). Pas de SDK de secrets dans l’app. Previews : pas ce Secret.
 
 Le namespace de build est le seul à pouvoir être moins restreint (besoins BuildKit).
 

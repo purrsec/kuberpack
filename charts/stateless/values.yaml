@@ -19,6 +19,7 @@ resources:
   limits:
     cpu: 500m
     memory: 256Mi
+# Production: Kuberpack sets secretRef name app-<app>. The Secret is not in this chart.
 envFrom: []
 # Railpack images often have USER root. A numeric UID is required for runAsNonRoot.
 podSecurityContext:

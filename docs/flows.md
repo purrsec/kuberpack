@@ -8,7 +8,7 @@ POST /api/v1/apps
 
 Champs : [API](api.md).
 
-Kuberpack vérifie le dépôt, l’inscrit, crée le secret HMAC (hors SQLite), pose le webhook Forgejo (`push`, `pull_request`), écrit le contrat GitOps (`values.yaml`, HelmRelease, kustomization) **sans l’activer dans Flux**, puis lance le premier build. Le premier digest piné ajoute l’app au kustomization parent. Ensuite Kuberpack ne change plus que le champ `image`. Rien n’est écrit dans le dépôt applicatif.
+Kuberpack vérifie le dépôt, l’inscrit, crée le secret HMAC (hors SQLite), pose le webhook Forgejo (`push`, `pull_request`), écrit le contrat GitOps (`values.yaml` avec `envFrom` vers `app-<name>`, HelmRelease, kustomization) **sans l’activer dans Flux**, puis lance le premier build. Le premier digest piné ajoute l’app au kustomization parent. Ensuite Kuberpack ne change plus que le champ `image`. Rien n’est écrit dans le dépôt applicatif. L’administrateur crée `app-<name>` (Infisical ou kubectl) avant ou après ; sans l’objet Secret, le pod de prod ne démarre pas.
 
 ## Production
 

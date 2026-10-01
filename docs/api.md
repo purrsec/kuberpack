@@ -50,7 +50,7 @@ La stratégie détecte langage et commandes. Les exceptions vivent dans Kuberpac
 
 Un `Procfile` est optionnel. Aucun fichier de plateforme n’est exigé dans le dépôt applicatif.
 
-À l’enregistrement, Kuberpack matérialise ce JSON en YAML GitOps (`kubernetes/vps/apps/<name>/`). Ingress, pull secret, TLS et DNS viennent des défauts plateforme (`KUBERPACK_DNS_TARGET`, …), pas du dépôt app. Flux ne voit l’app qu’après le premier pin `image`.
+À l’enregistrement, Kuberpack matérialise ce JSON en YAML GitOps (`kubernetes/vps/apps/<name>/`). Ingress, pull secret, TLS et DNS viennent des défauts plateforme (`KUBERPACK_DNS_TARGET`, …), pas du dépôt app. Le `values.yaml` de production pose `envFrom.secretRef.name: app-<name>` ; les clés du Secret ne passent jamais par l’API. Flux ne voit l’app qu’après le premier pin `image`. Les apps déjà enregistrées gardent leur YAML : ajouter le `envFrom` à la main si besoin.
 
 Le YAML GitOps est le contrat runtime. `track: main` (défaut, ou vide / `latest`) suit la branche de production. `track: <sha>` gèle la prod sur ce commit : les nouveaux pushes peuvent encore construire, mais ne changent plus `image`. Kuberpack repose alors le digest déjà publié (`sha-<commit>@sha256:…`), sans rebuild. `image:` reste un digest ; ce n’est pas un tag mutable.
 

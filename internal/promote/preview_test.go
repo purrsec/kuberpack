@@ -41,6 +41,9 @@ func TestPreviewBranchPinAndPrune(t *testing.T) {
 	if !strings.Contains(values, "cpu: 200m") {
 		t.Fatalf("preview must use a lower quota:\n%s", values)
 	}
+	if strings.Contains(values, "secretRef") || strings.Contains(values, "app-site") {
+		t.Fatalf("preview must not mount production secrets:\n%s", values)
+	}
 	parent := readFile(t, clone, "kubernetes/vps/previews/kustomization.yaml")
 	if !listedInKustomization([]byte(parent), "site-pr-3") {
 		t.Fatalf("preview not enabled:\n%s", parent)

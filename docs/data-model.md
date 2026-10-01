@@ -59,4 +59,4 @@ previews
 - un artefact déjà en registre peut être réutilisé seulement si le commit, la stratégie, sa version et les paramètres de build correspondent, et si son digest est vérifié ;
 - aucun secret dans SQLite.
 
-Tokens, HMAC et clés SSH : Secrets Kubernetes (souvent alimentés par un gestionnaire de secrets).
+Tokens, HMAC et clés SSH : Secrets Kubernetes (souvent alimentés par un gestionnaire de secrets). Variables d’une app (`STRIPE_*`, `DATABASE_URL`) : Secret `app-<name>` dans le namespace de release, hors SQLite et hors Git.

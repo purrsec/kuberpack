@@ -93,7 +93,19 @@ spec:
       remediateLastFailure: true
 ```
 
-Stateful (Postgres, Valkey, …) : hors chart, GitOps classique.
+À l’enregistrement (production seulement), `values.yaml` déclare :
+
+```yaml
+envFrom:
+  - secretRef:
+      name: app-<name>
+```
+
+Kuberpack ne crée pas ce Secret et n’en lit pas les clés. Un administrateur le remplit (Infisical → Secret Kubernetes, ou `kubectl` / autre gestionnaire) dans le namespace de release (`apps` par défaut). Clés typiques : `STRIPE_SECRET_KEY`, `DATABASE_URL`. Tant que l’objet Secret n’existe pas, le pod ne démarre pas (`CreateContainerConfigError`) : le binding est visible. Un Secret vide démarre le process sans variables.
+
+Kuberpack et Flux ne connaissent pas Stripe ni Postgres. Ils savent seulement que le workload **monte** `app-<name>`.
+
+Stateful (Postgres, Valkey, …) : hors chart, GitOps classique. L’app les voit comme des variables dans ce même Secret.
 
 Rollback Helm : le cluster peut tourner une révision plus ancienne que Git. Le produit affiche `rolled_back`. Réécrire Git automatiquement est hors MVP.
 

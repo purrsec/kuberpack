@@ -251,8 +251,18 @@ func valuesYAML(spec AppSpec, p Platform) string {
 		b.WriteString("  limits:\n")
 		b.WriteString("    cpu: 200m\n")
 		b.WriteString("    memory: 128Mi\n")
+	} else {
+		b.WriteString("envFrom:\n")
+		b.WriteString("  - secretRef:\n")
+		b.WriteString("      name: " + AppRuntimeSecretName(spec.Name) + "\n")
 	}
 	return b.String()
+}
+
+// AppRuntimeSecretName is the Kubernetes Secret the production pod mounts via envFrom.
+// Kuberpack never creates or fills it; Infisical or kubectl does.
+func AppRuntimeSecretName(app string) string {
+	return "app-" + sanitizeName(app)
 }
 
 func helmReleaseYAML(spec AppSpec, p Platform) string {

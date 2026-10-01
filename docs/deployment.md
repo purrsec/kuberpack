@@ -34,3 +34,5 @@ Tokens builder dédiés (Infisical → Secret `kuberpack-builder`) : `kuberpack-
 
 Archive de builds : `KUBERPACK_BUILDS_GIT_URL` (dépôt dédié, jamais une source Flux). Secret Flux vers Kuberpack : `KUBERPACK_FLUX_WEBHOOK_SECRET`. Previews : `KUBERPACK_PREVIEW_DOMAIN` (défaut `preview.host.bzh`).
 
+Secrets d’app (Stripe, `DATABASE_URL`, …) : Infisical (ou Secret Kubernetes) nommé `app-<name>` dans le namespace `apps`. Kuberpack ne sync pas Infisical ; il déclare seulement `envFrom`. Postgres et autres stateful : GitOps hors chart `stateless`, URL dans ce Secret.
+
