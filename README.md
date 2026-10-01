@@ -30,6 +30,16 @@ Le CLI, le chart et le contrat sont ici. Ce qui est réellement implémenté : [
 | [Feuille de route](docs/roadmap.md) | MVP et phases |
 | [Déploiement](docs/deployment.md) | Instance actuelle (homelab) |
 
+## Install
+
+Images : `ghcr.io/purrsec/kuberpack:latest` et `ghcr.io/purrsec/kuberpack-builder:latest`.
+
+Édite les URLs dans `helmfile.yaml`, crée les namespaces et secrets indiqués en tête du fichier, copie `charts/stateless` dans le dépôt GitOps, puis :
+
+```bash
+helmfile apply
+```
+
 ## Code
 
 CLI `kuberpack` : pin d’un digest dans le dépôt GitOps. Chart Helm `charts/stateless` : workload HTTP restreint.

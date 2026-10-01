@@ -24,6 +24,16 @@ jobs:
   image:
     needs: test
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: kuberpack
+            file: Dockerfile
+            image: ghcr.io/${{ github.repository }}
+          - name: builder
+            file: Dockerfile.builder
+            image: ghcr.io/${{ github.repository }}-builder
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v4
@@ -36,13 +46,13 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: .
-          file: Dockerfile
+          file: ${{ matrix.file }}
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           provenance: false
           sbom: false
           tags: |
-            ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
-            ghcr.io/${{ github.repository }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ matrix.image }}:sha-${{ github.sha }}
+            ${{ matrix.image }}:latest
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

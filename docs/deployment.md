@@ -28,7 +28,7 @@ docker run --rm -p 8080:8080 \
   ghcr.io/purrsec/kuberpack:dev
 ```
 
-Ne pas coller Kuberpack dans le Kustomization mini-pc `wait: true`. Le déploiement GitOps est `kubernetes/kuberpack` réconcilié par Flux `kuberpack` (`wait: false`). Ingress `https://kuberpack.host.bzh/`, webhook `https://kuberpack.host.bzh/hooks/forgejo`. API : `Authorization: Bearer` (`KUBERPACK_API_TOKEN`). Pas d’Authelia (HMAC + bearer). Le builder reste pour l’instant sur le registre Forgejo (`KUBERPACK_BUILDER_IMAGE`).
+Une installation neuve se fait avec `helmfile apply` (chart `charts/kuberpack`). Ne pas coller Kuberpack dans le Kustomization mini-pc `wait: true`. L’instance homelab est `kubernetes/kuberpack` réconcilié par Flux `kuberpack` (`wait: false`). Ingress `https://kuberpack.host.bzh/`, webhook `https://kuberpack.host.bzh/hooks/forgejo`. API : `Authorization: Bearer` (`KUBERPACK_API_TOKEN`). Pas d’Authelia (HMAC + bearer). Builder : `ghcr.io/purrsec/kuberpack-builder:latest` (le GitOps homelab peut encore pinner une image Forgejo le temps de basculer).
 
 Tokens builder dédiés (Infisical → Secret `kuberpack-builder`) : `kuberpack-builder-git-token` (clone HTTPS de secours / archive git) et `kuberpack-builder-registry-token` (`write:package`). Ce ne sont pas le PAT du control plane. À l’enregistrement, Kuberpack pose une clé SSH read-only sur le dépôt app.
 

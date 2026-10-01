@@ -1,0 +1,32 @@
+# Install Kuberpack on k3s.
+#
+#   kubectl create namespace kuberpack
+#   kubectl create namespace kuberpack-build
+#   kubectl -n kuberpack create secret generic kuberpack \
+#     --from-literal=FORGEJO_TOKEN=<pat> \
+#     --from-literal=KUBERPACK_API_TOKEN=<pat>
+#   kubectl -n kuberpack-build create secret generic kuberpack-builder \
+#     --from-literal=git-token=<pat> \
+#     --from-literal=registry-token=<pat>
+#   kubectl -n kuberpack-build create secret docker-registry kuberpack-builder-pull \
+#     --docker-server=git.example.com --docker-username=... --docker-password=...
+#   helmfile apply
+#
+# Copy charts/stateless into the GitOps repo at gitopsChart.
+# Pin image digests when you want Renovate to bump them.
+
+releases:
+  - name: kuberpack
+    namespace: kuberpack
+    createNamespace: true
+    chart: ./charts/kuberpack
+    values:
+      - image: ghcr.io/purrsec/kuberpack:latest
+        builderImage: ghcr.io/purrsec/kuberpack-builder:latest
+        forgejoURL: https://git.example.com
+        gitopsURL: https://git.example.com/you/gitops.git
+        gitopsApps: kubernetes/apps
+        gitopsChart: ./charts/stateless
+        gitopsSource: gitops
+        previewDomain: preview.example.com
+        host: kuberpack.example.com

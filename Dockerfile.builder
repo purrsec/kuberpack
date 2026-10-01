@@ -1,14 +1,17 @@
+# syntax=docker/dockerfile:1
 # Builder image for one Kubernetes Job. The application image is produced by
 # the rootless BuildKit sidecar, not by this Dockerfile.
-# syntax=docker/dockerfile:1
 FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS go-build
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags="-s -w" -o /kuberpack ./cmd/kuberpack
 
 FROM alpine:3.21 AS tools

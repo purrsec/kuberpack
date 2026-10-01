@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kuberpack
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kuberpack.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kuberpack
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kuberpack
+    spec:
+      serviceAccountName: kuberpack
+      automountServiceAccountToken: true
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kuberpack
+          image: {{ required "image is required" .Values.image | quote }}
+          imagePullPolicy: IfNotPresent
+          args: ["serve", "--addr", ":8080", "--data", "/var/lib/kuberpack"]
+          env:
+            - name: FORGEJO_URL
+              value: {{ required "forgejoURL is required" .Values.forgejoURL | quote }}
+            - name: KUBERPACK_GITOPS_URL
+              value: {{ required "gitopsURL is required" .Values.gitopsURL | quote }}
+            - name: KUBERPACK_GITOPS_APPS
+              value: {{ .Values.gitopsApps | quote }}
+            - name: KUBERPACK_GITOPS_CHART
+              value: {{ .Values.gitopsChart | quote }}
+            - name: KUBERPACK_GITOPS_SOURCE
+              value: {{ .Values.gitopsSource | quote }}
+            - name: KUBERPACK_PREVIEW_DOMAIN
+              value: {{ .Values.previewDomain | quote }}
+            - name: KUBERPACK_WEBHOOK_URL
+              value: {{ printf "https://%s/hooks/forgejo" (required "host is required" .Values.host) | quote }}
+            - name: KUBERPACK_BUILDER_IMAGE
+              value: {{ required "builderImage is required" .Values.builderImage | quote }}
+            - name: KUBERPACK_BUILDER_NAMESPACE
+              value: kuberpack-build
+            - name: HOME
+              value: /home/kuberpack
+            - name: FORGEJO_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: kuberpack
+                  key: FORGEJO_TOKEN
+            - name: KUBERPACK_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: kuberpack
+                  key: KUBERPACK_API_TOKEN
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/kuberpack }
+            - { name: tmp, mountPath: /tmp }
+            - { name: home, mountPath: /home/kuberpack }
+          resources:
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { cpu: "1", memory: 1Gi }
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: kuberpack-data
+        - { name: tmp, emptyDir: {} }
+        - { name: home, emptyDir: {} }

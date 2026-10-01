@@ -17,7 +17,7 @@ Les autres pages de `docs/` décrivent **le produit visé**. Cette page décrit 
 ## Pas fait / hors ce dépôt
 
 - CLI/UI au-delà de HTTP (phase 5).
-- Publication live des images control plane/builder sous `sha-<commit>` (les pins GitOps homelab portent encore des tags `test-*` jusqu’à la prochaine publication).
+- Image control plane GHCR `ghcr.io/purrsec/kuberpack:latest` (pin digest côté GitOps). L’image builder GHCR `ghcr.io/purrsec/kuberpack-builder` n’est publiée qu’après le workflow Image ; le homelab peut encore pinner une image Forgejo.
 - `wattchman.fr` est encore Railway (hors kuberpack).
 - UI de logs sur `serve` : hors produit.
 

@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kuberpack
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kuberpack-build
+  namespace: kuberpack-build
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kuberpack-build-dispatch
+  namespace: kuberpack-build
+rules:
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [create, get]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kuberpack-build-dispatch
+  namespace: kuberpack-build
+subjects:
+  - kind: ServiceAccount
+    name: kuberpack
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kuberpack-build-dispatch

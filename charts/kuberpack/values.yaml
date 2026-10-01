@@ -1,0 +1,9 @@
+image: ghcr.io/purrsec/kuberpack:latest
+builderImage: ghcr.io/purrsec/kuberpack-builder:latest
+forgejoURL: https://git.example.com
+gitopsURL: https://git.example.com/you/gitops.git
+gitopsApps: kubernetes/apps
+gitopsChart: ./charts/stateless
+gitopsSource: gitops
+previewDomain: preview.example.com
+host: kuberpack.example.com

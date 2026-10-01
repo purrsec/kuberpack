@@ -1,3 +1,4 @@
+# Homelab Infisical copy. New installs use helmfile.yaml.
 apiVersion: v1
 kind: Namespace
 metadata:
