@@ -26,7 +26,7 @@ L’expérience visée est celle de Railway ou Heroku. Le modèle d’exploitati
 
 ## Hors produit
 
-- forker et maintenir Kubero, Coolify ou QuickStack ;
+- forker et maintenir un autre PaaS ;
 - remplacer Flux, l’ingress ou le gestionnaire de secrets ;
 - découvrir les digests par polling de tags mutables (Renovate, Flux Image Automation) ;
 - construire avec Nixpacks/Buildah sur le cluster de production.

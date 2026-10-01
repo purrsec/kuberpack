@@ -3,7 +3,27 @@ name: Image
 on:
   push:
     branches: [main]
+    paths:
+      - "cmd/**"
+      - "internal/**"
+      - "go.mod"
+      - "go.sum"
+      - "Dockerfile"
+      - "Dockerfile.builder"
+      - ".dockerignore"
+      - "charts/stateless/**"
+      - ".github/workflows/image.yaml"
   pull_request:
+    paths:
+      - "cmd/**"
+      - "internal/**"
+      - "go.mod"
+      - "go.sum"
+      - "Dockerfile"
+      - "Dockerfile.builder"
+      - ".dockerignore"
+      - "charts/stateless/**"
+      - ".github/workflows/image.yaml"
 
 permissions:
   actions: write

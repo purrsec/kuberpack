@@ -27,4 +27,3 @@ Jobs k3s à la place d’un workflow Git (déjà le chemin produit). Namespace p
 | Builder | rootless sur k3s isolé |
 | Langage du control plane | Go |
 | HMAC | body brut |
-| Upstream Kubero | contrat Git seulement |

@@ -17,10 +17,5 @@ Les autres pages de `docs/` décrivent **le produit visé**. Cette page décrit 
 ## Pas fait / hors ce dépôt
 
 - CLI/UI au-delà de HTTP (phase 5).
-- Image control plane GHCR `ghcr.io/purrsec/kuberpack:latest` (pin digest côté GitOps). L’image builder GHCR `ghcr.io/purrsec/kuberpack-builder` n’est publiée qu’après le workflow Image ; le homelab peut encore pinner une image Forgejo.
 - `wattchman.fr` est encore Railway (hors kuberpack).
 - UI de logs sur `serve` : hors produit.
-
-## Hors arbre git
-
-`kubero-main/` est un clone de référence, gitignoré. Pas du produit.

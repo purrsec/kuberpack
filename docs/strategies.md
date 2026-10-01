@@ -11,5 +11,3 @@ Railpack est **toujours** l’exécuteur. Le langage du dépôt n’ouvre pas un
 | `railpack` | Railpack sans exiger un lock Python. |
 
 Nixpacks n’est pas une stratégie du produit. Aucun fichier de plateforme n’est exigé dans le dépôt applicatif.
-
-`kubero-main/` est un clone de référence gitignoré, pas du code produit.

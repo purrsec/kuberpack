@@ -1,6 +1,6 @@
 # Git (Forgejo)
 
-Kuberpack parle l’API Gitea, donc Forgejo. Il n’est pas un client Kubero.
+Kuberpack parle l’API Gitea, donc Forgejo.
 
 Le produit doit, sans fichier dans le dépôt applicatif :
 
@@ -28,11 +28,5 @@ Création : Forgejo → Paramètres → Applications → générer un jeton, cas
 Vérifier HMAC-SHA256 du body **tel que reçu**. En-têtes : `X-Forgejo-Signature`, `X-Gitea-Signature`, éventuellement `X-Hub-Signature-256`. Hex, préfixe `sha256=` optionnel.
 
 Ne pas re-sérialiser le JSON pour calculer la signature. Les implémentations qui font `JSON.stringify` avec indentation ne sont pas compatibles avec Forgejo.
-
-## Inspiration, pas dépendance
-
-Kubero a déjà enchaîné dépôt Gitea → clé read-only → webhook → reconstruction. Kuberpack n’est pas un client Kubero : SHA exact jusqu’au builder, HMAC sur le body brut, promotion Git par digest.
-
-On ne reprend pas : operator, CRD, UI, Nixpacks, Buildah, patch in-cluster de l’application, HMAC basé sur un JSON reformaté.
 
 Nixpacks + build sur le cluster de production a été évalué et rejeté : le builder Kuberpack est rootless, sur k3s isolé, et la production ne bouge que par GitOps.
