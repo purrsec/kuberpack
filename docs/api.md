@@ -18,7 +18,9 @@ POST /api/v1/apps
   "autodeploy_pr": true,
   "hostname": "web.example.org",
   "port": 8080,
-  "healthcheck": "/"
+  "healthcheck": "/",
+  "internet": true,
+  "peers": []
 }
 ```
 
@@ -33,6 +35,8 @@ POST /api/v1/apps
 | `hostname` | Ingress de production |
 | `port` | Port réellement écouté par le processus |
 | `healthcheck` | Chemin HTTP des probes et du Helm test |
+| `internet` | Egress public 80/443 (défaut `true`). `false` : DNS + `peers` seulement |
+| `peers` | Allowlist cluster : autres apps (`billing`) ou addons (`postgres:web`) |
 
 Le port se configure, il ne se suppose pas. L’image peut écouter `80` ou `8080`. Une probe sur le mauvais port fait échouer la release.
 
@@ -56,7 +60,7 @@ Le YAML GitOps est le contrat runtime. `track: main` (défaut, ou vide / `latest
 
 ## Suite HTTP
 
-`PATCH /api/v1/apps/{name}` — champs optionnels : `branch`, `strategy`, `autodeploy`, `autodeploy_pr`, `hostname`, `port`, `healthcheck`, `start_command`. Ne réécrit pas GitOps (`image` reste le seul champ que le bot change).
+`PATCH /api/v1/apps/{name}` — champs optionnels : `branch`, `strategy`, `autodeploy`, `autodeploy_pr`, `hostname`, `port`, `healthcheck`, `start_command`, `internet`, `peers`. Un changement `internet`/`peers` réécrit `networkPolicy` dans GitOps, sans toucher `image`. `"peers": []` vide l’allowlist.
 
 `DELETE /api/v1/apps/{name}` — retire le webhook, la clé HMAC, l’entrée SQLite, et enlève l’app du kustomization parent (Flux prune).
 

@@ -15,14 +15,16 @@ import (
 )
 
 type patchAppBody struct {
-	Branch       *string `json:"branch"`
-	Strategy     *string `json:"strategy"`
-	Autodeploy   *bool   `json:"autodeploy"`
-	AutodeployPR *bool   `json:"autodeploy_pr"`
-	Hostname     *string `json:"hostname"`
-	Port         *int    `json:"port"`
-	Healthcheck  *string `json:"healthcheck"`
-	StartCommand *string `json:"start_command"`
+	Branch       *string   `json:"branch"`
+	Strategy     *string   `json:"strategy"`
+	Autodeploy   *bool     `json:"autodeploy"`
+	AutodeployPR *bool     `json:"autodeploy_pr"`
+	Hostname     *string   `json:"hostname"`
+	Port         *int      `json:"port"`
+	Healthcheck  *string   `json:"healthcheck"`
+	StartCommand *string   `json:"start_command"`
+	Internet     *bool     `json:"internet"`
+	Peers        *[]string `json:"peers"`
 }
 
 func (s *Server) patchApp(w http.ResponseWriter, r *http.Request) {
@@ -72,9 +74,40 @@ func (s *Server) patchApp(w http.ResponseWriter, r *http.Request) {
 	if body.StartCommand != nil {
 		app.StartCommand = strings.TrimSpace(*body.StartCommand)
 	}
+	if body.Internet != nil {
+		app.Internet = *body.Internet
+	}
+	if body.Peers != nil {
+		peers, err := promote.ParsePeers(*body.Peers)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		app.Peers = promote.FormatPeers(peers)
+	}
+	networkChanged := body.Internet != nil || body.Peers != nil
 	if err := s.cfg.Store.UpdateApp(r.Context(), app); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if networkChanged && s.cfg.GitOpsURL != "" {
+		if _, err := promote.UpdateNetwork(r.Context(), promote.EnsureRequest{
+			GitOpsURL:    s.cfg.GitOpsURL,
+			GitOpsBranch: s.cfg.GitOpsBranch,
+			HTTPToken:    s.cfg.Token,
+			App: promote.AppSpec{
+				Name:        app.Name,
+				Hostname:    app.Hostname,
+				Port:        app.Port,
+				Healthcheck: app.Healthcheck,
+				Internet:    &app.Internet,
+				Peers:       app.Peers,
+			},
+			Platform: s.cfg.Platform,
+		}); err != nil {
+			http.Error(w, "updated app but gitops network failed: "+err.Error(), http.StatusBadGateway)
+			return
+		}
 	}
 	updated, err := s.cfg.Store.AppByID(r.Context(), app.ID)
 	if err != nil {
@@ -133,17 +166,17 @@ func (s *Server) listBuilds(w http.ResponseWriter, r *http.Request) {
 	out := make([]map[string]any, 0, len(builds))
 	for _, b := range builds {
 		out = append(out, map[string]any{
-			"id":             b.ID,
-			"environment":    b.Environment,
-			"commit_sha":     b.CommitSHA,
-			"image":          strings.TrimSpace(strings.TrimSuffix(b.ImageRepository+":"+b.ImageTag, ":")),
-			"digest":         b.ImageDigest,
-			"infra_commit":   b.InfraCommitSHA,
-			"status":         b.Status,
-			"error":          b.Error,
-			"archive_url":    b.ArchiveURL,
-			"created_at":     b.CreatedAt,
-			"finished_at":    b.FinishedAt,
+			"id":           b.ID,
+			"environment":  b.Environment,
+			"commit_sha":   b.CommitSHA,
+			"image":        strings.TrimSpace(strings.TrimSuffix(b.ImageRepository+":"+b.ImageTag, ":")),
+			"digest":       b.ImageDigest,
+			"infra_commit": b.InfraCommitSHA,
+			"status":       b.Status,
+			"error":        b.Error,
+			"archive_url":  b.ArchiveURL,
+			"created_at":   b.CreatedAt,
+			"finished_at":  b.FinishedAt,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"builds": out})

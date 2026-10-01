@@ -3,7 +3,9 @@ kind: Pod
 metadata:
   name: {{ include "stateless.fullname" . }}-test
   labels:
-    {{- include "stateless.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ include "stateless.fullname" . }}-test
+    app.kubernetes.io/component: helm-test
+    app.kubernetes.io/part-of: kuberpack
   annotations:
     helm.sh/hook: test
 spec:

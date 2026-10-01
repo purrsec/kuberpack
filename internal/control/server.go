@@ -107,16 +107,18 @@ func (s *Server) withAPI(next http.HandlerFunc) http.HandlerFunc {
 }
 
 type createAppBody struct {
-	Name         string `json:"name"`
-	Repository   string `json:"repository"`
-	Branch       string `json:"branch"`
-	Strategy     string `json:"strategy"`
-	Autodeploy   *bool  `json:"autodeploy"`
-	AutodeployPR bool   `json:"autodeploy_pr"`
-	Hostname     string `json:"hostname"`
-	Port         int    `json:"port"`
-	Healthcheck  string `json:"healthcheck"`
-	StartCommand string `json:"start_command"`
+	Name         string   `json:"name"`
+	Repository   string   `json:"repository"`
+	Branch       string   `json:"branch"`
+	Strategy     string   `json:"strategy"`
+	Autodeploy   *bool    `json:"autodeploy"`
+	AutodeployPR bool     `json:"autodeploy_pr"`
+	Hostname     string   `json:"hostname"`
+	Port         int      `json:"port"`
+	Healthcheck  string   `json:"healthcheck"`
+	StartCommand string   `json:"start_command"`
+	Internet     *bool    `json:"internet"`
+	Peers        []string `json:"peers"`
 }
 
 func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
@@ -167,6 +169,15 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 	if body.Autodeploy != nil {
 		auto = *body.Autodeploy
 	}
+	internet := true
+	if body.Internet != nil {
+		internet = *body.Internet
+	}
+	peers, err := promote.ParsePeers(body.Peers)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	if _, err := s.cfg.Client.Repo(r.Context(), owner, repoName); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -184,6 +195,8 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 		Port:              port,
 		Healthcheck:       health,
 		StartCommand:      strings.TrimSpace(body.StartCommand),
+		Internet:          internet,
+		Peers:             promote.FormatPeers(peers),
 	})
 	if err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
@@ -243,6 +256,8 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 				Hostname:    app.Hostname,
 				Port:        app.Port,
 				Healthcheck: app.Healthcheck,
+				Internet:    &app.Internet,
+				Peers:       app.Peers,
 			},
 			Platform: s.cfg.Platform,
 		}); err != nil {
@@ -560,6 +575,8 @@ func appJSON(app store.App) map[string]any {
 		"hostname":      app.Hostname,
 		"port":          app.Port,
 		"healthcheck":   app.Healthcheck,
+		"internet":      app.Internet,
+		"peers":         app.Peers,
 		"webhook_id":    app.WebhookID,
 	}
 }

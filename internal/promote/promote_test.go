@@ -116,6 +116,9 @@ func TestRenderChartIncludesRestrictedWorkload(t *testing.T) {
 		"readinessProbe:",
 		"host: \"web.example.org\"",
 		"web.example.org",
+		"app.kubernetes.io/component: helm-test",
+		"app.kubernetes.io/part-of: kuberpack",
+		"cidr: 0.0.0.0/0",
 	} {
 		if !strings.Contains(manifests, want) {
 			t.Errorf("rendered manifests missing %q", want)
@@ -123,6 +126,32 @@ func TestRenderChartIncludesRestrictedWorkload(t *testing.T) {
 	}
 	if strings.Contains(manifests, "privileged: true") {
 		t.Fatal("privileged container rendered")
+	}
+}
+
+func TestRenderChartInternetFalseOmitsPublicEgress(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join(chartDir(t), "ci", "values.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := strings.ReplaceAll(string(src), "internet: true", "internet: false")
+	values = strings.ReplaceAll(values, "peers: []", "peers:\n    - billing\n    - postgres:web")
+	path := filepath.Join(t.TempDir(), "values.yaml")
+	if err := os.WriteFile(path, []byte(values), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifests, err := RenderChart(chartDir(t), "web", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(manifests, "0.0.0.0/0") || strings.Contains(manifests, "64:ff9b::/96") {
+		t.Fatalf("public egress with internet false:\n%s", manifests)
+	}
+	if !strings.Contains(manifests, "app.kubernetes.io/name: \"billing\"") {
+		t.Fatalf("missing app peer:\n%s", manifests)
+	}
+	if !strings.Contains(manifests, "kuberpack.io/addon: postgres") || !strings.Contains(manifests, `kuberpack.io/for: "web"`) {
+		t.Fatalf("missing postgres peer:\n%s", manifests)
 	}
 }
 

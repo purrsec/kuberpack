@@ -91,3 +91,103 @@ func setImage(node *yaml.Node, imageRef string) error {
 	)
 	return nil
 }
+
+func PatchNetworkPolicy(in []byte, internet bool, peers []string) ([]byte, error) {
+	if len(bytes.TrimSpace(in)) == 0 {
+		return nil, fmt.Errorf("values file is empty")
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(in, &doc); err != nil {
+		return nil, fmt.Errorf("parse values: %w", err)
+	}
+	root := mappingRoot(&doc)
+	if root == nil {
+		return nil, fmt.Errorf("values must be a YAML mapping")
+	}
+	np := getOrCreateMap(root, "networkPolicy")
+	setBool(np, "enabled", true)
+	setBool(np, "internet", internet)
+	setStringSeq(np, "peers", peers)
+	return encodeYAML(&doc)
+}
+
+func mappingRoot(node *yaml.Node) *yaml.Node {
+	if node == nil {
+		return nil
+	}
+	if node.Kind == yaml.DocumentNode {
+		if len(node.Content) == 0 {
+			return nil
+		}
+		return mappingRoot(node.Content[0])
+	}
+	if node.Kind == yaml.MappingNode {
+		return node
+	}
+	return nil
+}
+
+func getOrCreateMap(parent *yaml.Node, key string) *yaml.Node {
+	for i := 0; i+1 < len(parent.Content); i += 2 {
+		if parent.Content[i].Value == key {
+			val := parent.Content[i+1]
+			if val.Kind != yaml.MappingNode {
+				val.Kind = yaml.MappingNode
+				val.Tag = "!!map"
+				val.Content = nil
+			}
+			return val
+		}
+	}
+	val := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	parent.Content = append(parent.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
+		val,
+	)
+	return val
+}
+
+func setBool(m *yaml.Node, key string, v bool) {
+	val := "false"
+	if v {
+		val = "true"
+	}
+	setScalar(m, key, val, "!!bool")
+}
+
+func setScalar(m *yaml.Node, key, value, tag string) {
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value != key {
+			continue
+		}
+		n := m.Content[i+1]
+		n.Kind = yaml.ScalarNode
+		n.Tag = tag
+		n.Value = value
+		n.Style = 0
+		n.Content = nil
+		return
+	}
+	m.Content = append(m.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: tag, Value: value},
+	)
+}
+
+func setStringSeq(m *yaml.Node, key string, values []string) {
+	seq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+	for _, v := range values {
+		seq.Content = append(seq.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v})
+	}
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value != key {
+			continue
+		}
+		m.Content[i+1] = seq
+		return
+	}
+	m.Content = append(m.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
+		seq,
+	)
+}

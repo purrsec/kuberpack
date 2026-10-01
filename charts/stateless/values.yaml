@@ -12,6 +12,10 @@ ingress:
   annotations: {}
 networkPolicy:
   enabled: true
+  # Public HTTPS (Stripe, GitHub). Set false to keep only DNS + peers.
+  internet: true
+  # Other Kuberpack apps (`billing`) or addons (`postgres:web`).
+  peers: []
 resources:
   requests:
     cpu: 50m

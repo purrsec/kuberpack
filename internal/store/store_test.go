@@ -23,6 +23,7 @@ func TestAppsAndDeliveries(t *testing.T) {
 		ProductionBranch:  "main",
 		Strategy:          "auto",
 		Autodeploy:        true,
+		Internet:          true,
 		Hostname:          "web.example.org",
 		Port:              8080,
 		Healthcheck:       "/",
@@ -30,7 +31,7 @@ func TestAppsAndDeliveries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if app.ID == 0 || app.ForgejoRepository != "pepe/hello-world" {
+	if app.ID == 0 || app.ForgejoRepository != "pepe/hello-world" || !app.Internet {
 		t.Fatalf("%+v", app)
 	}
 
@@ -96,6 +97,15 @@ func TestAppsAndDeliveries(t *testing.T) {
 	prev, err := s.Preview(ctx, app.ID, 4)
 	if err != nil || prev.Hostname != "pr-4.web.example.org" {
 		t.Fatalf("%+v %v", prev, err)
+	}
+	app.Internet = false
+	app.Peers = []string{"billing", "postgres:web"}
+	if err := s.UpdateApp(ctx, app); err != nil {
+		t.Fatal(err)
+	}
+	gotApp, err := s.AppByID(ctx, app.ID)
+	if err != nil || gotApp.Internet || len(gotApp.Peers) != 2 || gotApp.Peers[0] != "billing" {
+		t.Fatalf("%+v %v", gotApp, err)
 	}
 }
 

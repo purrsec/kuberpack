@@ -44,6 +44,9 @@ func TestEnsureAppWritesContractAndPromoteEnablesFlux(t *testing.T) {
 	if strings.Contains(values, "95.111.234.93") {
 		t.Fatal("values must not publish an IPv4 ExternalDNS target")
 	}
+	if !strings.Contains(values, "internet: true") || !strings.Contains(values, "peers: []") {
+		t.Fatalf("expected default network allowlist:\n%s", values)
+	}
 	if !strings.Contains(readFile(t, clone, "kubernetes/vps/apps/site/helmrelease.yaml"), "name: site") {
 		t.Fatal("missing helmrelease")
 	}
@@ -124,6 +127,63 @@ func TestEnsureAppDoesNotOverwriteValues(t *testing.T) {
 	}
 	if strings.Contains(got, "other.example.org") {
 		t.Fatal("replaced hostname")
+	}
+}
+
+func TestUpdateNetworkRewritesAllowlistOnly(t *testing.T) {
+	bare := setupAppsGitOps(t)
+	spec := AppSpec{Name: "site", Hostname: "site.example.org", Port: 8080, Healthcheck: "/healthz"}
+	if _, err := EnsureApp(context.Background(), EnsureRequest{GitOpsURL: bare, GitOpsBranch: "main", App: spec, Platform: Platform{NetworkPolicy: true}}); err != nil {
+		t.Fatal(err)
+	}
+	off := false
+	net, err := UpdateNetwork(context.Background(), EnsureRequest{
+		GitOpsURL:    bare,
+		GitOpsBranch: "main",
+		App: AppSpec{
+			Name:        spec.Name,
+			Hostname:    spec.Hostname,
+			Port:        spec.Port,
+			Healthcheck: spec.Healthcheck,
+			Internet:    &off,
+			Peers:       []string{"billing", "postgres:web"},
+		},
+		Platform: Platform{NetworkPolicy: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !net.Changed {
+		t.Fatal("expected network commit")
+	}
+	values := readFile(t, readRemoteTree(t, bare), "kubernetes/vps/apps/site/values.yaml")
+	if !strings.Contains(values, `image: ""`) {
+		t.Fatalf("image rewritten:\n%s", values)
+	}
+	if !strings.Contains(values, "internet: false") {
+		t.Fatalf("internet:\n%s", values)
+	}
+	if !strings.Contains(values, "billing") || !strings.Contains(values, "postgres:web") {
+		t.Fatalf("peers:\n%s", values)
+	}
+	again, err := UpdateNetwork(context.Background(), EnsureRequest{
+		GitOpsURL:    bare,
+		GitOpsBranch: "main",
+		App: AppSpec{
+			Name:        spec.Name,
+			Hostname:    spec.Hostname,
+			Port:        spec.Port,
+			Healthcheck: spec.Healthcheck,
+			Internet:    &off,
+			Peers:       []string{"billing", "postgres:web"},
+		},
+		Platform: Platform{NetworkPolicy: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Changed {
+		t.Fatal("second network update should be a no-op")
 	}
 }
 

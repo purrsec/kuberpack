@@ -15,6 +15,12 @@ apps
 ├── autodeploy
 ├── autodeploy_pr
 ├── configuration_json
+├── hostname
+├── port
+├── healthcheck
+├── start_command
+├── internet
+├── peers
 ├── webhook_id
 └── created_at
 

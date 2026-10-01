@@ -43,6 +43,24 @@ func TestPatchImageAddsMissingKey(t *testing.T) {
 	}
 }
 
+func TestPatchNetworkPolicy(t *testing.T) {
+	in := []byte("image: keep\nnetworkPolicy:\n  enabled: true\n  internet: true\n  peers: []\n")
+	out, err := PatchNetworkPolicy(in, false, []string{"billing", "postgres:web"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(out)
+	if !strings.Contains(got, "image: keep") {
+		t.Fatalf("image lost:\n%s", got)
+	}
+	if !strings.Contains(got, "internet: false") {
+		t.Fatalf("internet:\n%s", got)
+	}
+	if !strings.Contains(got, "billing") || !strings.Contains(got, "postgres:web") {
+		t.Fatalf("peers:\n%s", got)
+	}
+}
+
 func TestPatchImageRejectsEmptyAndNonMapping(t *testing.T) {
 	if _, err := PatchImage(nil, "x"); err == nil {
 		t.Fatal("expected error for empty")

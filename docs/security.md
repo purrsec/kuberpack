@@ -37,6 +37,10 @@ Code non fiable : pas de secret de production, pas de token large, pas de socket
 
 Le namespace de build est le seul à pouvoir être moins restreint (besoins BuildKit).
 
+## Réseau des apps
+
+Default-deny dans `apps`. Une app décrit son egress : `internet` (bool, défaut true) et `peers` (`billing`, `postgres:web`). Ce n’est pas un nom de Service Kubernetes ni un RBAC. NetworkPolicy additive : on n’enlève pas l’egress namespace aux pods Kuberpack, on le remplace par la policy du chart. `internet: false` sans `peers` = DNS seulement (plus Stripe, plus GitHub). Ingress cluster : tout pod `part-of: kuberpack` vers le port de l’app.
+
 ## Promotion Git
 
 Rendu des manifestes avant push. Conflit sur `main` : rebase, revalider, retry seulement si le SHA est encore HEAD.

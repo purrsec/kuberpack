@@ -76,7 +76,7 @@ Après un build valide, un seul écrivain automatique (Kuberpack) pose :
 image: <registry>/<app>:sha-<commit>@sha256:<digest>
 ```
 
-Le champ `track` du même `values.yaml` dit quel commit est désiré (`main` ou un SHA). Kuberpack ne réécrit que `image`. Un `track` figé réutilise le digest déjà publié, sans Job.
+Le champ `track` du même `values.yaml` dit quel commit est désiré (`main` ou un SHA). En promotion, Kuberpack ne réécrit que `image`. `PATCH` `internet`/`peers` réécrit `networkPolicy` (pas l’image). Un `track` figé réutilise le digest déjà publié, sans Job.
 
 Le commit est petit, message explicite, manifeste rendu (`helm template` / kustomize) **avant** le push. Pas de tag mutable `main` comme source de déploiement.
 
@@ -105,7 +105,9 @@ Kuberpack ne crée pas ce Secret et n’en lit pas les clés. Un administrateur 
 
 Kuberpack et Flux ne connaissent pas Stripe ni Postgres. Ils savent seulement que le workload **monte** `app-<name>`.
 
-Stateful (Postgres, Valkey, …) : hors chart, GitOps classique. L’app les voit comme des variables dans ce même Secret.
+Réseau : le namespace `apps` est default-deny. Les pods Kuberpack (`app.kubernetes.io/part-of: kuberpack`) n’héritent pas de l’egress public du namespace. Chaque app a une NetworkPolicy : DNS, Traefik + Helm tests en ingress, les autres apps Kuberpack en ingress sur le port déclaré, egress public 80/443 si `internet: true`, et `peers` (app ou `postgres:<app>`). Les previews n’ont pas de `peers` de production.
+
+Stateful (Postgres, Valkey, …) : hors chart, GitOps classique. L’app les voit comme des variables dans ce même Secret. Un Postgres GitOps doit porter `kuberpack.io/addon=postgres` et `kuberpack.io/for=<app>` pour l’allowlist `postgres:<app>`.
 
 Rollback Helm : le cluster peut tourner une révision plus ancienne que Git. Le produit affiche `rolled_back`. Réécrire Git automatiquement est hors MVP.
 

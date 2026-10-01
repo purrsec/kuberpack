@@ -330,6 +330,9 @@ func TestCreateAndGetApp(t *testing.T) {
 	if created["webhook_configured"] != true {
 		t.Fatalf("%v", created)
 	}
+	if created["internet"] != true {
+		t.Fatalf("internet default: %v", created)
+	}
 
 	get := httptest.NewRequest(http.MethodGet, "/api/v1/apps/hello-world", nil)
 	get.Header.Set("Authorization", "Bearer api")

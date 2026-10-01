@@ -19,6 +19,8 @@ type AppSpec struct {
 	Healthcheck string
 	Replicas    int
 	Preview     bool
+	Internet    *bool
+	Peers       []string
 }
 
 // EnsureRequest creates GitOps files for a new app. It does not enable Flux
@@ -117,6 +119,92 @@ func EnsureApp(ctx context.Context, req EnsureRequest) (Result, error) {
 	return Result{}, fmt.Errorf("gitops conflict on %s after %d attempts: %w", req.GitOpsBranch, req.MaxAttempts, lastErr)
 }
 
+// UpdateNetwork rewrites networkPolicy in an existing values.yaml. It never changes image.
+func UpdateNetwork(ctx context.Context, req EnsureRequest) (Result, error) {
+	spec, err := normalizeSpec(req.App)
+	if err != nil {
+		return Result{}, err
+	}
+	if req.GitOpsURL == "" {
+		return Result{}, fmt.Errorf("gitops URL is empty")
+	}
+	if req.MaxAttempts <= 0 {
+		req.MaxAttempts = defaultAttempts
+	}
+	if req.GitOpsBranch == "" {
+		req.GitOpsBranch = "main"
+	}
+	platform := req.Platform.withDefaults()
+	parent, err := os.MkdirTemp("", "kuberpack-network-*")
+	if err != nil {
+		return Result{}, err
+	}
+	defer os.RemoveAll(parent)
+	work := filepath.Join(parent, "repo")
+	result := Result{App: spec.Name}
+	valuesRel := platform.ValuesPath(spec.Name)
+	var lastErr error
+	for attempt := 1; attempt <= req.MaxAttempts; attempt++ {
+		if err := os.RemoveAll(work); err != nil {
+			return Result{}, err
+		}
+		if _, err := req.remoteGit(ctx, "", "clone", "--branch", req.GitOpsBranch, "--single-branch", req.GitOpsURL, work); err != nil {
+			return Result{}, err
+		}
+		path := filepath.Join(work, filepath.FromSlash(valuesRel))
+		raw, err := os.ReadFile(path)
+		if os.IsNotExist(err) {
+			if _, err := writeMissingAppFiles(work, spec, platform); err != nil {
+				return Result{}, err
+			}
+		} else if err != nil {
+			return Result{}, err
+		} else {
+			patched, err := PatchNetworkPolicy(raw, internetEnabled(spec), spec.Peers)
+			if err != nil {
+				return Result{}, err
+			}
+			if err := os.WriteFile(path, patched, 0o644); err != nil {
+				return Result{}, err
+			}
+		}
+		status, err := runGit(ctx, work, "status", "--porcelain", "--", valuesRel)
+		if err != nil {
+			return Result{}, err
+		}
+		if status == "" {
+			sha, err := runGit(ctx, work, "rev-parse", "HEAD")
+			if err != nil {
+				return Result{}, err
+			}
+			result.InfraCommitSHA = sha
+			return result, nil
+		}
+		if _, err := runGit(ctx, work, gitConfig("add", "--", valuesRel)...); err != nil {
+			return Result{}, err
+		}
+		msg := fmt.Sprintf("network %s", spec.Name)
+		if _, err := runGit(ctx, work, gitConfig("commit", "-m", msg)...); err != nil {
+			return Result{}, err
+		}
+		if _, err := req.remoteGit(ctx, work, "push", "origin", "HEAD:"+req.GitOpsBranch); err != nil {
+			lastErr = err
+			continue
+		}
+		sha, err := runGit(ctx, work, "rev-parse", "HEAD")
+		if err != nil {
+			return Result{}, err
+		}
+		result.InfraCommitSHA = sha
+		result.Changed = true
+		return result, nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("gitops push rejected after %d attempts", req.MaxAttempts)
+	}
+	return Result{}, fmt.Errorf("gitops conflict on %s after %d attempts: %w", req.GitOpsBranch, req.MaxAttempts, lastErr)
+}
+
 func normalizeSpec(spec AppSpec) (AppSpec, error) {
 	spec.Name = sanitizeName(spec.Name)
 	if spec.Name == "" {
@@ -140,12 +228,16 @@ func normalizeSpec(spec AppSpec) (AppSpec, error) {
 		spec.Healthcheck = "/" + spec.Healthcheck
 	}
 	if spec.Replicas <= 0 {
-		if spec.Preview {
-			spec.Replicas = 1
-		} else {
-			spec.Replicas = 1
-		}
+		spec.Replicas = 1
 	}
+	if spec.Preview {
+		spec.Peers = nil
+	}
+	peers, err := ParsePeers(spec.Peers)
+	if err != nil {
+		return AppSpec{}, err
+	}
+	spec.Peers = FormatPeers(peers)
 	return spec, nil
 }
 
@@ -205,7 +297,7 @@ func enableInParent(work string, name string, p Platform) (bool, error) {
 func valuesYAML(spec AppSpec, p Platform) string {
 	p = p.withDefaults()
 	var b strings.Builder
-	b.WriteString("# Desired runtime. Kuberpack only rewrites `image`.\n")
+	b.WriteString("# Desired runtime. Kuberpack rewrites `image` and `networkPolicy`.\n")
 	b.WriteString("track: main\n")
 	b.WriteString("image: \"\"\n")
 	b.WriteString("port: " + strconv.Itoa(spec.Port) + "\n")
@@ -243,6 +335,19 @@ func valuesYAML(spec AppSpec, p Platform) string {
 	} else {
 		b.WriteString("  enabled: false\n")
 	}
+	if internetEnabled(spec) {
+		b.WriteString("  internet: true\n")
+	} else {
+		b.WriteString("  internet: false\n")
+	}
+	if len(spec.Peers) == 0 {
+		b.WriteString("  peers: []\n")
+	} else {
+		b.WriteString("  peers:\n")
+		for _, peer := range spec.Peers {
+			b.WriteString("    - " + peer + "\n")
+		}
+	}
 	if spec.Preview {
 		b.WriteString("resources:\n")
 		b.WriteString("  requests:\n")
@@ -263,6 +368,13 @@ func valuesYAML(spec AppSpec, p Platform) string {
 // Kuberpack never creates or fills it; Infisical or kubectl does.
 func AppRuntimeSecretName(app string) string {
 	return "app-" + sanitizeName(app)
+}
+
+func internetEnabled(spec AppSpec) bool {
+	if spec.Internet == nil {
+		return true
+	}
+	return *spec.Internet
 }
 
 func helmReleaseYAML(spec AppSpec, p Platform) string {
