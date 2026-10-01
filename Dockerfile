@@ -50,13 +50,11 @@ COPY --from=buildkit --chmod=755 /usr/bin/buildctl /usr/bin/buildctl
 COPY --from=uv --chmod=755 /uv /usr/bin/uv
 COPY charts/stateless /opt/kuberpack/charts/stateless
 WORKDIR /var/lib/kuberpack
+RUN printf '[safe]\n\tdirectory = *\n' > /etc/gitconfig
 
 ENV HOME=/home/nonroot \
     KUBERPACK_DATA=/var/lib/kuberpack \
-    KUBERPACK_CHART=/opt/kuberpack/charts/stateless \
-    GIT_CONFIG_COUNT=1 \
-    GIT_CONFIG_KEY_0=safe.directory \
-    GIT_CONFIG_VALUE_0=*
+    KUBERPACK_CHART=/opt/kuberpack/charts/stateless
 
 USER 65532
 WORKDIR /var/lib/kuberpack
