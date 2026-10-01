@@ -17,16 +17,18 @@ Hello-world : Flask Railpack sur `hello-world.host.bzh`, pin `sha-<commit>@diges
 
 Control plane : Chainguard `git` (Wolfi), plus binaires statiques (`kuberpack`, `railpack`, `buildctl`, `uv`). Pas de Debian, pas de `buildkitd`, pas de Docker privilégié. `skopeo` n’est pas dans l’image (le binaire ne l’appelle pas).
 
+Image control plane : `ghcr.io/purrsec/kuberpack:latest` (plus `sha-<commit>`). Le GitOps pin le digest : `ghcr.io/purrsec/kuberpack:latest@sha256:…`. Renovate met à jour le digest quand `latest` bouge.
+
 ```bash
-docker build -t git.host.bzh/pepe/kuberpack:dev .
+docker build -t ghcr.io/purrsec/kuberpack:dev .
 docker run --rm -p 8080:8080 \
   -e FORGEJO_TOKEN \
   -e KUBERPACK_API_TOKEN \
   -e KUBERPACK_GITOPS_URL \
-  git.host.bzh/pepe/kuberpack:dev
+  ghcr.io/purrsec/kuberpack:dev
 ```
 
-Ne pas coller Kuberpack dans le Kustomization mini-pc `wait: true`. Le déploiement GitOps est `kubernetes/kuberpack` réconcilié par Flux `kuberpack` (`wait: false`). Pinner control plane et builder comme les apps : `sha-<commit>@sha256:…` (pas de tag `test-*` pour une nouvelle publication). Ingress `https://kuberpack.host.bzh/`, webhook `https://kuberpack.host.bzh/hooks/forgejo`. API : `Authorization: Bearer` (`KUBERPACK_API_TOKEN`). Pas d’Authelia (HMAC + bearer).
+Ne pas coller Kuberpack dans le Kustomization mini-pc `wait: true`. Le déploiement GitOps est `kubernetes/kuberpack` réconcilié par Flux `kuberpack` (`wait: false`). Ingress `https://kuberpack.host.bzh/`, webhook `https://kuberpack.host.bzh/hooks/forgejo`. API : `Authorization: Bearer` (`KUBERPACK_API_TOKEN`). Pas d’Authelia (HMAC + bearer). Le builder reste pour l’instant sur le registre Forgejo (`KUBERPACK_BUILDER_IMAGE`).
 
 Tokens builder dédiés (Infisical → Secret `kuberpack-builder`) : `kuberpack-builder-git-token` (clone HTTPS de secours / archive git) et `kuberpack-builder-registry-token` (`write:package`). Ce ne sont pas le PAT du control plane. À l’enregistrement, Kuberpack pose une clé SSH read-only sur le dépôt app.
 
