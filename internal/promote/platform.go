@@ -15,6 +15,7 @@ type Platform struct {
 	PreviewsBranch      string
 	PreviewDomain       string
 	ChartRef            string
+	ChartSourceKind     string
 	SourceName          string
 	SourceNamespace     string
 	ReleaseNamespace    string
@@ -40,6 +41,9 @@ func (p Platform) withDefaults() Platform {
 	}
 	if p.ChartRef == "" {
 		p.ChartRef = "./kubernetes/vps/charts/stateless"
+	}
+	if p.ChartSourceKind == "" {
+		p.ChartSourceKind = "GitRepository"
 	}
 	if p.SourceName == "" {
 		p.SourceName = "infra-homelab"

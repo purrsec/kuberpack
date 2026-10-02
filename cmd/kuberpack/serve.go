@@ -97,6 +97,7 @@ func platformFromEnv() promote.Platform {
 	return promote.Platform{
 		AppsDir:             getenv("KUBERPACK_GITOPS_APPS", "kubernetes/vps/apps"),
 		ChartRef:            getenv("KUBERPACK_GITOPS_CHART", "./kubernetes/vps/charts/stateless"),
+		ChartSourceKind:     getenv("KUBERPACK_GITOPS_CHART_SOURCE_KIND", "GitRepository"),
 		SourceName:          getenv("KUBERPACK_GITOPS_SOURCE", "infra-homelab"),
 		SourceNamespace:     getenv("KUBERPACK_GITOPS_SOURCE_NAMESPACE", "flux-system"),
 		ReleaseNamespace:    getenv("KUBERPACK_RELEASE_NAMESPACE", "apps"),

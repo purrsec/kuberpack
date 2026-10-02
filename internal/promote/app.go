@@ -399,7 +399,7 @@ spec:
       chart: %s
       reconcileStrategy: Revision
       sourceRef:
-        kind: GitRepository
+        kind: %s
         name: %s
         namespace: %s
       interval: 5m
@@ -418,7 +418,7 @@ spec:
       remediateLastFailure: true
   test:
     enable: true
-`, spec.Name, p.ReleaseNamespace, p.ChartRef, p.SourceName, p.SourceNamespace, spec.Name)
+`, spec.Name, p.ReleaseNamespace, p.ChartRef, p.ChartSourceKind, p.SourceName, p.SourceNamespace, spec.Name)
 }
 
 func appKustomizationYAML(spec AppSpec, p Platform) string {
