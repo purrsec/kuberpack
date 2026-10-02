@@ -89,6 +89,11 @@ func Run(ctx context.Context, req Request) (Result, error) {
 			if _, err := writeMissingAppFiles(work, spec, req.Platform); err != nil {
 				return Result{}, err
 			}
+			// Previews with their own database write the empty CNPG Cluster on
+			// first pin (writeMissingAppFiles runs only when values are absent).
+			if _, err := ensurePreviewDatabase(work, spec, req.Platform); err != nil {
+				return Result{}, err
+			}
 		}
 		current, err := os.ReadFile(valuesFile)
 		if err != nil {
@@ -115,6 +120,8 @@ func Run(ctx context.Context, req Request) (Result, error) {
 			return Result{}, err
 		}
 
+		// existingGitPaths keeps the app directory when it exists, which covers
+		// a first-pin preview database written next to values.yaml.
 		add := existingGitPaths(work, req.ValuesPath, req.Platform.withDefaults().AppDir(app), req.Platform.ParentPath())
 		status, err := runGit(ctx, work, append([]string{"status", "--porcelain", "--"}, add...)...)
 		if err != nil {
