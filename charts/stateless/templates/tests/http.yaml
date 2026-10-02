@@ -26,12 +26,16 @@ spec:
         - -c
         - |
           url={{ printf "http://%s:%v%s" (include "stateless.fullname" .) .Values.port .Values.healthcheck | quote }}
+          # The readiness/startup probes tolerate 30*2s = 60s. The test must be
+          # at least as patient so a slow-but-healthy app is not failed early
+          # (this raced and made the release flaky).
           i=0
-          while [ "$i" -lt 30 ]; do
-            wget -q -O /dev/null "$url" && exit 0
+          while [ "$i" -lt 60 ]; do
+            wget -q -O /dev/null "$url" && echo "ok $url" && exit 0
             i=$((i + 1))
             sleep 2
           done
+          echo "timed out after $i attempts: $url never returned 2xx" >&2
           exit 1
       securityContext:
         allowPrivilegeEscalation: false
