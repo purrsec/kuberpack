@@ -33,11 +33,18 @@ func ensureSecretCR(work string, spec AppSpec, p Platform) ([]string, bool, erro
 	} else if err != nil {
 		return nil, false, err
 	}
-	resource := strings.TrimSuffix(filepath.Base(crRel), ".yaml")
+	// The resource must carry the .yaml extension: kustomize treats an entry
+	// without one as a directory. Also drop a legacy extensionless entry.
+	resource := filepath.Base(crRel)
+	legacy := strings.TrimSuffix(resource, ".yaml")
+	if listedInKustomization(raw, legacy) {
+		raw = removeKustomizationResource(raw, legacy)
+	}
 	if !listedInKustomization(raw, resource) {
-		if err := os.WriteFile(parentPath, appendKustomizationResource(raw, resource), 0o644); err != nil {
-			return nil, false, err
-		}
+		raw = appendKustomizationResource(raw, resource)
+	}
+	if err := os.WriteFile(parentPath, raw, 0o644); err != nil {
+		return nil, false, err
 	}
 	return []string{crRel, parentRel}, true, nil
 }
@@ -62,11 +69,13 @@ func removeSecretCR(work string, spec AppSpec, p Platform) ([]string, bool, erro
 
 	parentPath := filepath.Join(work, filepath.FromSlash(parentRel))
 	if raw, err := os.ReadFile(parentPath); err == nil {
-		resource := strings.TrimSuffix(filepath.Base(crRel), ".yaml")
-		if listedInKustomization(raw, resource) {
-			if err := os.WriteFile(parentPath, removeKustomizationResource(raw, resource), 0o644); err != nil {
-				return nil, false, err
+		for _, resource := range []string{filepath.Base(crRel), strings.TrimSuffix(filepath.Base(crRel), ".yaml")} {
+			if listedInKustomization(raw, resource) {
+				raw = removeKustomizationResource(raw, resource)
 			}
+		}
+		if err := os.WriteFile(parentPath, raw, 0o644); err != nil {
+			return nil, false, err
 		}
 	}
 	return []string{crRel, parentRel}, true, nil
