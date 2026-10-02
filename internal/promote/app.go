@@ -190,7 +190,7 @@ func SyncRuntime(ctx context.Context, req EnsureRequest) (Result, error) {
 		if _, err := runGit(ctx, work, gitConfig("add", "--", valuesRel)...); err != nil {
 			return Result{}, err
 		}
-		msg := fmt.Sprintf("network %s", spec.Name)
+		msg := fmt.Sprintf("runtime %s", spec.Name)
 		if _, err := runGit(ctx, work, gitConfig("commit", "-m", msg)...); err != nil {
 			return Result{}, err
 		}
