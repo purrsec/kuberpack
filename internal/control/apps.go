@@ -31,6 +31,7 @@ type patchAppBody struct {
 	Secrets           *[]string `json:"secrets"`
 	SecretEnv         *string   `json:"secret_env"`
 	InheritSecretFrom *string   `json:"inherit_secret_from"`
+	PreviewDatabase   *bool     `json:"preview_database"`
 }
 
 func (s *Server) patchApp(w http.ResponseWriter, r *http.Request) {
@@ -105,6 +106,9 @@ func (s *Server) patchApp(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.InheritSecretFrom != nil {
 		app.InheritSecretFrom = inheritSecretFromOrDefault(*body.InheritSecretFrom)
+	}
+	if body.PreviewDatabase != nil {
+		app.PreviewDatabase = *body.PreviewDatabase
 	}
 	previous := app
 	if err := s.cfg.Store.UpdateApp(r.Context(), app); err != nil {

@@ -40,6 +40,7 @@ type App struct {
 	Secrets           []string
 	SecretEnv         string
 	InheritSecretFrom string
+	PreviewDatabase   bool
 	WebhookID         int64
 	CreatedAt         time.Time
 }
@@ -127,6 +128,7 @@ CREATE TABLE IF NOT EXISTS apps (
   secrets TEXT NOT NULL DEFAULT '[]',
   secret_env TEXT NOT NULL DEFAULT 'prod',
   inherit_secret_from TEXT NOT NULL DEFAULT 'dev',
+  preview_database INTEGER NOT NULL DEFAULT 0,
   webhook_id INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
@@ -181,6 +183,7 @@ CREATE TABLE IF NOT EXISTS previews (
 		`ALTER TABLE apps ADD COLUMN secrets TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE apps ADD COLUMN secret_env TEXT NOT NULL DEFAULT 'prod'`,
 		`ALTER TABLE apps ADD COLUMN inherit_secret_from TEXT NOT NULL DEFAULT 'dev'`,
+		`ALTER TABLE apps ADD COLUMN preview_database INTEGER NOT NULL DEFAULT 0`,
 	} {
 		if _, alterErr := s.db.Exec(stmt); alterErr != nil && !strings.Contains(strings.ToLower(alterErr.Error()), "duplicate column") {
 			return alterErr
@@ -193,12 +196,12 @@ func (s *Store) InsertApp(ctx context.Context, app App) (App, error) {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	app.ForgejoRepository = strings.ToLower(strings.TrimSpace(app.ForgejoRepository))
 	res, err := s.db.ExecContext(ctx, `
-INSERT INTO apps (name, forgejo_repository, production_branch, strategy, autodeploy, autodeploy_pr, hostname, port, healthcheck, start_command, root_directory, build_command, internet, peers, secrets, secret_env, inherit_secret_from, webhook_id, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+INSERT INTO apps (name, forgejo_repository, production_branch, strategy, autodeploy, autodeploy_pr, hostname, port, healthcheck, start_command, root_directory, build_command, internet, peers, secrets, secret_env, inherit_secret_from, preview_database, webhook_id, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		app.Name, app.ForgejoRepository, app.ProductionBranch, app.Strategy,
 		boolInt(app.Autodeploy), boolInt(app.AutodeployPR), app.Hostname, app.Port,
 		app.Healthcheck, app.StartCommand, app.RootDirectory, app.BuildCommand,
-		boolInt(app.Internet), encodePeers(app.Peers), encodePeers(app.Secrets), app.SecretEnv, app.InheritSecretFrom, app.WebhookID, now,
+		boolInt(app.Internet), encodePeers(app.Peers), encodePeers(app.Secrets), app.SecretEnv, app.InheritSecretFrom, boolInt(app.PreviewDatabase), app.WebhookID, now,
 	)
 	if err != nil {
 		if isUnique(err) {
@@ -247,13 +250,14 @@ func (s *Store) ListApps(ctx context.Context) ([]App, error) {
 	return out, rows.Err()
 }
 
-const appSelect = `SELECT id, name, forgejo_repository, production_branch, strategy, autodeploy, autodeploy_pr, hostname, port, healthcheck, start_command, root_directory, build_command, internet, peers, secrets, secret_env, inherit_secret_from, webhook_id, created_at FROM apps`
+const appSelect = `SELECT id, name, forgejo_repository, production_branch, strategy, autodeploy, autodeploy_pr, hostname, port, healthcheck, start_command, root_directory, build_command, internet, peers, secrets, secret_env, inherit_secret_from, preview_database, webhook_id, created_at FROM apps`
 
 func scanApp(row *sql.Row) (App, error) {
 	var app App
 	var created, peers, secrets string
 	var auto, autoPR, internet int
-	err := row.Scan(&app.ID, &app.Name, &app.ForgejoRepository, &app.ProductionBranch, &app.Strategy, &auto, &autoPR, &app.Hostname, &app.Port, &app.Healthcheck, &app.StartCommand, &app.RootDirectory, &app.BuildCommand, &internet, &peers, &secrets, &app.SecretEnv, &app.InheritSecretFrom, &app.WebhookID, &created)
+	var previewDB int
+	err := row.Scan(&app.ID, &app.Name, &app.ForgejoRepository, &app.ProductionBranch, &app.Strategy, &auto, &autoPR, &app.Hostname, &app.Port, &app.Healthcheck, &app.StartCommand, &app.RootDirectory, &app.BuildCommand, &internet, &peers, &secrets, &app.SecretEnv, &app.InheritSecretFrom, &previewDB, &app.WebhookID, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return App{}, ErrNotFound
 	}
@@ -263,6 +267,7 @@ func scanApp(row *sql.Row) (App, error) {
 	app.Autodeploy = auto != 0
 	app.AutodeployPR = autoPR != 0
 	app.Internet = internet != 0
+	app.PreviewDatabase = previewDB != 0
 	app.Peers = decodePeers(peers)
 	app.Secrets = decodePeers(secrets)
 	app.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
@@ -273,13 +278,15 @@ func scanAppRow(rows *sql.Rows) (App, error) {
 	var app App
 	var created, peers, secrets string
 	var auto, autoPR, internet int
-	err := rows.Scan(&app.ID, &app.Name, &app.ForgejoRepository, &app.ProductionBranch, &app.Strategy, &auto, &autoPR, &app.Hostname, &app.Port, &app.Healthcheck, &app.StartCommand, &app.RootDirectory, &app.BuildCommand, &internet, &peers, &secrets, &app.SecretEnv, &app.InheritSecretFrom, &app.WebhookID, &created)
+	var previewDB int
+	err := rows.Scan(&app.ID, &app.Name, &app.ForgejoRepository, &app.ProductionBranch, &app.Strategy, &auto, &autoPR, &app.Hostname, &app.Port, &app.Healthcheck, &app.StartCommand, &app.RootDirectory, &app.BuildCommand, &internet, &peers, &secrets, &app.SecretEnv, &app.InheritSecretFrom, &previewDB, &app.WebhookID, &created)
 	if err != nil {
 		return App{}, err
 	}
 	app.Autodeploy = auto != 0
 	app.AutodeployPR = autoPR != 0
 	app.Internet = internet != 0
+	app.PreviewDatabase = previewDB != 0
 	app.Peers = decodePeers(peers)
 	app.Secrets = decodePeers(secrets)
 	app.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
@@ -424,11 +431,11 @@ func (s *Store) MarkRolledBack(ctx context.Context, id int64, errMsg string) err
 
 func (s *Store) UpdateApp(ctx context.Context, app App) error {
 	_, err := s.db.ExecContext(ctx, `
-UPDATE apps SET production_branch=?, strategy=?, autodeploy=?, autodeploy_pr=?, hostname=?, port=?, healthcheck=?, start_command=?, root_directory=?, build_command=?, internet=?, peers=?, secrets=?, secret_env=?, inherit_secret_from=?
+UPDATE apps SET production_branch=?, strategy=?, autodeploy=?, autodeploy_pr=?, hostname=?, port=?, healthcheck=?, start_command=?, root_directory=?, build_command=?, internet=?, peers=?, secrets=?, secret_env=?, inherit_secret_from=?, preview_database=?
 WHERE id=?`,
 		app.ProductionBranch, app.Strategy, boolInt(app.Autodeploy), boolInt(app.AutodeployPR),
 		app.Hostname, app.Port, app.Healthcheck, app.StartCommand, app.RootDirectory, app.BuildCommand,
-		boolInt(app.Internet), encodePeers(app.Peers), encodePeers(app.Secrets), app.SecretEnv, app.InheritSecretFrom, app.ID,
+		boolInt(app.Internet), encodePeers(app.Peers), encodePeers(app.Secrets), app.SecretEnv, app.InheritSecretFrom, boolInt(app.PreviewDatabase), app.ID,
 	)
 	return err
 }

@@ -40,6 +40,7 @@ type Request struct {
 	Port              int
 	Healthcheck       string
 	InheritSecretFrom string
+	PreviewDatabase   bool
 	Platform          promote.Platform
 	ImageRepository   string
 	RegistryUser      string
@@ -208,6 +209,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		Port:              req.Port,
 		Healthcheck:       req.Healthcheck,
 		InheritSecretFrom: req.InheritSecretFrom,
+		PreviewDatabase:   req.PreviewDatabase,
 		Platform:          req.Platform,
 	})
 	if err != nil {

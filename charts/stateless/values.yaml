@@ -25,6 +25,9 @@ resources:
     memory: 256Mi
 # Production: Kuberpack sets secretRef name app-<app>. The Secret is not in this chart.
 envFrom: []
+# Extra literal env entries (name/value or valueFrom). Used by previews to
+# expose the preview database details without putting credentials in Git.
+env: []
 # Railpack images often have USER root. A numeric UID is required for runAsNonRoot.
 podSecurityContext:
   runAsUser: 65534

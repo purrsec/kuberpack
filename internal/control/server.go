@@ -123,6 +123,7 @@ type createAppBody struct {
 	Secrets           []string `json:"secrets"`
 	SecretEnv         string   `json:"secret_env"`
 	InheritSecretFrom string   `json:"inherit_secret_from"`
+	PreviewDatabase   bool     `json:"preview_database"`
 }
 
 func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
@@ -206,6 +207,7 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 		Secrets:           promote.NormalizeSecretKeys(body.Secrets),
 		SecretEnv:         secretEnvOrDefault(body.SecretEnv),
 		InheritSecretFrom: inheritSecretFromOrDefault(body.InheritSecretFrom),
+		PreviewDatabase:   body.PreviewDatabase,
 	})
 	if err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
@@ -598,6 +600,7 @@ func appJSON(app store.App) map[string]any {
 		"secrets":             app.Secrets,
 		"secret_env":          app.SecretEnv,
 		"inherit_secret_from": app.InheritSecretFrom,
+		"preview_database":    app.PreviewDatabase,
 		"webhook_id":          app.WebhookID,
 	}
 }

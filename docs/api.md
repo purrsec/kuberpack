@@ -48,6 +48,8 @@ POST /api/v1/apps
 
 Les previews n’héritent jamais des `peers` de production.
 
+`preview_database` (`bool`, défaut `false`) : provisionne pour chaque preview une **base CloudNativePG vide et isolée** (`<app>-pr-<n>-db`), jamais une copie de la prod. Kuberpack écrit le `Cluster` dans la branche `previews` ; CNPG génère lui-même les identifiants (Secret `<name>-app`), et la preview reçoit `DATABASE_URL` depuis ce Secret (prioritaire sur un héritage). La NetworkPolicy de la preview ne pointe que vers **sa** base. Le schéma est créé par les migrations de l’app, sans data.
+
 Le port se configure, il ne se suppose pas. L’image peut écouter `80` ou `8080`. Une probe sur le mauvais port fait échouer la release.
 
 ## Overrides de build

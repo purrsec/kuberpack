@@ -103,6 +103,7 @@ func (s *Server) processPreview(ctx context.Context, d store.Delivery) {
 		Port:              app.Port,
 		Healthcheck:       app.Healthcheck,
 		InheritSecretFrom: app.InheritSecretFrom,
+		PreviewDatabase:   app.PreviewDatabase,
 		Platform:          previewPlatform,
 		Wait:              s.cfg.Wait,
 		AllowNonHEAD:      true,
@@ -143,6 +144,7 @@ func (s *Server) prunePreview(ctx context.Context, app store.App, pr int, releas
 				Healthcheck:       app.Healthcheck,
 				Preview:           true,
 				InheritSecretFrom: app.InheritSecretFrom,
+				PreviewDatabase:   app.PreviewDatabase,
 			},
 			Platform: s.cfg.Platform,
 		})

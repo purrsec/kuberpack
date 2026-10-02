@@ -34,6 +34,11 @@ type Platform struct {
 	InfisicalPath      string
 	InfisicalDir       string
 	InfisicalNamespace string
+	// PreviewDatabase* configure the per-preview CloudNativePG database
+	// (empty, isolated). Used only when an app opts in.
+	PreviewDatabaseImage   string
+	PreviewDatabaseStorage string
+	PreviewDatabaseClass   string
 }
 
 func (p Platform) withDefaults() Platform {
@@ -88,6 +93,15 @@ func (p Platform) withDefaults() Platform {
 	}
 	if p.InfisicalNamespace == "" {
 		p.InfisicalNamespace = "infisical"
+	}
+	if p.PreviewDatabaseImage == "" {
+		p.PreviewDatabaseImage = "ghcr.io/cloudnative-pg/postgresql:16.10-minimal-trixie@sha256:294fd7631f8d66fa54bf6ffa2948af685a20fb695fe748a6bafa71c42f1233b7"
+	}
+	if p.PreviewDatabaseStorage == "" {
+		p.PreviewDatabaseStorage = "1Gi"
+	}
+	if p.PreviewDatabaseClass == "" {
+		p.PreviewDatabaseClass = "local-path"
 	}
 	return p
 }

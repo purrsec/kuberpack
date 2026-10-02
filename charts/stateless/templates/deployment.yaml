@@ -45,6 +45,9 @@ spec:
               value: /tmp
             - name: TMPDIR
               value: /tmp
+          {{- with .Values.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- with .Values.envFrom }}
           envFrom:
             {{- toYaml . | nindent 12 }}

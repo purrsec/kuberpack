@@ -29,6 +29,9 @@ type AppSpec struct {
 	// its exact app-<app>-pr-<n>: "prod" mounts the production Secret
 	// app-<app>, "dev" mounts the shared `dev` Secret (Infisical `dev` env).
 	InheritSecretFrom string
+	// PreviewDatabase provisions an empty, isolated CloudNativePG database for
+	// the preview and points DATABASE_URL at it (opt-in).
+	PreviewDatabase bool
 }
 
 // PreviewSecretSource values for AppSpec.InheritSecretFrom.
@@ -116,7 +119,11 @@ func EnsureApp(ctx context.Context, req EnsureRequest) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		changed = changed || secretChanged
+		dbChanged, err := ensurePreviewDatabase(work, spec, platform)
+		if err != nil {
+			return Result{}, err
+		}
+		changed = changed || secretChanged || dbChanged
 		if !changed {
 			sha, err := runGit(ctx, work, "rev-parse", "HEAD")
 			if err != nil {
@@ -220,6 +227,9 @@ func SyncRuntime(ctx context.Context, req EnsureRequest) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
+		if _, err := ensurePreviewDatabase(work, spec, platform); err != nil {
+			return Result{}, err
+		}
 
 		add := append([]string{valuesRel}, secretPaths...)
 		status, err := runGit(ctx, work, append([]string{"status", "--porcelain", "--"}, add...)...)
@@ -286,6 +296,10 @@ func normalizeSpec(spec AppSpec) (AppSpec, error) {
 	}
 	if spec.Preview {
 		spec.Peers = nil
+		// An isolated, empty database per preview peers only to that database.
+		if spec.PreviewDatabase {
+			spec.Peers = []string{"postgres:" + sanitizeName(spec.Name)}
+		}
 	}
 	peers, err := ParsePeers(spec.Peers)
 	if err != nil {
@@ -410,6 +424,16 @@ func valuesYAML(spec AppSpec, p Platform) string {
 		b.WriteString("  limits:\n")
 		b.WriteString("    cpu: 200m\n")
 		b.WriteString("    memory: 128Mi\n")
+		// The preview's own database URL (highest priority) is a literal env,
+		// pulled from the CNPG-generated Secret; it beats any inherited value.
+		// Its peer (this preview's own database only) is set on spec.Peers by
+		// normalizeSpec and rendered by the networkPolicy block above.
+		if spec.PreviewDatabase {
+			b.WriteString("env:\n")
+			for _, line := range strings.Split(strings.TrimRight(previewDatabaseEnvYAML(spec), "\n"), "\n") {
+				b.WriteString("  " + line + "\n")
+			}
+		}
 		// A preview reads its own exact Secret (app-<app>-pr-<n>) and, in
 		// addition, inherits one source chosen by inherit_secret_from:
 		// "prod" -> the production Secret, "dev" (default) -> the shared `dev`

@@ -27,7 +27,9 @@ type Request struct {
 	// InheritSecretFrom is carried for a preview's inherited secret ("prod" or
 	// "dev"). Ignored outside preview.
 	InheritSecretFrom string
-	Platform          Platform
+	// PreviewDatabase provisions the preview's own empty database.
+	PreviewDatabase bool
+	Platform        Platform
 }
 
 // Result is the GitOps commit that pins the image, if a commit was needed.
@@ -79,6 +81,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 				Healthcheck:       req.Healthcheck,
 				Preview:           strings.Contains(filepath.ToSlash(req.ValuesPath), "/previews/"),
 				InheritSecretFrom: req.InheritSecretFrom,
+				PreviewDatabase:   req.PreviewDatabase,
 			})
 			if err != nil {
 				return Result{}, fmt.Errorf("read values %s: %w", req.ValuesPath, err)
