@@ -119,8 +119,9 @@ func EnsureApp(ctx context.Context, req EnsureRequest) (Result, error) {
 	return Result{}, fmt.Errorf("gitops conflict on %s after %d attempts: %w", req.GitOpsBranch, req.MaxAttempts, lastErr)
 }
 
-// UpdateNetwork rewrites networkPolicy in an existing values.yaml. It never changes image.
-func UpdateNetwork(ctx context.Context, req EnsureRequest) (Result, error) {
+// SyncRuntime rewrites the runtime contract (hostname, port, healthcheck,
+// networkPolicy) in an existing values.yaml. It never changes image or track.
+func SyncRuntime(ctx context.Context, req EnsureRequest) (Result, error) {
 	spec, err := normalizeSpec(req.App)
 	if err != nil {
 		return Result{}, err
@@ -135,7 +136,7 @@ func UpdateNetwork(ctx context.Context, req EnsureRequest) (Result, error) {
 		req.GitOpsBranch = "main"
 	}
 	platform := req.Platform.withDefaults()
-	parent, err := os.MkdirTemp("", "kuberpack-network-*")
+	parent, err := os.MkdirTemp("", "kuberpack-runtime-*")
 	if err != nil {
 		return Result{}, err
 	}
@@ -160,7 +161,13 @@ func UpdateNetwork(ctx context.Context, req EnsureRequest) (Result, error) {
 		} else if err != nil {
 			return Result{}, err
 		} else {
-			patched, err := PatchNetworkPolicy(raw, internetEnabled(spec), spec.Peers)
+			patched, err := PatchRuntime(raw, RuntimePatch{
+				Hostname:    spec.Hostname,
+				Port:        spec.Port,
+				Healthcheck: spec.Healthcheck,
+				Internet:    spec.Internet,
+				Peers:       spec.Peers,
+			})
 			if err != nil {
 				return Result{}, err
 			}

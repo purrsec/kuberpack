@@ -205,6 +205,16 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Registration performs several external side effects. From here on, any
+	// failure rolls the whole registration back so a retry starts clean
+	// instead of leaving an orphan app / HMAC secret / webhook behind.
+	rollback := func() {
+		if s.cfg.WebhookURL != "" && app.WebhookID > 0 {
+			_ = s.cfg.Client.DeleteHook(r.Context(), owner, repoName, app.WebhookID)
+		}
+		_ = s.cfg.Secrets.Delete(app.ID)
+		_ = s.cfg.Store.DeleteApp(r.Context(), app.ID)
+	}
 
 	secret, err := hmacsig.NewSecret()
 	if err != nil {
@@ -212,6 +222,7 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.cfg.Secrets.Put(app.ID, secret); err != nil {
+		_ = s.cfg.Store.DeleteApp(r.Context(), app.ID)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -219,10 +230,13 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.WebhookURL != "" {
 		hook, err := s.cfg.Client.EnsureHook(r.Context(), owner, repoName, s.cfg.WebhookURL, secret)
 		if err != nil {
-			http.Error(w, "created app but webhook failed: "+err.Error(), http.StatusBadGateway)
+			rollback()
+			http.Error(w, "webhook failed: "+err.Error(), http.StatusBadGateway)
 			return
 		}
 		if err := s.cfg.Store.SetWebhookID(r.Context(), app.ID, hook.ID); err != nil {
+			_ = s.cfg.Client.DeleteHook(r.Context(), owner, repoName, hook.ID)
+			rollback()
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -249,7 +263,10 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 			},
 			Platform: s.cfg.Platform,
 		}); err != nil {
-			http.Error(w, "created app but gitops failed: "+err.Error(), http.StatusBadGateway)
+			// The GitOps files were not written (EnsureApp is all-or-nothing
+			// before its push), so undoing the external state is enough.
+			rollback()
+			http.Error(w, "gitops failed: "+err.Error(), http.StatusBadGateway)
 			return
 		}
 		resp["gitops_configured"] = true

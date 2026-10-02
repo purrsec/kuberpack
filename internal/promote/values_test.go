@@ -43,15 +43,31 @@ func TestPatchImageAddsMissingKey(t *testing.T) {
 	}
 }
 
-func TestPatchNetworkPolicy(t *testing.T) {
-	in := []byte("image: keep\nnetworkPolicy:\n  enabled: true\n  internet: true\n  peers: []\n")
-	out, err := PatchNetworkPolicy(in, false, []string{"billing", "postgres:web"})
+func TestPatchRuntimeRewritesRuntimeFields(t *testing.T) {
+	in := []byte("image: keep\nport: 8080\nhealthcheck: /\nhostname: old.example.org\nnetworkPolicy:\n  enabled: true\n  internet: true\n  peers: []\n")
+	off := false
+	out, err := PatchRuntime(in, RuntimePatch{
+		Hostname:    "new.example.org",
+		Port:        9000,
+		Healthcheck: "healthz",
+		Internet:    &off,
+		Peers:       []string{"billing", "postgres:web"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := string(out)
 	if !strings.Contains(got, "image: keep") {
 		t.Fatalf("image lost:\n%s", got)
+	}
+	if !strings.Contains(got, "port: 9000") {
+		t.Fatalf("port not patched:\n%s", got)
+	}
+	if !strings.Contains(got, "healthcheck: /healthz") {
+		t.Fatalf("healthcheck not patched:\n%s", got)
+	}
+	if !strings.Contains(got, "hostname: new.example.org") {
+		t.Fatalf("hostname not patched:\n%s", got)
 	}
 	if !strings.Contains(got, "internet: false") {
 		t.Fatalf("internet:\n%s", got)

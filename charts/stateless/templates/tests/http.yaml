@@ -8,6 +8,7 @@ metadata:
     app.kubernetes.io/part-of: kuberpack
   annotations:
     helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded,hook-failed
 spec:
   restartPolicy: Never
   automountServiceAccountToken: false

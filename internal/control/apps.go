@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 
@@ -85,13 +86,15 @@ func (s *Server) patchApp(w http.ResponseWriter, r *http.Request) {
 		}
 		app.Peers = promote.FormatPeers(peers)
 	}
-	networkChanged := body.Internet != nil || body.Peers != nil
+	previous := app
 	if err := s.cfg.Store.UpdateApp(r.Context(), app); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if networkChanged && s.cfg.GitOpsURL != "" {
-		if _, err := promote.UpdateNetwork(r.Context(), promote.EnsureRequest{
+	// Git is the source of truth for the runtime contract: propagate every
+	// change (healthcheck, port, hostname, networkPolicy), not just the network.
+	if s.cfg.GitOpsURL != "" {
+		if _, err := promote.SyncRuntime(r.Context(), promote.EnsureRequest{
 			GitOpsURL:    s.cfg.GitOpsURL,
 			GitOpsBranch: s.cfg.GitOpsBranch,
 			HTTPToken:    s.cfg.Token,
@@ -105,7 +108,12 @@ func (s *Server) patchApp(w http.ResponseWriter, r *http.Request) {
 			},
 			Platform: s.cfg.Platform,
 		}); err != nil {
-			http.Error(w, "updated app but gitops network failed: "+err.Error(), http.StatusBadGateway)
+			// Keep SQLite in phase with GitOps: roll the update back so a retry
+			// starts from the previous state instead of leaving a silent drift.
+			if rollbackErr := s.cfg.Store.UpdateApp(r.Context(), previous); rollbackErr != nil {
+				log.Printf("kuberpack patch %s rollback: %v", app.Name, rollbackErr)
+			}
+			http.Error(w, "gitops runtime update failed, update rolled back: "+err.Error(), http.StatusBadGateway)
 			return
 		}
 	}

@@ -3,6 +3,8 @@ package promote
 import (
 	"bytes"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -92,7 +94,20 @@ func setImage(node *yaml.Node, imageRef string) error {
 	return nil
 }
 
-func PatchNetworkPolicy(in []byte, internet bool, peers []string) ([]byte, error) {
+// RuntimePatch are the runtime fields Kuberpack may rewrite after registration
+// (PATCH). It never touches `image` or `track`, which stay owned elsewhere.
+type RuntimePatch struct {
+	Hostname    string
+	Port        int
+	Healthcheck string
+	Internet    *bool
+	Peers       []string
+}
+
+// PatchRuntime updates the runtime contract in values.yaml: hostname, port,
+// healthcheck and networkPolicy. It is the counterpart of PatchImage for
+// everything that is not the pinned digest.
+func PatchRuntime(in []byte, p RuntimePatch) ([]byte, error) {
 	if len(bytes.TrimSpace(in)) == 0 {
 		return nil, fmt.Errorf("values file is empty")
 	}
@@ -104,11 +119,42 @@ func PatchNetworkPolicy(in []byte, internet bool, peers []string) ([]byte, error
 	if root == nil {
 		return nil, fmt.Errorf("values must be a YAML mapping")
 	}
+
+	if host := strings.TrimSpace(p.Hostname); host != "" {
+		setScalar(root, "hostname", host, "!!str")
+		if ingress := getMap(root, "ingress"); ingress != nil {
+			if ann := getMap(ingress, "annotations"); ann != nil {
+				setScalar(ann, "external-dns.alpha.kubernetes.io/hostname", host, "!!str")
+			}
+		}
+	}
+	if p.Port > 0 {
+		setScalar(root, "port", strconv.Itoa(p.Port), "!!int")
+	}
+	if hc := strings.TrimSpace(p.Healthcheck); hc != "" {
+		if !strings.HasPrefix(hc, "/") {
+			hc = "/" + hc
+		}
+		setScalar(root, "healthcheck", hc, "!!str")
+	}
+
 	np := getOrCreateMap(root, "networkPolicy")
 	setBool(np, "enabled", true)
-	setBool(np, "internet", internet)
-	setStringSeq(np, "peers", peers)
+	if p.Internet != nil {
+		setBool(np, "internet", *p.Internet)
+	}
+	setStringSeq(np, "peers", p.Peers)
+
 	return encodeYAML(&doc)
+}
+
+func getMap(parent *yaml.Node, key string) *yaml.Node {
+	for i := 0; i+1 < len(parent.Content); i += 2 {
+		if parent.Content[i].Value == key && parent.Content[i+1].Kind == yaml.MappingNode {
+			return parent.Content[i+1]
+		}
+	}
+	return nil
 }
 
 func mappingRoot(node *yaml.Node) *yaml.Node {

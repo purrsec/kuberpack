@@ -130,14 +130,14 @@ func TestEnsureAppDoesNotOverwriteValues(t *testing.T) {
 	}
 }
 
-func TestUpdateNetworkRewritesAllowlistOnly(t *testing.T) {
+func TestSyncRuntimeRewritesRuntimeFields(t *testing.T) {
 	bare := setupAppsGitOps(t)
 	spec := AppSpec{Name: "site", Hostname: "site.example.org", Port: 8080, Healthcheck: "/healthz"}
 	if _, err := EnsureApp(context.Background(), EnsureRequest{GitOpsURL: bare, GitOpsBranch: "main", App: spec, Platform: Platform{NetworkPolicy: true}}); err != nil {
 		t.Fatal(err)
 	}
 	off := false
-	net, err := UpdateNetwork(context.Background(), EnsureRequest{
+	net, err := SyncRuntime(context.Background(), EnsureRequest{
 		GitOpsURL:    bare,
 		GitOpsBranch: "main",
 		App: AppSpec{
@@ -166,7 +166,7 @@ func TestUpdateNetworkRewritesAllowlistOnly(t *testing.T) {
 	if !strings.Contains(values, "billing") || !strings.Contains(values, "postgres:web") {
 		t.Fatalf("peers:\n%s", values)
 	}
-	again, err := UpdateNetwork(context.Background(), EnsureRequest{
+	again, err := SyncRuntime(context.Background(), EnsureRequest{
 		GitOpsURL:    bare,
 		GitOpsBranch: "main",
 		App: AppSpec{

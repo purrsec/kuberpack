@@ -187,7 +187,13 @@ func DisableApp(ctx context.Context, req EnsureRequest) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if !listedInKustomization(raw, spec.Name) {
+	appDir := filepath.Join(work, filepath.FromSlash(platform.AppDir(spec.Name)))
+	appDirExists := false
+	if info, statErr := os.Stat(appDir); statErr == nil && info.IsDir() {
+		appDirExists = true
+	}
+	listed := listedInKustomization(raw, spec.Name)
+	if !listed && !appDirExists {
 		sha, err := runGit(ctx, work, "rev-parse", "HEAD")
 		if err != nil {
 			return Result{}, err
@@ -195,10 +201,21 @@ func DisableApp(ctx context.Context, req EnsureRequest) (Result, error) {
 		result.InfraCommitSHA = sha
 		return result, nil
 	}
-	if err := os.WriteFile(path, removeKustomizationResource(raw, spec.Name), 0o644); err != nil {
-		return Result{}, err
+	// Remove the app from the parent kustomization so Flux prunes the workload,
+	// and drop its directory so no dead manifest is left behind.
+	add := []string{platform.ParentPath()}
+	if listed {
+		if err := os.WriteFile(path, removeKustomizationResource(raw, spec.Name), 0o644); err != nil {
+			return Result{}, err
+		}
 	}
-	if _, err := runGit(ctx, work, gitConfig("add", "--", platform.ParentPath())...); err != nil {
+	if appDirExists {
+		if err := os.RemoveAll(appDir); err != nil {
+			return Result{}, err
+		}
+		add = append(add, platform.AppDir(spec.Name))
+	}
+	if _, err := runGit(ctx, work, gitConfig(append([]string{"add", "-A", "--"}, add...)...)...); err != nil {
 		return Result{}, err
 	}
 	if _, err := runGit(ctx, work, gitConfig("commit", "-m", "unregister "+spec.Name)...); err != nil {
