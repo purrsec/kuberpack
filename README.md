@@ -48,7 +48,7 @@ CLI `kuberpack` : pin d’un digest dans le dépôt GitOps. Chart Helm `charts/s
 make test
 make build
 ./bin/kuberpack promote \
-  --gitops-url git@git.host.bzh:pepe/infra-homelab.git \
+  --gitops-url https://git.host.bzh/pepe/infra-homelab.git \
   --gitops-branch main \
   --values-path kubernetes/vps/apps/hello-world/values.yaml \
   --chart charts/stateless \

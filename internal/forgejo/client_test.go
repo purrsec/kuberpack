@@ -245,33 +245,3 @@ func TestCreateHook(t *testing.T) {
 		t.Fatalf("%+v", hook)
 	}
 }
-
-func TestCreateDeployKey(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/repos/pepe/hello-world/keys", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatal(err)
-		}
-		if body["read_only"] != true {
-			t.Fatalf("%v", body)
-		}
-		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(map[string]any{"id": 11, "title": body["title"], "read_only": true})
-	})
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-	c, err := New(srv.URL, "test-token")
-	if err != nil {
-		t.Fatal(err)
-	}
-	c.HTTPClient = srv.Client()
-	key, err := c.CreateDeployKey(context.Background(), "pepe", "hello-world", "kuberpack", "ssh-ed25519 AAAA")
-	if err != nil || key.ID != 11 {
-		t.Fatalf("%+v %v", key, err)
-	}
-}

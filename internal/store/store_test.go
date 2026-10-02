@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -117,12 +116,5 @@ func TestSecretsDir(t *testing.T) {
 	got, err := d.Get(3)
 	if err != nil || got != "s3cret" {
 		t.Fatalf("%q %v", got, err)
-	}
-	if err := d.PutDeployKey(3, "-----BEGIN OPENSSH PRIVATE KEY-----\n"); err != nil {
-		t.Fatal(err)
-	}
-	key, err := d.GetDeployKey(3)
-	if err != nil || !strings.Contains(key, "OPENSSH") {
-		t.Fatalf("%q %v", key, err)
 	}
 }

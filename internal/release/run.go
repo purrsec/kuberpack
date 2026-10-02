@@ -44,7 +44,6 @@ type Request struct {
 	SkipPromote     bool
 	AllowNonHEAD    bool
 	KnownDigest     string
-	SSHPrivateKey   string
 	BuildsGitURL    string
 	Environment     string
 	Log             func(string, ...any)
@@ -100,15 +99,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	}
 	defer os.RemoveAll(parent)
 	dest := filepath.Join(parent, "src")
-	if req.SSHPrivateKey != "" && repo.SSHURL != "" {
-		keyFile := filepath.Join(parent, "id_ed25519")
-		if err := os.WriteFile(keyFile, []byte(req.SSHPrivateKey), 0o600); err != nil {
-			return Result{}, fail.Stage(fail.Clone, err)
-		}
-		if err := fetch.CheckoutWithSSH(ctx, repo.SSHURL, sha, dest, keyFile); err != nil {
-			return Result{}, fail.Stage(fail.Clone, err)
-		}
-	} else if err := fetch.Checkout(ctx, repo.CloneURL, sha, dest, fetch.TokenHeaderArgs(req.Token)); err != nil {
+	if err := fetch.Checkout(ctx, repo.CloneURL, sha, dest, fetch.TokenHeaderArgs(req.Token)); err != nil {
 		return Result{}, fail.Stage(fail.Clone, err)
 	}
 	plan, err := strategy.Resolve(dest, kind)
@@ -140,14 +131,12 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	log("submitting Kubernetes build Job for %s", sha)
 	buildReq := builder.Request{
 		CloneURL:        repo.CloneURL,
-		SSHURL:          repo.SSHURL,
 		CommitSHA:       sha,
 		ImageRepository: ociRepo,
 		RegistryUser:    req.Owner,
 		StartCmd:        req.StartCmd,
 		BuildID:         req.BuildID,
 		DeliveryID:      req.DeliveryID,
-		SSHPrivateKey:   req.SSHPrivateKey,
 		BuildsGitURL:    req.BuildsGitURL,
 		AppName:         req.Name,
 		Environment:     req.Environment,

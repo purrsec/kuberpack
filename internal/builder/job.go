@@ -30,13 +30,11 @@ var commitPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
 type Request struct {
 	DeliveryID      string
 	CloneURL        string
-	SSHURL          string
 	CommitSHA       string
 	ImageRepository string
 	RegistryUser    string
 	StartCmd        string
 	BuildID         int64
-	SSHPrivateKey   string
 	BuildsGitURL    string
 	AppName         string
 	Environment     string
@@ -169,8 +167,7 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 		return nil, fmt.Errorf("full lowercase commit SHA, image repository and registry user are required")
 	}
 	// The builder clones over HTTPS using the token mounted at
-	// /secrets/git-token. The deploy key is generated at registration but is
-	// not delivered to the Job, so the SSH URL must not be used here.
+	// /secrets/git-token. Kuberpack does not manage an SSH deploy key.
 	cloneURL := strings.TrimSpace(req.CloneURL)
 	if cloneURL == "" {
 		return nil, fmt.Errorf("clone URL is required")

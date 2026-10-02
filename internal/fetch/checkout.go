@@ -9,15 +9,13 @@ import (
 )
 
 // Checkout clones cloneURL and verifies HEAD is exactly commitSHA.
+// Kuberpack only uses HTTPS clones (control plane and builder); there is no
+// SSH deploy-key path.
 func Checkout(ctx context.Context, cloneURL, commitSHA, dest string, extraGitArgs []string) error {
-	return checkout(ctx, cloneURL, commitSHA, dest, extraGitArgs, "")
+	return checkout(ctx, cloneURL, commitSHA, dest, extraGitArgs)
 }
 
-func CheckoutWithSSH(ctx context.Context, cloneURL, commitSHA, dest, keyPath string) error {
-	return checkout(ctx, cloneURL, commitSHA, dest, nil, keyPath)
-}
-
-func checkout(ctx context.Context, cloneURL, commitSHA, dest string, extraGitArgs []string, sshKey string) error {
+func checkout(ctx context.Context, cloneURL, commitSHA, dest string, extraGitArgs []string) error {
 	if strings.TrimSpace(cloneURL) == "" {
 		return fmt.Errorf("clone URL is empty")
 	}
@@ -30,13 +28,13 @@ func checkout(ctx context.Context, cloneURL, commitSHA, dest string, extraGitArg
 	}
 
 	args := []string{"clone", "--filter=blob:none", cloneURL, dest}
-	if _, err := runGit(ctx, "", extraGitArgs, sshKey, args...); err != nil {
+	if _, err := runGit(ctx, "", extraGitArgs, args...); err != nil {
 		return err
 	}
-	if _, err := runGit(ctx, dest, extraGitArgs, sshKey, "checkout", "--detach", commitSHA); err != nil {
+	if _, err := runGit(ctx, dest, extraGitArgs, "checkout", "--detach", commitSHA); err != nil {
 		return fmt.Errorf("checkout %s: %w", commitSHA, err)
 	}
-	got, err := runGit(ctx, dest, extraGitArgs, sshKey, "rev-parse", "HEAD")
+	got, err := runGit(ctx, dest, extraGitArgs, "rev-parse", "HEAD")
 	if err != nil {
 		return err
 	}
@@ -53,14 +51,11 @@ func TokenHeaderArgs(token string) []string {
 	return []string{"-c", "http.extraHeader=Authorization: token " + token}
 }
 
-func runGit(ctx context.Context, dir string, extra []string, sshKey string, args ...string) (string, error) {
+func runGit(ctx context.Context, dir string, extra []string, args ...string) (string, error) {
 	all := append(append([]string{}, extra...), args...)
 	cmd := exec.CommandContext(ctx, "git", all...)
 	cmd.Dir = dir
 	cmd.Env = os.Environ()
-	if sshKey != "" {
-		cmd.Env = append(cmd.Env, "GIT_SSH_COMMAND=ssh -i "+sshKey+" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/kuberpack-known-hosts")
-	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))

@@ -29,28 +29,10 @@ func (d SecretsDir) Get(appID int64) (string, error) {
 	return string(trimNL(b)), nil
 }
 
-func (d SecretsDir) PutDeployKey(appID int64, privateKey string) error {
-	if err := os.MkdirAll(string(d), 0o700); err != nil {
-		return err
-	}
-	path := d.deployPath(appID)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(privateKey), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
-}
-
-func (d SecretsDir) GetDeployKey(appID int64) (string, error) {
-	b, err := os.ReadFile(d.deployPath(appID))
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
-}
-
 func (d SecretsDir) Delete(appID int64) error {
 	_ = os.Remove(d.path(appID))
+	// Remove a legacy deploy-key file if present; Kuberpack no longer manages
+	// SSH deploy keys (builder clones over HTTPS with a token).
 	_ = os.Remove(d.deployPath(appID))
 	return nil
 }

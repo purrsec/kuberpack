@@ -13,7 +13,7 @@ Le produit doit, sans fichier dans le dépôt applicatif :
 
 ## Identités
 
-Un PAT control plane (`FORGEJO_TOKEN`) pour API + GitOps. Des jetons builder dédiés (`kuberpack-builder-git-token`, `kuberpack-builder-registry-token`) dans Infisical, pas dans SQLite. La clone des apps se fait de préférence par la clé SSH read-only créée à l’enregistrement.
+Un PAT control plane (`FORGEJO_TOKEN`) pour API + GitOps. Des jetons builder dédiés (`kuberpack-builder-git-token`, `kuberpack-builder-registry-token`) dans Infisical, pas dans SQLite. Le clone des apps se fait en HTTPS avec le jeton builder monté ; Kuberpack ne gère pas de clé SSH de deploy.
 
 ```text
 FORGEJO_URL=https://git.host.bzh

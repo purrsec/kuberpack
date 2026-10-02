@@ -53,7 +53,7 @@ Service long-lived, Go (`net/http` + SQLite). Une réplique, `Recreate`, volume 
 Il doit :
 
 - exposer l’API d’enregistrement ;
-- créer webhook HMAC et clé SSH de deploy read-only sur Forgejo ;
+- créer le webhook HMAC sur Forgejo (le clone se fait en HTTPS par jeton) ;
 - répondre tout de suite (`202`) et traiter hors requête ;
 - sérialiser les builds par application et branche ;
 - dispatcher le builder, enregistrer `{image, tag, digest}` ;

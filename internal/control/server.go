@@ -18,7 +18,6 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/hmacsig"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
 	"git.host.bzh/pepe/kuberpack/internal/release"
-	"git.host.bzh/pepe/kuberpack/internal/sshkey"
 	"git.host.bzh/pepe/kuberpack/internal/store"
 	"git.host.bzh/pepe/kuberpack/internal/strategy"
 )
@@ -216,17 +215,6 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if pair, err := sshkey.Generate(); err == nil {
-		if err := s.cfg.Secrets.PutDeployKey(app.ID, pair.PrivatePEM); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if _, err := s.cfg.Client.CreateDeployKey(r.Context(), owner, repoName, "kuberpack", pair.Public); err != nil {
-			http.Error(w, "created app but deploy key failed: "+err.Error(), http.StatusBadGateway)
-			return
-		}
-	}
-
 	resp := appJSON(app)
 	if s.cfg.WebhookURL != "" {
 		hook, err := s.cfg.Client.EnsureHook(r.Context(), owner, repoName, s.cfg.WebhookURL, secret)
@@ -456,33 +444,31 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 
 	track := s.trackFor(ctx, app)
 	skipPromote := !track.FollowsMain() && !track.MatchesCommit(d.CommitSHA)
-	sshKey, _ := s.cfg.Secrets.GetDeployKey(app.ID)
 
 	result, runErr := s.cfg.Run(ctx, release.Request{
-		Builder:       s.cfg.Builder,
-		BuildID:       buildID,
-		DeliveryID:    d.ID,
-		Client:        s.cfg.Client,
-		Token:         s.cfg.Token,
-		Owner:         owner,
-		Name:          name,
-		Branch:        app.ProductionBranch,
-		SHA:           d.CommitSHA,
-		Strategy:      app.Strategy,
-		StartCmd:      app.StartCommand,
-		GitOpsURL:     s.cfg.GitOpsURL,
-		GitOpsBranch:  s.cfg.GitOpsBranch,
-		ChartPath:     s.cfg.ChartPath,
-		Hostname:      app.Hostname,
-		Port:          app.Port,
-		Healthcheck:   app.Healthcheck,
-		Platform:      s.cfg.Platform,
-		Wait:          s.cfg.Wait,
-		SkipPromote:   skipPromote,
-		SSHPrivateKey: sshKey,
-		BuildsGitURL:  s.cfg.BuildsGitURL,
-		Environment:   "production",
-		Log:           func(format string, args ...any) { log.Printf(format, args...) },
+		Builder:      s.cfg.Builder,
+		BuildID:      buildID,
+		DeliveryID:   d.ID,
+		Client:       s.cfg.Client,
+		Token:        s.cfg.Token,
+		Owner:        owner,
+		Name:         name,
+		Branch:       app.ProductionBranch,
+		SHA:          d.CommitSHA,
+		Strategy:     app.Strategy,
+		StartCmd:     app.StartCommand,
+		GitOpsURL:    s.cfg.GitOpsURL,
+		GitOpsBranch: s.cfg.GitOpsBranch,
+		ChartPath:    s.cfg.ChartPath,
+		Hostname:     app.Hostname,
+		Port:         app.Port,
+		Healthcheck:  app.Healthcheck,
+		Platform:     s.cfg.Platform,
+		Wait:         s.cfg.Wait,
+		SkipPromote:  skipPromote,
+		BuildsGitURL: s.cfg.BuildsGitURL,
+		Environment:  "production",
+		Log:          func(format string, args ...any) { log.Printf(format, args...) },
 	})
 	finished := store.Build{Status: "succeeded", ArchiveURL: archiveURL(s.cfg.BuildsGitURL, name, d.CommitSHA)}
 	if runErr != nil {
