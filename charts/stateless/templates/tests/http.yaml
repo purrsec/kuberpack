@@ -26,14 +26,16 @@ spec:
         - -c
         - |
           url={{ printf "http://%s:%v%s" (include "stateless.fullname" .) .Values.port .Values.healthcheck | quote }}
-          # The readiness/startup probes tolerate 30*2s = 60s. The test must be
-          # at least as patient so a slow-but-healthy app is not failed early
-          # (this raced and made the release flaky).
+          # The test starts next to the app. While the app is still converging,
+          # the ingress NetworkPolicy may not be in place yet, so the SYN is
+          # dropped and an unbounded `wget` would hang until the Helm timeout
+          # instead of retrying. `-T` bounds each attempt so the loop actually
+          # retries and succeeds as soon as the app answers.
           i=0
-          while [ "$i" -lt 60 ]; do
-            wget -q -O /dev/null "$url" && echo "ok $url" && exit 0
+          while [ "$i" -lt 90 ]; do
+            wget -q -T 2 -O /dev/null "$url" && echo "ok $url" && exit 0
             i=$((i + 1))
-            sleep 2
+            sleep 1
           done
           echo "timed out after $i attempts: $url never returned 2xx" >&2
           exit 1
