@@ -21,6 +21,10 @@ type AppSpec struct {
 	Preview     bool
 	Internet    *bool
 	Peers       []string
+	// Secrets are Infisical key names to inject into the app Secret as env
+	// vars of the same name. SecretEnv is the Infisical environment slug.
+	Secrets   []string
+	SecretEnv string
 }
 
 // EnsureRequest creates GitOps files for a new app. It does not enable Flux
@@ -76,6 +80,11 @@ func EnsureApp(ctx context.Context, req EnsureRequest) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
+		secretPaths, secretChanged, err := ensureSecretCR(work, spec, platform)
+		if err != nil {
+			return Result{}, err
+		}
+		changed = changed || secretChanged
 		if !changed {
 			sha, err := runGit(ctx, work, "rev-parse", "HEAD")
 			if err != nil {
@@ -85,8 +94,8 @@ func EnsureApp(ctx context.Context, req EnsureRequest) (Result, error) {
 			return result, nil
 		}
 
-		rel := platform.AppDir(spec.Name)
-		if _, err := runGit(ctx, work, gitConfig("add", "--", rel)...); err != nil {
+		add := append([]string{platform.AppDir(spec.Name)}, secretPaths...)
+		if _, err := runGit(ctx, work, gitConfig(append([]string{"add", "--"}, add...)...)...); err != nil {
 			return Result{}, err
 		}
 		msg := fmt.Sprintf("register %s: %s", spec.Name, spec.Hostname)
@@ -175,7 +184,13 @@ func SyncRuntime(ctx context.Context, req EnsureRequest) (Result, error) {
 				return Result{}, err
 			}
 		}
-		status, err := runGit(ctx, work, "status", "--porcelain", "--", valuesRel)
+		secretPaths, _, err := ensureSecretCR(work, spec, platform)
+		if err != nil {
+			return Result{}, err
+		}
+
+		add := append([]string{valuesRel}, secretPaths...)
+		status, err := runGit(ctx, work, append([]string{"status", "--porcelain", "--"}, add...)...)
 		if err != nil {
 			return Result{}, err
 		}
@@ -187,7 +202,7 @@ func SyncRuntime(ctx context.Context, req EnsureRequest) (Result, error) {
 			result.InfraCommitSHA = sha
 			return result, nil
 		}
-		if _, err := runGit(ctx, work, gitConfig("add", "--", valuesRel)...); err != nil {
+		if _, err := runGit(ctx, work, gitConfig(append([]string{"add", "--"}, add...)...)...); err != nil {
 			return Result{}, err
 		}
 		msg := fmt.Sprintf("runtime %s", spec.Name)

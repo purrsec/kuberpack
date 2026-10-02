@@ -27,6 +27,13 @@ type Platform struct {
 	TraefikEntrypoint   string
 	TraefikCertResolver string
 	NetworkPolicy       bool
+	// Infisical: where app secrets are synced from. Empty ProjectID disables
+	// the generated InfisicalStaticSecret.
+	InfisicalAuthRef   string
+	InfisicalProjectID string
+	InfisicalPath      string
+	InfisicalDir       string
+	InfisicalNamespace string
 }
 
 func (p Platform) withDefaults() Platform {
@@ -70,7 +77,33 @@ func (p Platform) withDefaults() Platform {
 	if p.TraefikCertResolver == "" {
 		p.TraefikCertResolver = "letsencrypt"
 	}
+	if p.InfisicalAuthRef == "" {
+		p.InfisicalAuthRef = "contabo-vps"
+	}
+	if p.InfisicalPath == "" {
+		p.InfisicalPath = "/"
+	}
+	if p.InfisicalDir == "" {
+		p.InfisicalDir = "kubernetes/vps/infisical"
+	}
+	if p.InfisicalNamespace == "" {
+		p.InfisicalNamespace = "infisical"
+	}
 	return p
+}
+
+// InfisicalEnabled reports whether the platform is configured to generate
+// InfisicalStaticSecret objects for apps that declare secrets.
+func (p Platform) InfisicalEnabled() bool {
+	return strings.TrimSpace(p.withDefaults().InfisicalProjectID) != ""
+}
+
+func (p Platform) InfisicalCRPath(name string) string {
+	return filepath.ToSlash(filepath.Join(p.withDefaults().InfisicalDir, "app-"+sanitizeName(name)+".yaml"))
+}
+
+func (p Platform) InfisicalParentPath() string {
+	return filepath.ToSlash(filepath.Join(p.withDefaults().InfisicalDir, "kustomization.yaml"))
 }
 
 func (p Platform) ParentPath() string {

@@ -120,6 +120,8 @@ type createAppBody struct {
 	BuildCommand  string   `json:"build_command"`
 	Internet      *bool    `json:"internet"`
 	Peers         []string `json:"peers"`
+	Secrets       []string `json:"secrets"`
+	SecretEnv     string   `json:"secret_env"`
 }
 
 func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
@@ -200,6 +202,8 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 		BuildCommand:      strings.TrimSpace(body.BuildCommand),
 		Internet:          internet,
 		Peers:             promote.FormatPeers(peers),
+		Secrets:           promote.NormalizeSecretKeys(body.Secrets),
+		SecretEnv:         secretEnvOrDefault(body.SecretEnv),
 	})
 	if err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
@@ -589,8 +593,17 @@ func appJSON(app store.App) map[string]any {
 		"build_command":  app.BuildCommand,
 		"internet":       app.Internet,
 		"peers":          app.Peers,
+		"secrets":        app.Secrets,
+		"secret_env":     app.SecretEnv,
 		"webhook_id":     app.WebhookID,
 	}
+}
+
+func secretEnvOrDefault(env string) string {
+	if env = strings.TrimSpace(env); env != "" {
+		return env
+	}
+	return "prod"
 }
 
 func sanitizeName(s string) string {

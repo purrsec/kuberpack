@@ -28,6 +28,8 @@ type patchAppBody struct {
 	BuildCommand  *string   `json:"build_command"`
 	Internet      *bool     `json:"internet"`
 	Peers         *[]string `json:"peers"`
+	Secrets       *[]string `json:"secrets"`
+	SecretEnv     *string   `json:"secret_env"`
 }
 
 func (s *Server) patchApp(w http.ResponseWriter, r *http.Request) {
@@ -94,6 +96,12 @@ func (s *Server) patchApp(w http.ResponseWriter, r *http.Request) {
 		}
 		app.Peers = promote.FormatPeers(peers)
 	}
+	if body.Secrets != nil {
+		app.Secrets = promote.NormalizeSecretKeys(*body.Secrets)
+	}
+	if body.SecretEnv != nil {
+		app.SecretEnv = secretEnvOrDefault(*body.SecretEnv)
+	}
 	previous := app
 	if err := s.cfg.Store.UpdateApp(r.Context(), app); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -113,6 +121,8 @@ func (s *Server) patchApp(w http.ResponseWriter, r *http.Request) {
 				Healthcheck: app.Healthcheck,
 				Internet:    &app.Internet,
 				Peers:       app.Peers,
+				Secrets:     app.Secrets,
+				SecretEnv:   app.SecretEnv,
 			},
 			Platform: s.cfg.Platform,
 		}); err != nil {

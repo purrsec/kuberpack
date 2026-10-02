@@ -110,6 +110,11 @@ func platformFromEnv() promote.Platform {
 		TraefikCertResolver: getenv("KUBERPACK_CERT_RESOLVER", "letsencrypt"),
 		NetworkPolicy:       getenvBool("KUBERPACK_NETWORK_POLICY", true),
 		PreviewDomain:       getenv("KUBERPACK_PREVIEW_DOMAIN", "preview.host.bzh"),
+		InfisicalAuthRef:    getenv("KUBERPACK_INFISICAL_AUTH_REF", "contabo-vps"),
+		InfisicalProjectID:  strings.TrimSpace(os.Getenv("KUBERPACK_INFISICAL_PROJECT_ID")),
+		InfisicalPath:       getenv("KUBERPACK_INFISICAL_PATH", "/"),
+		InfisicalDir:        getenv("KUBERPACK_INFISICAL_DIR", "kubernetes/vps/infisical"),
+		InfisicalNamespace:  getenv("KUBERPACK_INFISICAL_NAMESPACE", "infisical"),
 	}
 }
 

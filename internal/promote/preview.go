@@ -193,7 +193,11 @@ func DisableApp(ctx context.Context, req EnsureRequest) (Result, error) {
 		appDirExists = true
 	}
 	listed := listedInKustomization(raw, spec.Name)
-	if !listed && !appDirExists {
+	secretPaths, secretChanged, err := removeSecretCR(work, spec, platform)
+	if err != nil {
+		return Result{}, err
+	}
+	if !listed && !appDirExists && !secretChanged {
 		sha, err := runGit(ctx, work, "rev-parse", "HEAD")
 		if err != nil {
 			return Result{}, err
@@ -202,7 +206,7 @@ func DisableApp(ctx context.Context, req EnsureRequest) (Result, error) {
 		return result, nil
 	}
 	// Remove the app from the parent kustomization so Flux prunes the workload,
-	// and drop its directory so no dead manifest is left behind.
+	// drop its directory and delete its Infisical CR so nothing dead is left.
 	add := []string{platform.ParentPath()}
 	if listed {
 		if err := os.WriteFile(path, removeKustomizationResource(raw, spec.Name), 0o644); err != nil {
@@ -215,6 +219,7 @@ func DisableApp(ctx context.Context, req EnsureRequest) (Result, error) {
 		}
 		add = append(add, platform.AppDir(spec.Name))
 	}
+	add = append(add, secretPaths...)
 	if _, err := runGit(ctx, work, gitConfig(append([]string{"add", "-A", "--"}, add...)...)...); err != nil {
 		return Result{}, err
 	}

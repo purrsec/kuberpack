@@ -37,6 +37,10 @@ POST /api/v1/apps
 | `healthcheck` | Chemin HTTP des probes et du Helm test |
 | `internet` | Egress public 80/443 (défaut `true`). `false` : DNS + `peers` seulement |
 | `peers` | Allowlist cluster : autres apps (`billing`) ou addons (`postgres:web`) |
+| `secrets` | Clés Infisical à injecter dans `app-<name>` (même nom que la clé) |
+| `secret_env` | Environment slug Infisical (défaut `prod`) |
+
+`secrets` déclare les clés Infisical ; Kuberpack génère l’`InfisicalStaticSecret` (`kubernetes/vps/infisical/app-<name>.yaml`) qui les synchronise dans le Secret `app-<name>`. Aucune valeur ne transite par l’API, Git ou SQLite. Sans `secrets`, aucun CR n’est écrit.
 
 Le port se configure, il ne se suppose pas. L’image peut écouter `80` ou `8080`. Une probe sur le mauvais port fait échouer la release.
 

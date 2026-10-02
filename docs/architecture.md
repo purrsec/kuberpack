@@ -101,7 +101,7 @@ envFrom:
       name: app-<name>
 ```
 
-Kuberpack ne crée pas ce Secret et n’en lit pas les clés. Un administrateur le remplit (Infisical → Secret Kubernetes, ou `kubectl` / autre gestionnaire) dans le namespace de release (`apps` par défaut). Clés typiques : `STRIPE_SECRET_KEY`, `DATABASE_URL`. Le `secretRef` est **optional** : une app sans secret démarre (utile pour un front ou un premier déploiement), et les clés d’un Secret présent sont injectées normalement.
+Kuberpack ne crée pas ce Secret et n’en lit pas les clés. Si l’app déclare `secrets` (`["GITHUB_PAT"]`) et `secret_env` (`prod`), Kuberpack **génère** le `InfisicalStaticSecret` (`kubernetes/vps/infisical/app-<name>.yaml`) qui synchronise ces clés Infisical dans `app-<name>` — valeurs jamais en Git ni en SQLite. Sans `secrets`, l’administrateur remplit le Secret lui-même (Infisical, `kubectl`, autre). Le `secretRef` est **optional** : une app sans secret démarre (front, premier déploiement), et les clés d’un Secret présent sont injectées normalement.
 
 Kuberpack et Flux ne connaissent pas Stripe ni Postgres. Ils savent seulement que le workload **monte** `app-<name>`.
 
