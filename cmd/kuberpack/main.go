@@ -40,6 +40,8 @@ func main() {
 			ImageRepository: os.Getenv("KUBERPACK_IMAGE_REPOSITORY"),
 			RegistryUser:    os.Getenv("KUBERPACK_REGISTRY_USER"),
 			StartCmd:        os.Getenv("KUBERPACK_START_CMD"),
+			RootDirectory:   os.Getenv("KUBERPACK_ROOT_DIRECTORY"),
+			BuildCommand:    os.Getenv("KUBERPACK_BUILD_CMD"),
 			BuildsGitURL:    os.Getenv("KUBERPACK_BUILDS_GIT_URL"),
 			AppName:         os.Getenv("KUBERPACK_APP_NAME"),
 			Environment:     os.Getenv("KUBERPACK_ENVIRONMENT"),

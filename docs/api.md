@@ -52,6 +52,8 @@ La stratégie détecte langage et commandes. Les exceptions vivent dans Kuberpac
 }
 ```
 
+`root_directory` choisit le sous-dossier analysé et construit (monorepo). `build_command` est transmis à Railpack (`--build-cmd`). Ces champs se posent à l’enregistrement ou via `PATCH`.
+
 Un `Procfile` est optionnel. Aucun fichier de plateforme n’est exigé dans le dépôt applicatif.
 
 À l’enregistrement, Kuberpack matérialise ce JSON en YAML GitOps (`kubernetes/vps/apps/<name>/`). Ingress, pull secret, TLS et DNS viennent des défauts plateforme (`KUBERPACK_DNS_TARGET`, …), pas du dépôt app. `KUBERPACK_DNS_TARGET` ne doit contenir que des IPv6 : Kuberpack ignore les IPv4 pour ne publier que des AAAA. Le `values.yaml` de production pose `envFrom.secretRef.name: app-<name>` ; les clés du Secret ne passent jamais par l’API. Flux ne voit l’app qu’après le premier pin `image`. Les apps déjà enregistrées gardent leur YAML : ajouter le `envFrom` à la main si besoin.
@@ -60,7 +62,7 @@ Le YAML GitOps est le contrat runtime. `track: main` (défaut, ou vide / `latest
 
 ## Suite HTTP
 
-`PATCH /api/v1/apps/{name}` — champs optionnels : `branch`, `strategy`, `autodeploy`, `autodeploy_pr`, `hostname`, `port`, `healthcheck`, `start_command`, `internet`, `peers`. Un changement `internet`/`peers` réécrit `networkPolicy` dans GitOps, sans toucher `image`. `"peers": []` vide l’allowlist.
+`PATCH /api/v1/apps/{name}` — champs optionnels : `branch`, `strategy`, `autodeploy`, `autodeploy_pr`, `hostname`, `port`, `healthcheck`, `start_command`, `root_directory`, `build_command`, `internet`, `peers`. Un changement `internet`/`peers` réécrit `networkPolicy` dans GitOps, sans toucher `image`. `"peers": []` vide l’allowlist.
 
 `DELETE /api/v1/apps/{name}` — retire le webhook, la clé HMAC, l’entrée SQLite, et enlève l’app du kustomization parent (Flux prune).
 

@@ -33,6 +33,8 @@ type App struct {
 	Port              int
 	Healthcheck       string
 	StartCommand      string
+	RootDirectory     string
+	BuildCommand      string
 	Internet          bool
 	Peers             []string
 	WebhookID         int64
@@ -117,6 +119,8 @@ CREATE TABLE IF NOT EXISTS apps (
   port INTEGER NOT NULL,
   healthcheck TEXT NOT NULL,
   start_command TEXT NOT NULL DEFAULT '',
+  root_directory TEXT NOT NULL DEFAULT '',
+  build_command TEXT NOT NULL DEFAULT '',
   webhook_id INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
@@ -166,6 +170,8 @@ CREATE TABLE IF NOT EXISTS previews (
 		`ALTER TABLE builds ADD COLUMN archive_url TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE apps ADD COLUMN internet INTEGER NOT NULL DEFAULT 1`,
 		`ALTER TABLE apps ADD COLUMN peers TEXT NOT NULL DEFAULT '[]'`,
+		`ALTER TABLE apps ADD COLUMN root_directory TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE apps ADD COLUMN build_command TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, alterErr := s.db.Exec(stmt); alterErr != nil && !strings.Contains(strings.ToLower(alterErr.Error()), "duplicate column") {
 			return alterErr
@@ -178,11 +184,12 @@ func (s *Store) InsertApp(ctx context.Context, app App) (App, error) {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	app.ForgejoRepository = strings.ToLower(strings.TrimSpace(app.ForgejoRepository))
 	res, err := s.db.ExecContext(ctx, `
-INSERT INTO apps (name, forgejo_repository, production_branch, strategy, autodeploy, autodeploy_pr, hostname, port, healthcheck, start_command, internet, peers, webhook_id, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+INSERT INTO apps (name, forgejo_repository, production_branch, strategy, autodeploy, autodeploy_pr, hostname, port, healthcheck, start_command, root_directory, build_command, internet, peers, webhook_id, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		app.Name, app.ForgejoRepository, app.ProductionBranch, app.Strategy,
 		boolInt(app.Autodeploy), boolInt(app.AutodeployPR), app.Hostname, app.Port,
-		app.Healthcheck, app.StartCommand, boolInt(app.Internet), encodePeers(app.Peers), app.WebhookID, now,
+		app.Healthcheck, app.StartCommand, app.RootDirectory, app.BuildCommand,
+		boolInt(app.Internet), encodePeers(app.Peers), app.WebhookID, now,
 	)
 	if err != nil {
 		if isUnique(err) {
@@ -231,13 +238,13 @@ func (s *Store) ListApps(ctx context.Context) ([]App, error) {
 	return out, rows.Err()
 }
 
-const appSelect = `SELECT id, name, forgejo_repository, production_branch, strategy, autodeploy, autodeploy_pr, hostname, port, healthcheck, start_command, internet, peers, webhook_id, created_at FROM apps`
+const appSelect = `SELECT id, name, forgejo_repository, production_branch, strategy, autodeploy, autodeploy_pr, hostname, port, healthcheck, start_command, root_directory, build_command, internet, peers, webhook_id, created_at FROM apps`
 
 func scanApp(row *sql.Row) (App, error) {
 	var app App
 	var created, peers string
 	var auto, autoPR, internet int
-	err := row.Scan(&app.ID, &app.Name, &app.ForgejoRepository, &app.ProductionBranch, &app.Strategy, &auto, &autoPR, &app.Hostname, &app.Port, &app.Healthcheck, &app.StartCommand, &internet, &peers, &app.WebhookID, &created)
+	err := row.Scan(&app.ID, &app.Name, &app.ForgejoRepository, &app.ProductionBranch, &app.Strategy, &auto, &autoPR, &app.Hostname, &app.Port, &app.Healthcheck, &app.StartCommand, &app.RootDirectory, &app.BuildCommand, &internet, &peers, &app.WebhookID, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return App{}, ErrNotFound
 	}
@@ -256,7 +263,7 @@ func scanAppRow(rows *sql.Rows) (App, error) {
 	var app App
 	var created, peers string
 	var auto, autoPR, internet int
-	err := rows.Scan(&app.ID, &app.Name, &app.ForgejoRepository, &app.ProductionBranch, &app.Strategy, &auto, &autoPR, &app.Hostname, &app.Port, &app.Healthcheck, &app.StartCommand, &internet, &peers, &app.WebhookID, &created)
+	err := rows.Scan(&app.ID, &app.Name, &app.ForgejoRepository, &app.ProductionBranch, &app.Strategy, &auto, &autoPR, &app.Hostname, &app.Port, &app.Healthcheck, &app.StartCommand, &app.RootDirectory, &app.BuildCommand, &internet, &peers, &app.WebhookID, &created)
 	if err != nil {
 		return App{}, err
 	}
@@ -406,10 +413,11 @@ func (s *Store) MarkRolledBack(ctx context.Context, id int64, errMsg string) err
 
 func (s *Store) UpdateApp(ctx context.Context, app App) error {
 	_, err := s.db.ExecContext(ctx, `
-UPDATE apps SET production_branch=?, strategy=?, autodeploy=?, autodeploy_pr=?, hostname=?, port=?, healthcheck=?, start_command=?, internet=?, peers=?
+UPDATE apps SET production_branch=?, strategy=?, autodeploy=?, autodeploy_pr=?, hostname=?, port=?, healthcheck=?, start_command=?, root_directory=?, build_command=?, internet=?, peers=?
 WHERE id=?`,
 		app.ProductionBranch, app.Strategy, boolInt(app.Autodeploy), boolInt(app.AutodeployPR),
-		app.Hostname, app.Port, app.Healthcheck, app.StartCommand, boolInt(app.Internet), encodePeers(app.Peers), app.ID,
+		app.Hostname, app.Port, app.Healthcheck, app.StartCommand, app.RootDirectory, app.BuildCommand,
+		boolInt(app.Internet), encodePeers(app.Peers), app.ID,
 	)
 	return err
 }

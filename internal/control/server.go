@@ -106,18 +106,20 @@ func (s *Server) withAPI(next http.HandlerFunc) http.HandlerFunc {
 }
 
 type createAppBody struct {
-	Name         string   `json:"name"`
-	Repository   string   `json:"repository"`
-	Branch       string   `json:"branch"`
-	Strategy     string   `json:"strategy"`
-	Autodeploy   *bool    `json:"autodeploy"`
-	AutodeployPR bool     `json:"autodeploy_pr"`
-	Hostname     string   `json:"hostname"`
-	Port         int      `json:"port"`
-	Healthcheck  string   `json:"healthcheck"`
-	StartCommand string   `json:"start_command"`
-	Internet     *bool    `json:"internet"`
-	Peers        []string `json:"peers"`
+	Name          string   `json:"name"`
+	Repository    string   `json:"repository"`
+	Branch        string   `json:"branch"`
+	Strategy      string   `json:"strategy"`
+	Autodeploy    *bool    `json:"autodeploy"`
+	AutodeployPR  bool     `json:"autodeploy_pr"`
+	Hostname      string   `json:"hostname"`
+	Port          int      `json:"port"`
+	Healthcheck   string   `json:"healthcheck"`
+	StartCommand  string   `json:"start_command"`
+	RootDirectory string   `json:"root_directory"`
+	BuildCommand  string   `json:"build_command"`
+	Internet      *bool    `json:"internet"`
+	Peers         []string `json:"peers"`
 }
 
 func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
@@ -194,6 +196,8 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 		Port:              port,
 		Healthcheck:       health,
 		StartCommand:      strings.TrimSpace(body.StartCommand),
+		RootDirectory:     strings.TrimSpace(body.RootDirectory),
+		BuildCommand:      strings.TrimSpace(body.BuildCommand),
 		Internet:          internet,
 		Peers:             promote.FormatPeers(peers),
 	})
@@ -463,29 +467,31 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 	skipPromote := !track.FollowsMain() && !track.MatchesCommit(d.CommitSHA)
 
 	result, runErr := s.cfg.Run(ctx, release.Request{
-		Builder:      s.cfg.Builder,
-		BuildID:      buildID,
-		DeliveryID:   d.ID,
-		Client:       s.cfg.Client,
-		Token:        s.cfg.Token,
-		Owner:        owner,
-		Name:         name,
-		Branch:       app.ProductionBranch,
-		SHA:          d.CommitSHA,
-		Strategy:     app.Strategy,
-		StartCmd:     app.StartCommand,
-		GitOpsURL:    s.cfg.GitOpsURL,
-		GitOpsBranch: s.cfg.GitOpsBranch,
-		ChartPath:    s.cfg.ChartPath,
-		Hostname:     app.Hostname,
-		Port:         app.Port,
-		Healthcheck:  app.Healthcheck,
-		Platform:     s.cfg.Platform,
-		Wait:         s.cfg.Wait,
-		SkipPromote:  skipPromote,
-		BuildsGitURL: s.cfg.BuildsGitURL,
-		Environment:  "production",
-		Log:          func(format string, args ...any) { log.Printf(format, args...) },
+		Builder:       s.cfg.Builder,
+		BuildID:       buildID,
+		DeliveryID:    d.ID,
+		Client:        s.cfg.Client,
+		Token:         s.cfg.Token,
+		Owner:         owner,
+		Name:          name,
+		Branch:        app.ProductionBranch,
+		SHA:           d.CommitSHA,
+		Strategy:      app.Strategy,
+		StartCmd:      app.StartCommand,
+		RootDirectory: app.RootDirectory,
+		BuildCommand:  app.BuildCommand,
+		GitOpsURL:     s.cfg.GitOpsURL,
+		GitOpsBranch:  s.cfg.GitOpsBranch,
+		ChartPath:     s.cfg.ChartPath,
+		Hostname:      app.Hostname,
+		Port:          app.Port,
+		Healthcheck:   app.Healthcheck,
+		Platform:      s.cfg.Platform,
+		Wait:          s.cfg.Wait,
+		SkipPromote:   skipPromote,
+		BuildsGitURL:  s.cfg.BuildsGitURL,
+		Environment:   "production",
+		Log:           func(format string, args ...any) { log.Printf(format, args...) },
 	})
 	finished := store.Build{Status: "succeeded", ArchiveURL: archiveURL(s.cfg.BuildsGitURL, name, d.CommitSHA)}
 	if runErr != nil {
@@ -568,19 +574,22 @@ func appTargetURL(app store.App) string {
 
 func appJSON(app store.App) map[string]any {
 	return map[string]any{
-		"id":            app.ID,
-		"name":          app.Name,
-		"repository":    app.ForgejoRepository,
-		"branch":        app.ProductionBranch,
-		"strategy":      app.Strategy,
-		"autodeploy":    app.Autodeploy,
-		"autodeploy_pr": app.AutodeployPR,
-		"hostname":      app.Hostname,
-		"port":          app.Port,
-		"healthcheck":   app.Healthcheck,
-		"internet":      app.Internet,
-		"peers":         app.Peers,
-		"webhook_id":    app.WebhookID,
+		"id":             app.ID,
+		"name":           app.Name,
+		"repository":     app.ForgejoRepository,
+		"branch":         app.ProductionBranch,
+		"strategy":       app.Strategy,
+		"autodeploy":     app.Autodeploy,
+		"autodeploy_pr":  app.AutodeployPR,
+		"hostname":       app.Hostname,
+		"port":           app.Port,
+		"healthcheck":    app.Healthcheck,
+		"start_command":  app.StartCommand,
+		"root_directory": app.RootDirectory,
+		"build_command":  app.BuildCommand,
+		"internet":       app.Internet,
+		"peers":          app.Peers,
+		"webhook_id":     app.WebhookID,
 	}
 }
 

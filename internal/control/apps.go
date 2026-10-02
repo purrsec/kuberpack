@@ -16,16 +16,18 @@ import (
 )
 
 type patchAppBody struct {
-	Branch       *string   `json:"branch"`
-	Strategy     *string   `json:"strategy"`
-	Autodeploy   *bool     `json:"autodeploy"`
-	AutodeployPR *bool     `json:"autodeploy_pr"`
-	Hostname     *string   `json:"hostname"`
-	Port         *int      `json:"port"`
-	Healthcheck  *string   `json:"healthcheck"`
-	StartCommand *string   `json:"start_command"`
-	Internet     *bool     `json:"internet"`
-	Peers        *[]string `json:"peers"`
+	Branch        *string   `json:"branch"`
+	Strategy      *string   `json:"strategy"`
+	Autodeploy    *bool     `json:"autodeploy"`
+	AutodeployPR  *bool     `json:"autodeploy_pr"`
+	Hostname      *string   `json:"hostname"`
+	Port          *int      `json:"port"`
+	Healthcheck   *string   `json:"healthcheck"`
+	StartCommand  *string   `json:"start_command"`
+	RootDirectory *string   `json:"root_directory"`
+	BuildCommand  *string   `json:"build_command"`
+	Internet      *bool     `json:"internet"`
+	Peers         *[]string `json:"peers"`
 }
 
 func (s *Server) patchApp(w http.ResponseWriter, r *http.Request) {
@@ -74,6 +76,12 @@ func (s *Server) patchApp(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.StartCommand != nil {
 		app.StartCommand = strings.TrimSpace(*body.StartCommand)
+	}
+	if body.RootDirectory != nil {
+		app.RootDirectory = strings.TrimSpace(*body.RootDirectory)
+	}
+	if body.BuildCommand != nil {
+		app.BuildCommand = strings.TrimSpace(*body.BuildCommand)
 	}
 	if body.Internet != nil {
 		app.Internet = *body.Internet

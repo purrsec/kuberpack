@@ -30,6 +30,8 @@ type Request struct {
 	SHA             string
 	Strategy        string
 	StartCmd        string
+	RootDirectory   string
+	BuildCommand    string
 	GitOpsURL       string
 	GitOpsBranch    string
 	ValuesPath      string
@@ -135,6 +137,8 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		ImageRepository: ociRepo,
 		RegistryUser:    req.Owner,
 		StartCmd:        req.StartCmd,
+		RootDirectory:   req.RootDirectory,
+		BuildCommand:    req.BuildCommand,
 		BuildID:         req.BuildID,
 		DeliveryID:      req.DeliveryID,
 		BuildsGitURL:    req.BuildsGitURL,

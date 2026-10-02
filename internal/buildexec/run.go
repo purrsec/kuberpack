@@ -31,6 +31,8 @@ type Request struct {
 	ImageRepository   string
 	RegistryUser      string
 	StartCmd          string
+	RootDirectory     string
+	BuildCommand      string
 	GitTokenFile      string
 	RegistryTokenFile string
 	BuildsGitURL      string
@@ -98,7 +100,22 @@ func Run(ctx context.Context, req Request) (digest string, err error) {
 		return "", fail.Stage(fail.Clone, err)
 	}
 	fmt.Printf("checked out %s\n", req.CommitSHA)
-	if _, err := railpack.Prepare(ctx, railpack.Request{Dir: source, WorkDir: work, StartCmd: req.StartCmd}); err != nil {
+	// root_directory selects the sub-directory Railpack analyzes and builds.
+	buildDir := source
+	if root := strings.Trim(strings.TrimSpace(req.RootDirectory), "/"); root != "" && root != "." {
+		candidate := filepath.Join(source, filepath.FromSlash(root))
+		info, statErr := os.Stat(candidate)
+		if statErr != nil || !info.IsDir() {
+			return "", fail.Text(fail.Strategy, "root_directory not found: "+root)
+		}
+		buildDir = candidate
+	}
+	if _, err := railpack.Prepare(ctx, railpack.Request{
+		Dir:      buildDir,
+		WorkDir:  work,
+		StartCmd: req.StartCmd,
+		BuildCmd: req.BuildCommand,
+	}); err != nil {
 		return "", fail.Stage(fail.Railpack, err)
 	}
 	if err := waitForBuildkit(ctx, time.Minute); err != nil {
@@ -109,7 +126,7 @@ func Run(ctx context.Context, req Request) (digest string, err error) {
 	cache := req.ImageRepository + ":buildcache"
 	image := req.ImageRepository + ":" + tag
 	if err = commandLogged(ctx, &logBuf, "buildctl", "--addr", "unix:///run/buildkit/buildkitd.sock", "build",
-		"--local", "context="+source, "--local", "dockerfile="+work,
+		"--local", "context="+buildDir, "--local", "dockerfile="+work,
 		"--frontend", "gateway.v0", "--opt", "source="+frontend,
 		"--opt", "build-arg:cache-key="+name,
 		"--import-cache", "type=registry,ref="+cache,

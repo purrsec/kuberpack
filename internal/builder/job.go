@@ -34,6 +34,8 @@ type Request struct {
 	ImageRepository string
 	RegistryUser    string
 	StartCmd        string
+	RootDirectory   string
+	BuildCommand    string
 	BuildID         int64
 	BuildsGitURL    string
 	AppName         string
@@ -221,6 +223,8 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 		{Name: "KUBERPACK_IMAGE_REPOSITORY", Value: req.ImageRepository},
 		{Name: "KUBERPACK_REGISTRY_USER", Value: req.RegistryUser},
 		{Name: "KUBERPACK_START_CMD", Value: req.StartCmd},
+		{Name: "KUBERPACK_ROOT_DIRECTORY", Value: req.RootDirectory},
+		{Name: "KUBERPACK_BUILD_CMD", Value: req.BuildCommand},
 		{Name: "KUBERPACK_BUILDS_GIT_URL", Value: buildsURL},
 		{Name: "KUBERPACK_APP_NAME", Value: req.AppName},
 		{Name: "KUBERPACK_ENVIRONMENT", Value: req.Environment},
