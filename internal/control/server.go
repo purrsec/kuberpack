@@ -72,6 +72,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/apps/{name}", s.withAPI(s.deleteApp))
 	mux.HandleFunc("GET /api/v1/apps/{name}/builds", s.withAPI(s.listBuilds))
 	mux.HandleFunc("POST /api/v1/apps/{name}/redeploy", s.withAPI(s.redeployApp))
+	mux.HandleFunc("POST /api/v1/projects", s.withAPI(s.createProject))
+	mux.HandleFunc("GET /api/v1/projects/{name}", s.withAPI(s.getProject))
+	mux.HandleFunc("DELETE /api/v1/projects/{name}", s.withAPI(s.deleteProject))
 	mux.HandleFunc("POST /hooks/forgejo", s.webhook)
 	mux.HandleFunc("POST /hooks/flux", s.fluxHook)
 	return mux

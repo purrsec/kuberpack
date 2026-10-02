@@ -39,6 +39,8 @@ type Platform struct {
 	PreviewDatabaseImage   string
 	PreviewDatabaseStorage string
 	PreviewDatabaseClass   string
+	// ProjectsDir is where project manifests and their compiled artifacts live.
+	ProjectsDir string
 }
 
 func (p Platform) withDefaults() Platform {
@@ -102,6 +104,9 @@ func (p Platform) withDefaults() Platform {
 	}
 	if p.PreviewDatabaseClass == "" {
 		p.PreviewDatabaseClass = "local-path"
+	}
+	if p.ProjectsDir == "" {
+		p.ProjectsDir = "kubernetes/vps/projects"
 	}
 	return p
 }

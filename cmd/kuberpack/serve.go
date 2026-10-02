@@ -118,6 +118,7 @@ func platformFromEnv() promote.Platform {
 		PreviewDatabaseImage:   getenv("KUBERPACK_PREVIEW_DB_IMAGE", ""),
 		PreviewDatabaseStorage: getenv("KUBERPACK_PREVIEW_DB_STORAGE", ""),
 		PreviewDatabaseClass:   getenv("KUBERPACK_PREVIEW_DB_CLASS", ""),
+		ProjectsDir:            getenv("KUBERPACK_PROJECTS_DIR", "kubernetes/vps/projects"),
 	}
 }
 
