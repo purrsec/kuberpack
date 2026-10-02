@@ -168,15 +168,15 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 	if !commitPattern.MatchString(req.CommitSHA) || req.ImageRepository == "" || req.RegistryUser == "" {
 		return nil, fmt.Errorf("full lowercase commit SHA, image repository and registry user are required")
 	}
-	cloneURL := req.CloneURL
-	if req.SSHPrivateKey != "" && req.SSHURL != "" {
-		cloneURL = req.SSHURL
-	}
+	// The builder clones over HTTPS using the token mounted at
+	// /secrets/git-token. The deploy key is generated at registration but is
+	// not delivered to the Job, so the SSH URL must not be used here.
+	cloneURL := strings.TrimSpace(req.CloneURL)
 	if cloneURL == "" {
 		return nil, fmt.Errorf("clone URL is required")
 	}
-	if req.SSHPrivateKey == "" && !strings.HasPrefix(cloneURL, "https://") {
-		return nil, fmt.Errorf("builder clone URL must use HTTPS unless an SSH deploy key is mounted")
+	if !strings.HasPrefix(cloneURL, "https://") {
+		return nil, fmt.Errorf("builder clone URL must use HTTPS")
 	}
 	namespace := r.Namespace
 	if namespace == "" {
@@ -202,7 +202,9 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 		}
 	}
 	backoff := int32(0)
-	ttl := int32(86400)
+	// Keep finished Jobs long enough to inspect a failure, but not long enough
+	// to exhaust the builder namespace pod quota (see charts/kuberpack quota).
+	ttl := int32(3600)
 	uid := int64(1000)
 	allowEscalation, noEscalation := true, false
 	readOnly := true
