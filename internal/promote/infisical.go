@@ -59,26 +59,35 @@ func removeSecretCR(work string, spec AppSpec, p Platform) ([]string, bool, erro
 	crRel := p.InfisicalCRPath(spec.Name)
 	parentRel := p.InfisicalParentPath()
 	crPath := filepath.Join(work, filepath.FromSlash(crRel))
-	_, statErr := os.Stat(crPath)
-	if statErr != nil && !os.IsNotExist(statErr) {
+	var paths []string
+	changed := false
+	if _, statErr := os.Stat(crPath); statErr == nil {
+		if err := os.Remove(crPath); err != nil && !os.IsNotExist(err) {
+			return nil, false, err
+		}
+		paths = append(paths, crRel)
+		changed = true
+	} else if !os.IsNotExist(statErr) {
 		return nil, false, statErr
-	}
-	if err := os.Remove(crPath); err != nil && !os.IsNotExist(err) {
-		return nil, false, err
 	}
 
 	parentPath := filepath.Join(work, filepath.FromSlash(parentRel))
 	if raw, err := os.ReadFile(parentPath); err == nil {
+		updated := raw
 		for _, resource := range []string{filepath.Base(crRel), strings.TrimSuffix(filepath.Base(crRel), ".yaml")} {
-			if listedInKustomization(raw, resource) {
-				raw = removeKustomizationResource(raw, resource)
+			if listedInKustomization(updated, resource) {
+				updated = removeKustomizationResource(updated, resource)
 			}
 		}
-		if err := os.WriteFile(parentPath, raw, 0o644); err != nil {
-			return nil, false, err
+		if string(updated) != string(raw) {
+			if err := os.WriteFile(parentPath, updated, 0o644); err != nil {
+				return nil, false, err
+			}
+			paths = append(paths, parentRel)
+			changed = true
 		}
 	}
-	return []string{crRel, parentRel}, true, nil
+	return paths, changed, nil
 }
 
 func infisicalCRContent(spec AppSpec, p Platform) string {

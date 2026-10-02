@@ -166,13 +166,18 @@ func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request) {
 		_ = s.cfg.Client.DeleteHook(r.Context(), owner, name, app.WebhookID)
 	}
 	if s.cfg.GitOpsURL != "" {
-		_, _ = promote.DisableApp(r.Context(), promote.EnsureRequest{
+		// Do not fail the DELETE on GitOps errors (the app row and webhook are
+		// already gone), but never swallow them silently: an ignored failure
+		// leaves the workload running in the cluster.
+		if _, err := promote.DisableApp(r.Context(), promote.EnsureRequest{
 			GitOpsURL:    s.cfg.GitOpsURL,
 			GitOpsBranch: s.cfg.GitOpsBranch,
 			HTTPToken:    s.cfg.Token,
 			App:          promote.AppSpec{Name: app.Name, Hostname: app.Hostname, Port: app.Port, Healthcheck: app.Healthcheck},
 			Platform:     s.cfg.Platform,
-		})
+		}); err != nil {
+			log.Printf("kuberpack delete %s: gitops unregister failed: %v", app.Name, err)
+		}
 	}
 	_ = s.cfg.Secrets.Delete(app.ID)
 	if err := s.cfg.Store.DeleteApp(r.Context(), app.ID); err != nil {
