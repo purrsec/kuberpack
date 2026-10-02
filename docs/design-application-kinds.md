@@ -10,24 +10,34 @@ Ce que l'exécuteur fait réellement, testé localement :
   `Staticfile` → Railpack construit une image **Caddy** avec de bons défauts (gzip/zstd,
   en-têtes de sécurité, `hide .env*`, `hide .git`) et une commande de démarrage. Un site statique est
   donc **déjà** un « server » de bout en bout (image → digest → chart `stateless`).
+- **Un front Vite est pris en charge nativement.** Détection Node, `npm run build`,
+  « vite static site », sortie `dist`, servi par Caddy. La conf générée :
+  - écoute `:{$PORT:80}` → le chart impose `PORT`, donc **OK** ;
+  - `respond /health 200` → le healthcheck par défaut `/health` marche sans config ;
+  - **fallback SPA** : `try_files {path} {path}.html {path}/index.html /index.html` ;
+  - en-têtes de sécurité, gzip/zstd, `hide .env*`/`.git`.
+  Un front pur Vite/React se déploie donc **déjà** avec la stratégie `server` actuelle, sans aucun
+  champ nouveau.
 - **Les `Dockerfile` sont ignorés.** Un dépôt ne contenant qu'un `Dockerfile` échoue :
   « Railpack could not determine how to build the app ». `dockerfile` **ne peut pas** être une
   stratégie Railpack.
-- **`prepare` expose `--build-cmd` et `--start-cmd`** ; le répertoire racine et le dossier de
-  publication ne sont pas des options CLI.
-- La conf Caddy par défaut **n'a pas de fallback SPA** (elle gère une page 404, pas le
-  `try_files … /index.html`).
+- **Variables non-`config-file`** : `RAILPACK_STATIC_FILE_ROOT` (racine servie pour un dépôt de
+  fichiers) et `RAILPACK_SPA_OUTPUT_DIR` (sortie d'un front). Attention : lu par le frontend
+  BuildKit (`railpack-frontend`), pas forcément par `railpack prepare` local — leur effet réel se
+  vérifie au build.
 
 ## Le vrai problème
 
-Ce n'est pas « servir du statique » : Railpack sait déjà le faire. Les manques réels sont :
+Ce n'est pas « servir du statique » ni « servir un front » : Railpack fait déjà les deux. Les
+manques réels sont bien plus étroits :
 
-1. **Un front construit à part.** Quand les assets sont produits par un build (Vite/Tailwind/Next)
-   et/ou vivent dans un sous-dossier (monorepo), Railpack ne sait pas quoi construire ni quel
-   dossier publier. C'est le cas d'ECMS (Django + Vite) : `app.css` n'existait pas dans l'image.
-2. **Ces réglages ne sont pas exposés.** `root_directory` / `build_command` sont documentés mais
-   **non câblés** (contrat fantôme) ; rien ne permet de désigner un dossier de publication.
-3. **Pas de fallback SPA.** Une app front servie telle quelle renverra 404 au rechargement d'une route.
+1. **Un front produit à part du back.** Cas ECMS (Django + Vite) : c'est au back de servir les
+   assets ; Railpack ne construit pas le front et l'image ne les contient pas. Ça reste à la charge
+   de l'app (règle « auto-suffisante »), mais ce n'est pas outillé.
+2. **Un front « custom » non reconnu.** Un projet Node sans script standard (le `RAILPACK_SPA_OUTPUT_DIR`
+   n'agit pas sur `prepare`, et un dossier de sortie non standard fait échouer la détection).
+3. **Le contrat d'override.** `root_directory` / `build_command` étaient documentés mais non câblés
+   (corrigé, #13). Il reste à exposer un moyen fiable de désigner la sortie d'un front custom.
 
 ## Modèle proposé
 
@@ -58,14 +68,14 @@ chaîne parallèle.
 
 | Cas | Mécanisme |
 | --- | --- |
-| Dépôt statique pur | provider statique Railpack (Caddy) — **existant** |
-| Front + build (Vite…) | `build_command` + `publish_directory` ; servir le dossier publié |
+| Dépôt statique pur | provider statique Railpack (Caddy) — **existant, rien à faire** |
+| Front Vite/React | détection Node + `npm run build` + Caddy — **existant, rien à faire** |
+| Front « custom » (sortie non standard) | `build_command` + sortie (à câbler) |
 | Front + back (Django + Vite) | `kind: server` : l'app sert ses assets (chemin ECMS) |
 | Cas non couvert | `dockerfile` : **chemin de build séparé** (buildkit `dockerfile.v0`), pas Railpack |
 
-Le serveur statique est **celui de Railpack (Caddy)**, pas un nginx maison : moins de choses à
-posséder, et les défauts sont déjà bons. On n'ajoute que ce qui manque : le choix du dossier publié
-et le fallback SPA.
+Le serveur statique est **celui de Railpack (Caddy)**, avec fallback SPA et `/health` déjà fournis.
+Il n'y a donc presque rien à construire : le seul vrai manque est le cas « front custom ».
 
 ## Modes d'échec couverts
 
@@ -80,21 +90,24 @@ et le fallback SPA.
 
 ## Critères d'acceptation
 
-1. Un dépôt Vite/React sans Dockerfile ni fichier plateforme se déploie : assets présents, SPA OK au
-   rechargement, image pinnée par digest.
+1. Un dépôt Vite/React se déploie sans Dockerfile ni fichier plateforme : assets présents, SPA OK au
+   rechargement, image pinnée par digest. (Attendu **gratuit** : Railpack le fait déjà.)
 2. Un dépôt statique pur reste déployable (provider Railpack / Caddy) — **non-régression**.
-3. `root_directory` et `build_command` ont un effet **réel** (contrat câblé).
-4. `publish_directory` introuvable → échec avant push, production inchangée.
-5. Aucun `railpack.json`/`Procfile` exigé pour `auto`.
+3. `root_directory` et `build_command` ont un effet **réel** — fait (#13).
+4. Un front « custom » peut désigner sa sortie.
+5. Aucun `railpack.json`/`Procfile` exigé.
 6. Previews : même build, mêmes garanties.
 7. Le chart `stateless` n'est pas modifié.
 
 ## Étapes d'implémentation
 
-1. **Câbler `root_directory` / `build_command`** (bug isolé, utile seul).
-2. Ajouter `publish_directory` + `spa` ; config Caddy (fallback SPA) dans l'image statique.
-3. `dockerfile` comme chemin de build séparé dans `buildexec` (buildkit `dockerfile.v0`).
-4. Test de bout en bout : un site statique puis un front Vite, plus la non-régression `server`.
+1. ~~Câbler `root_directory` / `build_command`~~ — fait (#13).
+2. **Vérifier en réel** qu'un front Vite et un site statique se déploient déjà (aucun code) : c'est
+   le cas nominal. Rien à implémenter s'ils passent.
+3. **Cas « front custom »** : exposer un moyen fiable de désigner la sortie (probablement une
+   variable de build `RAILPACK_SPA_OUTPUT_DIR` lue par le frontend BuildKit) — à valider au build.
+4. `dockerfile` comme chemin de build séparé dans `buildexec` (buildkit `dockerfile.v0`).
+5. Test de bout en bout : un site statique **et** un front Vite, plus la non-régression `server`.
 
 ## Hors périmètre
 
