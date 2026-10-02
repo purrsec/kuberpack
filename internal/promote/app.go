@@ -364,9 +364,13 @@ func valuesYAML(spec AppSpec, p Platform) string {
 		b.WriteString("    cpu: 200m\n")
 		b.WriteString("    memory: 128Mi\n")
 	} else {
+		// The Secret is created by an administrator, not by Kuberpack. Mark it
+		// optional so a secretless app (a frontend, a first deploy) still
+		// starts; present keys are injected normally.
 		b.WriteString("envFrom:\n")
 		b.WriteString("  - secretRef:\n")
 		b.WriteString("      name: " + AppRuntimeSecretName(spec.Name) + "\n")
+		b.WriteString("      optional: true\n")
 	}
 	return b.String()
 }

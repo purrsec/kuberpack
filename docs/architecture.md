@@ -101,7 +101,7 @@ envFrom:
       name: app-<name>
 ```
 
-Kuberpack ne crée pas ce Secret et n’en lit pas les clés. Un administrateur le remplit (Infisical → Secret Kubernetes, ou `kubectl` / autre gestionnaire) dans le namespace de release (`apps` par défaut). Clés typiques : `STRIPE_SECRET_KEY`, `DATABASE_URL`. Tant que l’objet Secret n’existe pas, le pod ne démarre pas (`CreateContainerConfigError`) : le binding est visible. Un Secret vide démarre le process sans variables.
+Kuberpack ne crée pas ce Secret et n’en lit pas les clés. Un administrateur le remplit (Infisical → Secret Kubernetes, ou `kubectl` / autre gestionnaire) dans le namespace de release (`apps` par défaut). Clés typiques : `STRIPE_SECRET_KEY`, `DATABASE_URL`. Le `secretRef` est **optional** : une app sans secret démarre (utile pour un front ou un premier déploiement), et les clés d’un Secret présent sont injectées normalement.
 
 Kuberpack et Flux ne connaissent pas Stripe ni Postgres. Ils savent seulement que le workload **monte** `app-<name>`.
 
