@@ -16,20 +16,21 @@ import (
 )
 
 type patchAppBody struct {
-	Branch        *string   `json:"branch"`
-	Strategy      *string   `json:"strategy"`
-	Autodeploy    *bool     `json:"autodeploy"`
-	AutodeployPR  *bool     `json:"autodeploy_pr"`
-	Hostname      *string   `json:"hostname"`
-	Port          *int      `json:"port"`
-	Healthcheck   *string   `json:"healthcheck"`
-	StartCommand  *string   `json:"start_command"`
-	RootDirectory *string   `json:"root_directory"`
-	BuildCommand  *string   `json:"build_command"`
-	Internet      *bool     `json:"internet"`
-	Peers         *[]string `json:"peers"`
-	Secrets       *[]string `json:"secrets"`
-	SecretEnv     *string   `json:"secret_env"`
+	Branch            *string   `json:"branch"`
+	Strategy          *string   `json:"strategy"`
+	Autodeploy        *bool     `json:"autodeploy"`
+	AutodeployPR      *bool     `json:"autodeploy_pr"`
+	Hostname          *string   `json:"hostname"`
+	Port              *int      `json:"port"`
+	Healthcheck       *string   `json:"healthcheck"`
+	StartCommand      *string   `json:"start_command"`
+	RootDirectory     *string   `json:"root_directory"`
+	BuildCommand      *string   `json:"build_command"`
+	Internet          *bool     `json:"internet"`
+	Peers             *[]string `json:"peers"`
+	Secrets           *[]string `json:"secrets"`
+	SecretEnv         *string   `json:"secret_env"`
+	InheritSecretFrom *string   `json:"inherit_secret_from"`
 }
 
 func (s *Server) patchApp(w http.ResponseWriter, r *http.Request) {
@@ -101,6 +102,9 @@ func (s *Server) patchApp(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.SecretEnv != nil {
 		app.SecretEnv = secretEnvOrDefault(*body.SecretEnv)
+	}
+	if body.InheritSecretFrom != nil {
+		app.InheritSecretFrom = inheritSecretFromOrDefault(*body.InheritSecretFrom)
 	}
 	previous := app
 	if err := s.cfg.Store.UpdateApp(r.Context(), app); err != nil {

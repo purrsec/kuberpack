@@ -106,22 +106,23 @@ func (s *Server) withAPI(next http.HandlerFunc) http.HandlerFunc {
 }
 
 type createAppBody struct {
-	Name          string   `json:"name"`
-	Repository    string   `json:"repository"`
-	Branch        string   `json:"branch"`
-	Strategy      string   `json:"strategy"`
-	Autodeploy    *bool    `json:"autodeploy"`
-	AutodeployPR  bool     `json:"autodeploy_pr"`
-	Hostname      string   `json:"hostname"`
-	Port          int      `json:"port"`
-	Healthcheck   string   `json:"healthcheck"`
-	StartCommand  string   `json:"start_command"`
-	RootDirectory string   `json:"root_directory"`
-	BuildCommand  string   `json:"build_command"`
-	Internet      *bool    `json:"internet"`
-	Peers         []string `json:"peers"`
-	Secrets       []string `json:"secrets"`
-	SecretEnv     string   `json:"secret_env"`
+	Name              string   `json:"name"`
+	Repository        string   `json:"repository"`
+	Branch            string   `json:"branch"`
+	Strategy          string   `json:"strategy"`
+	Autodeploy        *bool    `json:"autodeploy"`
+	AutodeployPR      bool     `json:"autodeploy_pr"`
+	Hostname          string   `json:"hostname"`
+	Port              int      `json:"port"`
+	Healthcheck       string   `json:"healthcheck"`
+	StartCommand      string   `json:"start_command"`
+	RootDirectory     string   `json:"root_directory"`
+	BuildCommand      string   `json:"build_command"`
+	Internet          *bool    `json:"internet"`
+	Peers             []string `json:"peers"`
+	Secrets           []string `json:"secrets"`
+	SecretEnv         string   `json:"secret_env"`
+	InheritSecretFrom string   `json:"inherit_secret_from"`
 }
 
 func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
@@ -204,6 +205,7 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 		Peers:             promote.FormatPeers(peers),
 		Secrets:           promote.NormalizeSecretKeys(body.Secrets),
 		SecretEnv:         secretEnvOrDefault(body.SecretEnv),
+		InheritSecretFrom: inheritSecretFromOrDefault(body.InheritSecretFrom),
 	})
 	if err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
@@ -578,24 +580,25 @@ func appTargetURL(app store.App) string {
 
 func appJSON(app store.App) map[string]any {
 	return map[string]any{
-		"id":             app.ID,
-		"name":           app.Name,
-		"repository":     app.ForgejoRepository,
-		"branch":         app.ProductionBranch,
-		"strategy":       app.Strategy,
-		"autodeploy":     app.Autodeploy,
-		"autodeploy_pr":  app.AutodeployPR,
-		"hostname":       app.Hostname,
-		"port":           app.Port,
-		"healthcheck":    app.Healthcheck,
-		"start_command":  app.StartCommand,
-		"root_directory": app.RootDirectory,
-		"build_command":  app.BuildCommand,
-		"internet":       app.Internet,
-		"peers":          app.Peers,
-		"secrets":        app.Secrets,
-		"secret_env":     app.SecretEnv,
-		"webhook_id":     app.WebhookID,
+		"id":                  app.ID,
+		"name":                app.Name,
+		"repository":          app.ForgejoRepository,
+		"branch":              app.ProductionBranch,
+		"strategy":            app.Strategy,
+		"autodeploy":          app.Autodeploy,
+		"autodeploy_pr":       app.AutodeployPR,
+		"hostname":            app.Hostname,
+		"port":                app.Port,
+		"healthcheck":         app.Healthcheck,
+		"start_command":       app.StartCommand,
+		"root_directory":      app.RootDirectory,
+		"build_command":       app.BuildCommand,
+		"internet":            app.Internet,
+		"peers":               app.Peers,
+		"secrets":             app.Secrets,
+		"secret_env":          app.SecretEnv,
+		"inherit_secret_from": app.InheritSecretFrom,
+		"webhook_id":          app.WebhookID,
 	}
 }
 
@@ -604,6 +607,15 @@ func secretEnvOrDefault(env string) string {
 		return env
 	}
 	return "prod"
+}
+
+// inheritSecretFromOrDefault normalizes to "prod" or "dev"; anything else
+// (including empty) defaults to "dev".
+func inheritSecretFromOrDefault(v string) string {
+	if strings.EqualFold(strings.TrimSpace(v), promote.SecretFromProd) {
+		return promote.SecretFromProd
+	}
+	return promote.SecretFromDev
 }
 
 func sanitizeName(s string) string {

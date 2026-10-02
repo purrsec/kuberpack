@@ -41,8 +41,11 @@ func TestPreviewBranchPinAndPrune(t *testing.T) {
 	if !strings.Contains(values, "cpu: 200m") {
 		t.Fatalf("preview must use a lower quota:\n%s", values)
 	}
-	if strings.Contains(values, "secretRef") || strings.Contains(values, "app-site") {
-		t.Fatalf("preview must not mount production secrets:\n%s", values)
+	if strings.Contains(values, "app-site\n") {
+		t.Fatalf("preview must not mount the production secret by default:\n%s", values)
+	}
+	if !strings.Contains(values, "name: app-site-pr-3") || !strings.Contains(values, "name: dev") {
+		t.Fatalf("preview should mount its exact secret and the dev fallback:\n%s", values)
 	}
 	if strings.Contains(values, "postgres:") || strings.Contains(values, "- billing") {
 		t.Fatalf("preview must not copy production peers:\n%s", values)

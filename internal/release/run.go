@@ -19,36 +19,37 @@ import (
 )
 
 type Request struct {
-	Builder         builder.Runner
-	BuildID         int64
-	DeliveryID      string
-	Client          *forgejo.Client
-	Token           string
-	Owner           string
-	Name            string
-	Branch          string
-	SHA             string
-	Strategy        string
-	StartCmd        string
-	RootDirectory   string
-	BuildCommand    string
-	GitOpsURL       string
-	GitOpsBranch    string
-	ValuesPath      string
-	ChartPath       string
-	Hostname        string
-	Port            int
-	Healthcheck     string
-	Platform        promote.Platform
-	ImageRepository string
-	RegistryUser    string
-	Wait            time.Duration
-	SkipPromote     bool
-	AllowNonHEAD    bool
-	KnownDigest     string
-	BuildsGitURL    string
-	Environment     string
-	Log             func(string, ...any)
+	Builder           builder.Runner
+	BuildID           int64
+	DeliveryID        string
+	Client            *forgejo.Client
+	Token             string
+	Owner             string
+	Name              string
+	Branch            string
+	SHA               string
+	Strategy          string
+	StartCmd          string
+	RootDirectory     string
+	BuildCommand      string
+	GitOpsURL         string
+	GitOpsBranch      string
+	ValuesPath        string
+	ChartPath         string
+	Hostname          string
+	Port              int
+	Healthcheck       string
+	InheritSecretFrom string
+	Platform          promote.Platform
+	ImageRepository   string
+	RegistryUser      string
+	Wait              time.Duration
+	SkipPromote       bool
+	AllowNonHEAD      bool
+	KnownDigest       string
+	BuildsGitURL      string
+	Environment       string
+	Log               func(string, ...any)
 }
 
 type Result struct {
@@ -197,16 +198,17 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		values = req.Platform.ValuesPath(req.Name)
 	}
 	promoted, err := promote.Run(ctx, promote.Request{
-		GitOpsURL:    req.GitOpsURL,
-		GitOpsBranch: req.GitOpsBranch,
-		ValuesPath:   values,
-		ChartPath:    req.ChartPath,
-		HTTPToken:    req.Token,
-		Image:        ref,
-		Hostname:     req.Hostname,
-		Port:         req.Port,
-		Healthcheck:  req.Healthcheck,
-		Platform:     req.Platform,
+		GitOpsURL:         req.GitOpsURL,
+		GitOpsBranch:      req.GitOpsBranch,
+		ValuesPath:        values,
+		ChartPath:         req.ChartPath,
+		HTTPToken:         req.Token,
+		Image:             ref,
+		Hostname:          req.Hostname,
+		Port:              req.Port,
+		Healthcheck:       req.Healthcheck,
+		InheritSecretFrom: req.InheritSecretFrom,
+		Platform:          req.Platform,
 	})
 	if err != nil {
 		return Result{}, fail.Stage(fail.GitOps, err)

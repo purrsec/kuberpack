@@ -42,6 +42,12 @@ POST /api/v1/apps
 
 `secrets` déclare les clés Infisical ; Kuberpack génère l’`InfisicalStaticSecret` (`kubernetes/vps/infisical/app-<name>.yaml`) qui les synchronise dans le Secret `app-<name>`. Aucune valeur ne transite par l’API, Git ou SQLite. Sans `secrets`, aucun CR n’est écrit.
 
+`inherit_secret_from` (`prod` | `dev`, défaut `dev`) : secret qu’une **preview** hérite, en plus de son secret exact `app-<app>-pr-<n>` (optional).
+- `dev` : le Secret partagé `dev` (synchronisé depuis l’environnement Infisical `dev`). Valeur par défaut : jamais de secret de prod en preview.
+- `prod` : le Secret de production `app-<app>`. À n’utiliser que sciemment.
+
+Les previews n’héritent jamais des `peers` de production.
+
 Le port se configure, il ne se suppose pas. L’image peut écouter `80` ou `8080`. Une probe sur le mauvais port fait échouer la release.
 
 ## Overrides de build

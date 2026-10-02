@@ -25,6 +25,38 @@ type AppSpec struct {
 	// vars of the same name. SecretEnv is the Infisical environment slug.
 	Secrets   []string
 	SecretEnv string
+	// InheritSecretFrom drives which Secret a preview inherits in addition to
+	// its exact app-<app>-pr-<n>: "prod" mounts the production Secret
+	// app-<app>, "dev" mounts the shared `dev` Secret (Infisical `dev` env).
+	InheritSecretFrom string
+}
+
+// PreviewSecretSource values for AppSpec.InheritSecretFrom.
+const (
+	SecretFromProd = "prod"
+	SecretFromDev  = "dev"
+)
+
+// inheritedPreviewSecretName is the extra Secret a preview mounts beyond its
+// exact app-<app>-pr-<n>. Production secrets are only used when explicitly
+// requested with inherit_secret_from: prod.
+func inheritedPreviewSecretName(spec AppSpec) string {
+	if strings.EqualFold(strings.TrimSpace(spec.InheritSecretFrom), SecretFromProd) {
+		return AppRuntimeSecretName(previewBaseName(spec.Name))
+	}
+	return DevSecretName
+}
+
+// previewBaseName strips the `-pr-<n>` suffix to recover the production app
+// name from a preview release name (ecms-pr-1 -> ecms).
+func previewBaseName(name string) string {
+	name = sanitizeName(name)
+	if i := strings.LastIndex(name, "-pr-"); i > 0 {
+		if _, err := strconv.Atoi(name[i+4:]); err == nil {
+			return name[:i]
+		}
+	}
+	return name
 }
 
 // EnsureRequest creates GitOps files for a new app. It does not enable Flux
@@ -378,6 +410,17 @@ func valuesYAML(spec AppSpec, p Platform) string {
 		b.WriteString("  limits:\n")
 		b.WriteString("    cpu: 200m\n")
 		b.WriteString("    memory: 128Mi\n")
+		// A preview reads its own exact Secret (app-<app>-pr-<n>) and, in
+		// addition, inherits one source chosen by inherit_secret_from:
+		// "prod" -> the production Secret, "dev" (default) -> the shared `dev`
+		// Secret synced from the Infisical `dev` environment. Both optional.
+		b.WriteString("envFrom:\n")
+		b.WriteString("  - secretRef:\n")
+		b.WriteString("      name: " + AppRuntimeSecretName(spec.Name) + "\n")
+		b.WriteString("      optional: true\n")
+		b.WriteString("  - secretRef:\n")
+		b.WriteString("      name: " + inheritedPreviewSecretName(spec) + "\n")
+		b.WriteString("      optional: true\n")
 	} else {
 		// The Secret is created by an administrator, not by Kuberpack. Mark it
 		// optional so a secretless app (a frontend, a first deploy) still
@@ -395,6 +438,11 @@ func valuesYAML(spec AppSpec, p Platform) string {
 func AppRuntimeSecretName(app string) string {
 	return "app-" + sanitizeName(app)
 }
+
+// DevSecretName is the shared, non-production Secret a preview mounts by
+// default (inherit_secret_from: dev). An administrator syncs it from the
+// Infisical `dev` environment.
+const DevSecretName = "dev"
 
 func internetEnabled(spec AppSpec) bool {
 	if spec.Internet == nil {

@@ -24,7 +24,10 @@ type Request struct {
 	Hostname     string
 	Port         int
 	Healthcheck  string
-	Platform     Platform
+	// InheritSecretFrom is carried for a preview's inherited secret ("prod" or
+	// "dev"). Ignored outside preview.
+	InheritSecretFrom string
+	Platform          Platform
 }
 
 // Result is the GitOps commit that pins the image, if a commit was needed.
@@ -70,11 +73,12 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		valuesFile := filepath.Join(work, filepath.FromSlash(req.ValuesPath))
 		if _, err := os.Stat(valuesFile); os.IsNotExist(err) {
 			spec, err := normalizeSpec(AppSpec{
-				Name:        app,
-				Hostname:    req.Hostname,
-				Port:        req.Port,
-				Healthcheck: req.Healthcheck,
-				Preview:     strings.Contains(filepath.ToSlash(req.ValuesPath), "/previews/"),
+				Name:              app,
+				Hostname:          req.Hostname,
+				Port:              req.Port,
+				Healthcheck:       req.Healthcheck,
+				Preview:           strings.Contains(filepath.ToSlash(req.ValuesPath), "/previews/"),
+				InheritSecretFrom: req.InheritSecretFrom,
 			})
 			if err != nil {
 				return Result{}, fmt.Errorf("read values %s: %w", req.ValuesPath, err)
