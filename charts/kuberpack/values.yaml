@@ -25,6 +25,9 @@ webhookURL: ""
 # `name`/`value` pair or a `valueFrom` block.
 extraEnv: []
 
+# The secrets that pull the images. A private registry needs one.
+imagePullSecrets: []
+
 # Public ingress of the control plane.
 ingress:
   enabled: true

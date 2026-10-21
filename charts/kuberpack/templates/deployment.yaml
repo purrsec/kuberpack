@@ -18,6 +18,10 @@ spec:
         app.kubernetes.io/name: kuberpack
     spec:
       serviceAccountName: kuberpack
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       automountServiceAccountToken: true
       enableServiceLinks: false
       securityContext:
@@ -42,8 +46,18 @@ spec:
             - {{ .Values.wait | quote }}
             {{- end }}
           env:
-            - name: FORGEJO_URL
-              value: {{ required "forgejoURL is required" .Values.forgejoURL | quote }}
+            - name: KUBERPACK_GIT_PROVIDER
+              value: {{ .Values.gitProvider | default "forgejo" | quote }}
+            - name: KUBERPACK_GIT_URL
+              value: {{ required "gitURL is required" (.Values.gitURL | default .Values.forgejoURL) | quote }}
+            {{- with .Values.registryURL }}
+            - name: KUBERPACK_REGISTRY_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.registryUser }}
+            - name: KUBERPACK_REGISTRY_USER
+              value: {{ . | quote }}
+            {{- end }}
             - name: KUBERPACK_GITOPS_URL
               value: {{ required "gitopsURL is required" .Values.gitopsURL | quote }}
             - name: KUBERPACK_GITOPS_APPS
@@ -81,11 +95,11 @@ spec:
             {{- end }}
             - name: HOME
               value: /home/kuberpack
-            - name: FORGEJO_TOKEN
+            - name: KUBERPACK_GIT_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: kuberpack
-                  key: FORGEJO_TOKEN
+                  key: KUBERPACK_GIT_TOKEN
             - name: KUBERPACK_API_TOKEN
               valueFrom:
                 secretKeyRef:

@@ -101,6 +101,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/projects/{name}", s.withAPI(s.getProject))
 	mux.HandleFunc("DELETE /api/v1/projects/{name}", s.withAPI(s.deleteProject))
 	mux.HandleFunc("POST /hooks/forgejo", s.webhook)
+	// The same endpoint, named after what it is: the forge is not
+	// always a Forgejo.
+	mux.HandleFunc("POST /hooks/git", s.webhook)
 	mux.HandleFunc("POST /hooks/flux", s.fluxHook)
 	return mux
 }
