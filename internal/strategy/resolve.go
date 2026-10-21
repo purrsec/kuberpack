@@ -43,7 +43,7 @@ func Resolve(root string, requested Kind) (Plan, error) {
 	switch requested {
 	case UV:
 		if !hasUV {
-			return Plan{}, fmt.Errorf("strategy uv requires pyproject.toml and uv.lock")
+			return Plan{}, fmt.Errorf("strategy uv requires pyproject.toml and uv.lock: run `uv lock` in the repository")
 		}
 		return Plan{Kind: UV}, nil
 	case Railpack:
@@ -58,18 +58,37 @@ func Resolve(root string, requested Kind) (Plan, error) {
 	}
 }
 
+// uvSources reports whether the checkout is a uv project: a pyproject.toml
+// and its lock.
+//
+// A Python project that has only one of them cannot be built reproducibly:
+// Railpack installs nothing and the image starts without its dependencies.
+// A failed build with a clear message is better than a deployed image that
+// crashes. A requirements.txt is another way to install the dependencies:
+// that project is left to Railpack.
 func uvSources(root string) (bool, error) {
 	py := filepath.Join(root, "pyproject.toml")
 	lock := filepath.Join(root, "uv.lock")
+	requirements := filepath.Join(root, "requirements.txt")
 	_, errPy := os.Stat(py)
 	_, errLock := os.Stat(lock)
+	_, errReq := os.Stat(requirements)
+	if errReq == nil {
+		// pip installs the dependencies, whatever the lock says.
+		return false, nil
+	}
+	if errReq != nil && !os.IsNotExist(errReq) {
+		return false, errReq
+	}
 	switch {
 	case errPy == nil && errLock == nil:
 		return true, nil
 	case os.IsNotExist(errPy) && os.IsNotExist(errLock):
 		return false, nil
-	case os.IsNotExist(errPy) || os.IsNotExist(errLock):
-		return false, fmt.Errorf("incomplete uv sources: need both pyproject.toml and uv.lock")
+	case os.IsNotExist(errLock):
+		return false, fmt.Errorf("python project: pyproject.toml without uv.lock: add a uv.lock (uv lock) or a requirements.txt")
+	case os.IsNotExist(errPy):
+		return false, fmt.Errorf("python project: uv.lock without pyproject.toml: add the pyproject.toml or remove the lock")
 	default:
 		if errPy != nil {
 			return false, errPy

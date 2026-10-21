@@ -178,6 +178,49 @@ kuberpack.yaml (humain)
 4. **`NetworkPolicy` :** Traduit `policies.peers` et `policies.internet` en règles d'isolation Pod réseau natives. `policies.defaultDeny: false` désactive la NetworkPolicy du service.
 5. **`InfisicalStaticSecret` :** Branche la synchronisation des secrets depuis l'instance Infisical du homelab vers un Kubernetes Secret `app-<service>` (sans que les valeurs en clair ne transitent par Kuberpack). L'objet généré est nommé `app-<projet>-<service>` pour que deux projets puissent déclarer un service du même nom.
 
+### Le dépôt applicatif est une source de code
+
+Le code d'un projet **ne vit pas dans le dépôt GitOps**. Le dépôt GitOps (le
+« dépôt de déploiement ») ne contient que la configuration ; le code vit dans
+ses propres dépôts, un par application.
+
+Kuberpack n'a rien à faire dans le dépôt applicatif :
+
+- il ne le crée pas (c'est le rôle du développeur) ;
+- il n'y écrit **aucun fichier** (pas de `Procfile`, pas de `kuberpack.yaml`,
+  pas de fichier de plateforme) ;
+- il n'y pousse jamais de commit.
+
+Il le clone pour construire, il y pose un webhook pour savoir quand le
+développeur pousse, et c'est tout. Le jeton dont Kuberpack a besoin sur un
+dépôt applicatif est un jeton de **lecture** plus le droit de poser un
+webhook : pas d'écriture de code.
+
+```yaml
+# Le dépôt GitOps : la déclaration
+project: boutique
+services:
+  cornichons:
+    repository: kuberpack/cornichons   # un dépôt applicatif, ailleurs
+    branch: main
+    hostname: cornichons.example.org
+```
+
+Le chemin d'un push, de bout en bout :
+
+```
+développeur                Forgejo                 Kuberpack              Flux
+     │  push sur le dépôt applicatif                  │                    │
+     ├────────────────────►│                         │                    │
+     │                    ├─ webhook ──────────────►│ build (Railpack)    │
+     │                    │                         ├─ digest épinglé ────►│
+     │                    │                         │   (commit GitOps)   │
+     │                    │                         │                    ├─ apply
+```
+
+Le temps entre le push et l'application qui répond, mesuré : **~50 s de build
+et ~25 s de déploiement** (le build est mis en cache par commit).
+
 ### Le cycle complet
 
 Le manifeste vit dans le dépôt GitOps, à

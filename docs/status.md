@@ -11,6 +11,9 @@ Les autres pages de `docs/` décrivent **le produit visé**. Cette page décrit 
 - Le `values.yaml` d’un service est régénéré à chaque compilation : le manifeste pilote le runtime, l’`image` et le `track` épinglés sont conservés.
 - Addons : les moteurs sont pluggables (`AddonEngine` + un registre). Moteurs disponibles : `cnpg` (PostgreSQL, `DATABASE_URL` depuis le Secret généré par CNPG) et `valkey` (cache, `VALKEY_URL`). Un service déclare les addons qu’il utilise (`services.*.addons`) et reçoit leur environnement ; la `NetworkPolicy` les autorise.
 - Le control plane écrit son chart dans le dépôt GitOps au démarrage : le chart appliqué est celui qu’il connaît (les valeurs qu’il écrit n’iraient pas dans un chart obsolète).
+- Le dépôt applicatif est une source de code : Kuberpack n’y écrit aucun fichier, il ne le crée pas et n’y pousse pas de commit. Il le clone pour construire et y pose un webhook.
+- Python : un `pyproject.toml` sans `uv.lock` (et sans `requirements.txt`) est **refusé** au build : Railpack n’y installerait rien et l’image démarrerait sans ses dépendances. Un build en échec avec un message clair vaut mieux qu’une image déployée qui crash.
+- Le HelmRelease n’attend pas les pods (`disableWait`) : une image cassée ne bloque plus le déploiement suivant. La santé de l’application reste le rôle du test hook du chart, qui la signale sans bloquer.
 - Webhook sur le dépôt GitOps : un push qui change un manifeste recompile le projet (le manifeste est lu depuis le dépôt, jamais réécrit). Le statut de commit sur le push dit si le manifeste compile.
 - Flux : un `Kustomization` par arbre. Les projets (`kubernetes/vps/projects`) exigent leur propre `Kustomization` : sans lui, un projet compilé n’est jamais appliqué.
 - SQLite WAL + secrets HMAC en fichiers (`--data`). Pas de secret dans SQLite. Pas de clé SSH : clone HTTPS par jeton (control plane et builder).

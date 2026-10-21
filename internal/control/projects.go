@@ -44,7 +44,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	// with a webhook and a build. The GitOps is already written, so a retry
 	// of the same manifest arms the pipeline.
 	if err := s.reconcileApps(r.Context(), res.Project, res.Apps); err != nil {
-		http.Error(w, "reconcile failed: "+err.Error(), http.StatusBadGateway)
+		http.Error(w, "the manifest was applied, but the build pipeline could not be armed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	writeJSON(w, http.StatusCreated, projectJSON(res))

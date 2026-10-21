@@ -441,9 +441,15 @@ spec:
       name: %s-values
       valuesKey: values.yaml
   install:
+    # The release does not wait for the pods. A broken image must not hold
+    # the pipeline: the next push applies its fix at once. The health of the
+    # application is the business of the test hook below, which reports it
+    # without blocking the next deployment.
+    disableWait: true
     remediation:
-      retries: 6
+      retries: 3
   upgrade:
+    disableWait: true
     cleanupOnFail: true
     remediation:
       retries: 1

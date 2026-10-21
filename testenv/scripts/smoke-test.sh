@@ -42,9 +42,10 @@ check "oci registry enabled" "401" "$(curl -sS --cacert pki/ca.crt -o /dev/null 
 check "webhook configured" "1" "$(curl -sS --cacert pki/ca.crt -H "Authorization: token ${FORGEJO_CONTROL_TOKEN}" --max-time 10 "https://${FORGEJO_HOST}:${FORGEJO_PORT}/api/v1/repos/kuberpack/hello-kuberpack/hooks" 2>/dev/null | jq -r 'length')"
 
 echo "== kuberpack =="
-check "app declared by the manifest" "1" "$(curl -sS --max-time 10 -H "Authorization: Bearer ${FORGEJO_CONTROL_TOKEN}" "http://${K3S_NODE_IP}:30080/api/v1/apps" 2>/dev/null | jq -r '.apps | length')"
-check "app belongs to the project" "demo" "$(curl -sS --max-time 10 -H "Authorization: Bearer ${FORGEJO_CONTROL_TOKEN}" "http://${K3S_NODE_IP}:30080/api/v1/apps" 2>/dev/null | jq -r '.apps[0].project')"
-check "digest targets the project values" "kubernetes/vps/projects/demo/hello-kuberpack/values.yaml" "$(curl -sS --max-time 10 -H "Authorization: Bearer ${FORGEJO_CONTROL_TOKEN}" "http://${K3S_NODE_IP}:30080/api/v1/apps" 2>/dev/null | jq -r '.apps[0].values_path')"
+check "apps declared by the manifests" "2" "$(curl -sS --max-time 10 -H "Authorization: Bearer ${FORGEJO_CONTROL_TOKEN}" "http://${K3S_NODE_IP}:30080/api/v1/apps" 2>/dev/null | jq -r '.apps | length')"
+check "app belongs to the project" "demo" "$(curl -sS --max-time 10 -H "Authorization: Bearer ${FORGEJO_CONTROL_TOKEN}" "http://${K3S_NODE_IP}:30080/api/v1/apps" 2>/dev/null | jq -r '.apps[] | select(.name == "demo-hello-kuberpack") | .project')"
+check "digest targets the project values" "kubernetes/vps/projects/demo/hello-kuberpack/values.yaml" "$(curl -sS --max-time 10 -H "Authorization: Bearer ${FORGEJO_CONTROL_TOKEN}" "http://${K3S_NODE_IP}:30080/api/v1/apps" 2>/dev/null | jq -r '.apps[] | select(.name == "demo-hello-kuberpack") | .values_path')"
+check "second app belongs to its project" "boutique" "$(curl -sS --max-time 10 -H "Authorization: Bearer ${FORGEJO_CONTROL_TOKEN}" "http://${K3S_NODE_IP}:30080/api/v1/apps" 2>/dev/null | jq -r '.apps[] | select(.name == "boutique-cornichons") | .project')"
 check "last build succeeded" "succeeded" "$(curl -sS --max-time 10 -H "Authorization: Bearer ${FORGEJO_CONTROL_TOKEN}" "http://${K3S_NODE_IP}:30080/api/v1/apps/demo-hello-kuberpack/builds" 2>/dev/null | jq -r '.builds[0].status')"
 check "image is digest pinned" "true" "$(curl -sS --max-time 10 -H "Authorization: Bearer ${FORGEJO_CONTROL_TOKEN}" "http://${K3S_NODE_IP}:30080/api/v1/apps/demo-hello-kuberpack/builds" 2>/dev/null | jq -r '.builds[0].digest | test("^sha256:")')"
 
@@ -57,6 +58,11 @@ check "project namespace created" "demo" "$(kubectl get namespace demo -o jsonpa
 echo "== application =="
 check "GET / through the ingress" "hello-kuberpack" "$(curl -sS --max-time 10 -H 'Host: hello-kuberpack.kuberpack.test' http://${K3S_NODE_IP}/ 2>/dev/null | jq -r .app)"
 check "GET /healthz" "ok" "$(curl -sS --max-time 10 -H 'Host: hello-kuberpack.kuberpack.test' http://${K3S_NODE_IP}/healthz 2>/dev/null | jq -r .status)"
+check "second app through the ingress" "cornichons" "$(curl -sS --max-time 10 -H 'Host: cornichons.kuberpack.test' http://${K3S_NODE_IP}/ 2>/dev/null | jq -r .app)"
+
+echo "== the application repository is untouched =="
+# Kuberpack reads the code of the application, it never writes in it.
+check "no kuberpack file in the app repo" "0" "$(curl -sS --cacert pki/ca.crt -H "Authorization: token ${FORGEJO_CONTROL_TOKEN}" --max-time 10 "https://${FORGEJO_HOST}:${FORGEJO_PORT}/api/v1/repos/kuberpack/cornichons/contents" 2>/dev/null | jq -r '[.[] | select(.name | test("kuberpack"))] | length')"
 
 printf '\n  %d ok, %d failed\n' "${ok}" "${fail}"
 [ "${fail}" -eq 0 ]
