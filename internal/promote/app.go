@@ -76,6 +76,9 @@ type AppSpec struct {
 	// TLSSecretName is the secret that holds the certificate of the
 	// application. It is empty when the platform has no issuer.
 	TLSSecretName string
+	// Image is the published image the application runs, when it is not
+	// built from a repository.
+	Image string
 }
 
 // PreviewSecretSource values for AppSpec.InheritSecretFrom.
@@ -261,7 +264,11 @@ func valuesYAML(spec AppSpec, p Platform) string {
 	var b strings.Builder
 	b.WriteString("# Desired runtime. Kuberpack rewrites `image` and `networkPolicy`.\n")
 	b.WriteString("track: main\n")
-	b.WriteString("image: \"\"\n")
+	if spec.Image != "" {
+		b.WriteString("image: " + strconv.Quote(spec.Image) + "\n")
+	} else {
+		b.WriteString("image: \"\"\n")
+	}
 	b.WriteString("port: " + strconv.Itoa(spec.Port) + "\n")
 	b.WriteString("healthcheck: " + spec.Healthcheck + "\n")
 	b.WriteString("hostname: " + spec.Hostname + "\n")

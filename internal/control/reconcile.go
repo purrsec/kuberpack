@@ -85,7 +85,7 @@ func (s *Server) reconcileApp(ctx context.Context, project string, desc promote.
 		log.Printf("kuberpack app %s: the secret of the registry: %v", desc.Name, err)
 	}
 
-	if s.cfg.WebhookURL != "" {
+	if s.cfg.WebhookURL != "" && strings.TrimSpace(app.ForgejoRepository) != "" {
 		provider, owner, repo, err := s.appForge(app)
 		if err != nil {
 			return fmt.Errorf("app %s: %w", desc.Name, err)
@@ -107,7 +107,8 @@ func (s *Server) reconcileApp(ctx context.Context, project string, desc promote.
 
 	// A new app is built right away. An app whose build parameters changed
 	// is built again: the manifest asked for something else.
-	if created || buildParametersChanged(previous, app) {
+	// An application that runs a published image is not built.
+	if strings.TrimSpace(app.ForgejoRepository) != "" && (created || buildParametersChanged(previous, app)) {
 		if err := s.queueFirstBuild(ctx, app); err != nil {
 			return fmt.Errorf("app %s: %w", desc.Name, err)
 		}
@@ -258,4 +259,12 @@ func (s *Server) queueFirstBuild(ctx context.Context, app store.App) error {
 	s.publishCommitStatus(ctx, provider, owner, repo, sha, git.StatusPending, "Building", app, false)
 	s.kick()
 	return nil
+}
+
+// isThirdParty reports whether the code of an application lives in a
+// repository that is not ours. The platform never writes in it: no
+// webhook, no commit status.
+func isThirdParty(app store.App) bool {
+	repository := strings.TrimSpace(app.ForgejoRepository)
+	return strings.HasPrefix(repository, "http://") || strings.HasPrefix(repository, "https://")
 }

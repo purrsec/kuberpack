@@ -34,20 +34,29 @@ func Stage(code string, err error) error {
 	return Text(code, detail)
 }
 
-// Text builds `code: detail`, clipped to Max runes. It does not double the prefix.
+// Text builds `code: detail`. It does not double the prefix.
+//
+// The message is not cut: the log of the control plane and the log of the
+// builder must say what happened. Only the commit status is short, and
+// the limit of a status belongs to the status.
 func Text(code, detail string) error {
 	code = strings.TrimSpace(code)
 	detail = compact(detail)
 	if code == "" {
-		return fmt.Errorf("%s", clip(detail))
+		return fmt.Errorf("%s", detail)
 	}
 	if hasPrefix(detail, code) {
-		return fmt.Errorf("%s", clip(detail))
+		return fmt.Errorf("%s", detail)
 	}
 	if detail == "" {
-		return fmt.Errorf("%s", clip(code))
+		return fmt.Errorf("%s", code)
 	}
-	return fmt.Errorf("%s", clip(code+": "+detail))
+	return fmt.Errorf("%s", code+": "+detail)
+}
+
+// Short clips a message to the limit of a commit status.
+func Short(msg string) string {
+	return clip(msg)
 }
 
 // Detail keeps the useful tail of a tool error (git fatal, remote:, first line).

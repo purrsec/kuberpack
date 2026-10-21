@@ -29,6 +29,11 @@ type Service struct {
 	// the entry point of the build pipeline: a service without one is never
 	// built.
 	Repository string `yaml:"repository,omitempty" json:"repository,omitempty"`
+	// Image runs a published image instead of building one. It is how a
+	// third party application is deployed: the platform never writes in
+	// the repository of somebody else, and it never builds what its
+	// authors publish.
+	Image string `yaml:"image,omitempty" json:"image,omitempty"`
 	// Branch is the branch whose pushes become the production. Defaults to
 	// the default branch of the repository.
 	Branch string `yaml:"branch,omitempty" json:"branch,omitempty"`
@@ -129,6 +134,9 @@ func validateManifest(m ProjectManifest) error {
 		}
 		if repo := strings.TrimSpace(svc.Repository); repo != "" && !strings.Contains(repo, "/") {
 			return fmt.Errorf("service %q: repository %q must be owner/name", name, repo)
+		}
+		if strings.TrimSpace(svc.Repository) == "" && strings.TrimSpace(svc.Image) == "" {
+			return fmt.Errorf("service %q: it must declare a repository to build, or an image to run", name)
 		}
 		if s := strings.TrimSpace(svc.Strategy); s != "" {
 			switch s {
@@ -482,6 +490,8 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string,
 			}
 		}
 		spec.TLSSecretName = sname + "-tls"
+		// A service that runs a published image is not built.
+		spec.Image = strings.TrimSpace(svc.Image)
 		dir := filepath.Join(work, filepath.FromSlash(p.projectServiceDir(project, sname)))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, nil, nil, err

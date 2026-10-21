@@ -15,7 +15,7 @@ func TestEnsureProjectCompilesServicesAddonsPolicies(t *testing.T) {
 		Project:   "mitame",
 		Namespace: "mitame",
 		Services: map[string]Service{
-			"site": {Type: "stateless", Port: 8080, Hostname: "mitame.host.bzh"},
+			"site": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "mitame.host.bzh"},
 		},
 		Addons: map[string]Addon{
 			"postgres": {Engine: "cnpg", Database: "umami", Owner: "umami"},
@@ -94,7 +94,7 @@ func TestDeleteProjectRemovesItFromTheProjectsParent(t *testing.T) {
 	bare := setupAppsGitOps(t)
 	m := ProjectManifest{
 		Project:  "demo",
-		Services: map[string]Service{"app": {Type: "stateless", Port: 8080, Hostname: "demo.host.bzh"}},
+		Services: map[string]Service{"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "demo.host.bzh"}},
 	}
 	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{NetworkPolicy: true, AddonOperators: []string{"cnpg"}}}
 	if _, err := EnsureProject(context.Background(), req); err != nil {
@@ -127,7 +127,7 @@ func TestEnsureProjectPreservesPinnedImage(t *testing.T) {
 	bare := setupAppsGitOps(t)
 	m := ProjectManifest{
 		Project:  "demo",
-		Services: map[string]Service{"app": {Type: "stateless", Port: 8080, Hostname: "demo.host.bzh"}},
+		Services: map[string]Service{"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "demo.host.bzh"}},
 	}
 	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{NetworkPolicy: true, AddonOperators: []string{"cnpg"}}}
 	if _, err := EnsureProject(context.Background(), req); err != nil {
@@ -174,7 +174,7 @@ func TestDeleteProjectRefusesToDropADatabase(t *testing.T) {
 		Addons: map[string]Addon{
 			"postgres": {Engine: "cnpg", Database: "demo", Owner: "demo"},
 		},
-		Services: map[string]Service{"app": {Type: "stateless", Port: 8080, Hostname: "demo.host.bzh"}},
+		Services: map[string]Service{"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "demo.host.bzh"}},
 	}
 	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{NetworkPolicy: true, AddonOperators: []string{"cnpg"}}}
 	if _, err := EnsureProject(context.Background(), req); err != nil {

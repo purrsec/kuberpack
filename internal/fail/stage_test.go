@@ -20,8 +20,11 @@ func TestStagePrefixesAndClips(t *testing.T) {
 		t.Fatalf("double prefix: %v", again)
 	}
 	long := Stage(Clone, errors.New(strings.Repeat("x", 200)))
-	if n := len([]rune(long.Error())); n != Max || !strings.HasPrefix(long.Error(), "clone: ") {
-		t.Fatalf("%q runes=%d", long.Error(), n)
+	if !strings.HasPrefix(long.Error(), "clone: ") {
+		t.Fatalf("the prefix is missing: %v", long)
+	}
+	if n := len([]rune(Short(long.Error()))); n != Max {
+		t.Fatalf("the short message is %d runes, want %d", n, Max)
 	}
 }
 

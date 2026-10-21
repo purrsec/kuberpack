@@ -166,3 +166,34 @@ func TestABackupWithoutStorageIsRefused(t *testing.T) {
 		t.Fatal("a backup that goes nowhere must be refused")
 	}
 }
+
+// A third party application is deployed by running the image its authors
+// publish: the platform does not build it, and it never writes in their
+// repository.
+func TestAThirdPartyApplicationRunsAPublishedImage(t *testing.T) {
+	bare := setupAppsGitOps(t)
+	m := ProjectManifest{
+		Project: "demo",
+		Services: map[string]Service{
+			"stirling": {Type: "stateless", Image: "docker.io/stirlingtools/stirling-pdf@sha256:10164ffe", Port: 8080, Hostname: "stirling.host.bzh"},
+		},
+	}
+	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{NetworkPolicy: true}}
+	res, err := EnsureProject(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Services) != 1 {
+		t.Fatalf("the services are %v", res.Services)
+	}
+	tree := readRemoteTree(t, bare)
+	values := readFile(t, tree, "kubernetes/vps/projects/demo/stirling/values.yaml")
+	if !strings.Contains(values, "stirlingtools/stirling-pdf@sha256:10164ffe") {
+		t.Errorf("the values do not carry the image:\n%s", values)
+	}
+	// The service is activated: it runs an image that is pinned.
+	parent := readFile(t, tree, "kubernetes/vps/projects/demo/kustomization.yaml")
+	if !strings.Contains(parent, "stirling") {
+		t.Errorf("the service is not activated:\n%s", parent)
+	}
+}

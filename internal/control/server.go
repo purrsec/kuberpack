@@ -17,6 +17,7 @@ import (
 	"unicode"
 
 	"git.host.bzh/pepe/kuberpack/internal/builder"
+	"git.host.bzh/pepe/kuberpack/internal/fail"
 	"git.host.bzh/pepe/kuberpack/internal/git"
 	"git.host.bzh/pepe/kuberpack/internal/hmacsig"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
@@ -382,7 +383,9 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 		_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", err.Error())
 		return
 	}
-	s.publishStatus(ctx, provider, owner, name, d.CommitSHA, git.StatusPending, "Building", git.ProductionContext, appTargetURL(app))
+	if !isThirdParty(app) {
+		s.publishStatus(ctx, provider, owner, name, d.CommitSHA, git.StatusPending, "Building", git.ProductionContext, appTargetURL(app))
+	}
 
 	track := s.trackFor(ctx, app)
 	skipPromote := !track.FollowsMain() && !track.MatchesCommit(d.CommitSHA)
@@ -432,7 +435,9 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 		if target == "" {
 			target = commitURL(s.cfg.Provider.WebURL(), owner, name, d.CommitSHA)
 		}
-		s.publishStatus(ctx, provider, owner, name, d.CommitSHA, git.StatusFailure, runErr.Error(), git.ProductionContext, target)
+		if !isThirdParty(app) {
+			s.publishStatus(ctx, provider, owner, name, d.CommitSHA, git.StatusFailure, runErr.Error(), git.ProductionContext, target)
+		}
 		log.Printf("kuberpack build %s %s: %v", app.Name, d.CommitSHA, runErr)
 		return
 	}
@@ -449,9 +454,13 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 		target = appTargetURL(app)
 	}
 	if skipPromote {
-		s.publishStatus(ctx, provider, owner, name, d.CommitSHA, git.StatusWarning, "Built, frozen at "+track.Short(), git.ProductionContext, appTargetURL(app))
+		if !isThirdParty(app) {
+			s.publishStatus(ctx, provider, owner, name, d.CommitSHA, git.StatusWarning, "Built, frozen at "+track.Short(), git.ProductionContext, appTargetURL(app))
+		}
 	} else {
-		s.publishStatus(ctx, provider, owner, name, d.CommitSHA, git.StatusSuccess, "Deployed", git.ProductionContext, target)
+		if !isThirdParty(app) {
+			s.publishStatus(ctx, provider, owner, name, d.CommitSHA, git.StatusSuccess, "Deployed", git.ProductionContext, target)
+		}
 	}
 	s.alignTrack(ctx, app)
 }
@@ -474,7 +483,7 @@ func (s *Server) publishStatus(ctx context.Context, provider git.Provider, owner
 	err := provider.CommitStatus(ctx, owner, repo, sha, git.Status{
 		State:       state,
 		Context:     contextName,
-		Description: description,
+		Description: fail.Short(description),
 		TargetURL:   target,
 	})
 	if err != nil {

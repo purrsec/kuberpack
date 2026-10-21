@@ -184,7 +184,7 @@ func TestProjectServiceWithoutReplicasRunsOneInstance(t *testing.T) {
 	m := ProjectManifest{
 		Project: "demo",
 		Services: map[string]Service{
-			"app": {Type: "stateless", Port: 8080, Hostname: "app.example.org"},
+			"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "app.example.org"},
 		},
 	}
 	if _, err := EnsureProject(context.Background(), ProjectRequest{
@@ -206,7 +206,7 @@ func TestProjectWithoutDefaultDenyHasNoNetworkPolicy(t *testing.T) {
 	m := ProjectManifest{
 		Project: "demo",
 		Services: map[string]Service{
-			"app": {Type: "stateless", Port: 8080, Hostname: "app.example.org"},
+			"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "app.example.org"},
 		},
 		Policies: Policy{DefaultDeny: BoolPtr(false)},
 	}
@@ -231,7 +231,7 @@ func TestProjectNamespaceIsTheNamespaceOfItsResources(t *testing.T) {
 		Project:   "demo",
 		Namespace: "demo-ns",
 		Services: map[string]Service{
-			"app": {Type: "stateless", Port: 8080, Hostname: "app.example.org"},
+			"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "app.example.org"},
 		},
 		Addons: map[string]Addon{
 			"postgres": {Engine: "cnpg", Database: "app"},
