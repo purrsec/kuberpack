@@ -2,13 +2,16 @@ package control
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -21,6 +24,18 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/store"
 	"git.host.bzh/pepe/kuberpack/internal/strategy"
 )
+
+// deliveryNonce returns a short random suffix for a delivery id. An explicit
+// user action (register, redeploy) must always queue a new build, even for a
+// commit that was already built: the delivery id is the primary key of
+// webhook_deliveries, so a repeated one would be dropped as a duplicate.
+func deliveryNonce() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return strconv.FormatInt(time.Now().UnixNano(), 16)
+	}
+	return hex.EncodeToString(b[:])
+}
 
 const maxBody = 1 << 20
 
@@ -294,8 +309,9 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 			// delivery_id is the primary key of webhook_deliveries: it must be
 			// unique per application, not per commit. Two apps built from the
 			// same commit (monorepo) would otherwise collide and the second one
-			// would never be built.
-			del := "register-" + app.Name + "-" + sha
+			// would never be built. The nonce keeps the id unique per request,
+			// so registering again always queues a new build.
+			del := "register-" + app.Name + "-" + sha + "-" + deliveryNonce()
 			if err := s.cfg.Store.InsertDelivery(r.Context(), store.Delivery{
 				ID:        del,
 				AppID:     app.ID,

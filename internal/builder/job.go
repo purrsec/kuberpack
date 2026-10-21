@@ -81,8 +81,23 @@ func (r *JobRunner) Build(ctx context.Context, req Request) error {
 	created, err := r.Client.BatchV1().Jobs(job.Namespace).Create(ctx, job, metav1.CreateOptions{})
 	if apierrors.IsAlreadyExists(err) && job.Name != "" {
 		created, err = r.Client.BatchV1().Jobs(job.Namespace).Get(ctx, job.Name, metav1.GetOptions{})
-		if err == nil && created.Annotations["kuberpack.dev/request"] != job.Annotations["kuberpack.dev/request"] {
-			return fail.Text(fail.Job, "existing job belongs to a different request")
+		if err == nil {
+			if created.Annotations["kuberpack.dev/request"] != job.Annotations["kuberpack.dev/request"] {
+				return fail.Text(fail.Job, "existing job belongs to a different request")
+			}
+			// The Job name is stable per delivery, so a retry of the same
+			// commit finds the previous Job. A failed one must not block the
+			// retry until its TTL expires: delete it and start a new one.
+			// A running or succeeded Job is kept, so a control-plane restart
+			// never triggers a second build.
+			if jobFailed(created) {
+				background := metav1.DeletePropagationBackground
+				_ = r.Client.BatchV1().Jobs(job.Namespace).Delete(ctx, job.Name, metav1.DeleteOptions{PropagationPolicy: &background})
+				created, err = r.Client.BatchV1().Jobs(job.Namespace).Create(ctx, job, metav1.CreateOptions{})
+				if err != nil {
+					return fail.Stage(fail.Job, err)
+				}
+			}
 		}
 	}
 	if err != nil {
@@ -138,6 +153,14 @@ func jobCondition(conditions []batchv1.JobCondition, kind batchv1.JobConditionTy
 		}
 	}
 	return false
+}
+
+// jobFailed reports whether a Job already reached a terminal failure.
+func jobFailed(job *batchv1.Job) bool {
+	if job == nil {
+		return false
+	}
+	return job.Status.Failed > 0 || jobCondition(job.Status.Conditions, batchv1.JobFailed)
 }
 
 func (r *JobRunner) podFailureMessage(ctx context.Context, job *batchv1.Job) string {
@@ -212,6 +235,12 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 	cacheSize := resource.MustParse("8Gi")
 	workSize := resource.MustParse("8Gi")
 	tmpSize := resource.MustParse("2Gi")
+	// Trivy downloads and unpacks a vulnerability database of a few hundred
+	// megabytes: the builder container needs more than 2Gi to survive the scan.
+	builderCPU := resource.MustParse("4")
+	builderMemory := resource.MustParse("6Gi")
+	buildkitCPU := resource.MustParse("6")
+	buildkitMemory := resource.MustParse("8Gi")
 	requestDigest := sha256.Sum256([]byte(cloneURL + "\x00" + req.CommitSHA + "\x00" + req.ImageRepository + "\x00" + req.RegistryUser + "\x00" + req.StartCmd))
 	buildsURL := strings.TrimSpace(req.BuildsGitURL)
 	if buildsURL == "" {
@@ -259,7 +288,7 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 						RestartPolicy:   &rootlessRestart,
 						SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: &allowEscalation, RunAsNonRoot: &allowEscalation, RunAsUser: &uid, RunAsGroup: &uid, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeUnconfined}, AppArmorProfile: &corev1.AppArmorProfile{Type: corev1.AppArmorProfileTypeUnconfined}},
 						VolumeMounts:    []corev1.VolumeMount{{Name: "buildkit-socket", MountPath: "/run/buildkit"}, {Name: "buildkit-cache", MountPath: "/home/user/.local/share/buildkit"}},
-						Resources:       corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("128Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4"), corev1.ResourceMemory: resource.MustParse("6Gi")}},
+						Resources:       corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("128Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: buildkitCPU, corev1.ResourceMemory: buildkitMemory}},
 					}},
 					Containers: []corev1.Container{{
 						Name: "builder", Image: r.Image, ImagePullPolicy: corev1.PullIfNotPresent,
@@ -268,7 +297,7 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 						WorkingDir:      "/work",
 						SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: &noEscalation, RunAsNonRoot: &allowEscalation, RunAsUser: &uid, RunAsGroup: &uid, ReadOnlyRootFilesystem: &readOnly, Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},
 						VolumeMounts:    []corev1.VolumeMount{{Name: "buildkit-socket", MountPath: "/run/buildkit"}, {Name: "work", MountPath: "/work"}, {Name: "tmp", MountPath: "/tmp"}, {Name: "tmp", MountPath: "/var/tmp"}, {Name: "secrets", MountPath: "/secrets", ReadOnly: true}},
-						Resources:       corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("128Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("2Gi")}},
+						Resources:       corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("128Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: builderCPU, corev1.ResourceMemory: builderMemory}},
 					}},
 					Volumes: []corev1.Volume{
 						{Name: "buildkit-socket", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},

@@ -243,8 +243,10 @@ func (s *Server) redeployApp(w http.ResponseWriter, r *http.Request) {
 	}
 	// delivery_id is globally unique: scope it to the app so two apps built
 	// from the same commit do not collide (the second redeploy would be
-	// silently dropped as a duplicate).
-	del := "redeploy-" + app.Name + "-" + sha
+	// silently dropped as a duplicate). The nonce keeps it unique per
+	// request, so a redeploy always queues a new build instead of being
+	// dropped as a duplicate of an earlier one.
+	del := "redeploy-" + app.Name + "-" + sha + "-" + deliveryNonce()
 	if err := s.cfg.Store.InsertDelivery(r.Context(), store.Delivery{
 		ID: del, AppID: app.ID, EventType: "redeploy", CommitSHA: sha, Status: "queued",
 	}); err != nil && !errors.Is(err, store.ErrDuplicate) {

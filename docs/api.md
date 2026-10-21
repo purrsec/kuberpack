@@ -82,7 +82,7 @@ Le YAML GitOps est le contrat runtime. `track: main` (défaut, ou vide / `latest
 
 `GET /api/v1/apps/{name}/builds` — historique SQLite (`status` : `running`, `succeeded`, `failed`, `rolled_back`).
 
-`POST /api/v1/apps/{name}/redeploy` — enfile un build du HEAD courant.
+`POST /api/v1/apps/{name}/redeploy` — enfile un build du HEAD courant. Chaque appel crée une livraison distincte : un redeploy du même commit relance bien un build au lieu d’être ignoré comme doublon.
 
 `POST /hooks/flux` — notification HelmRelease en erreur → `rolled_back` + statut Forgejo `warning`. Secret `KUBERPACK_FLUX_WEBHOOK_SECRET` (HMAC ou `Authorization: Bearer`). Kuberpack n’a pas le kubeconfig du VPS ; le rollback Helm reste celui du HelmRelease.
 
