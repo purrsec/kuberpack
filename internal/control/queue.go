@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"git.host.bzh/pepe/kuberpack/internal/forgejo"
+	"git.host.bzh/pepe/kuberpack/internal/git"
 	"git.host.bzh/pepe/kuberpack/internal/hmacsig"
 	"git.host.bzh/pepe/kuberpack/internal/store"
 )
@@ -42,9 +42,9 @@ func (s *Server) queuePush(w http.ResponseWriter, r *http.Request, app store.App
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	owner, name, parseErr := forgejo.ParseOwnerName(app.ForgejoRepository)
+	owner, name, parseErr := git.SplitOwnerName(app.ForgejoRepository)
 	if parseErr == nil {
-		s.publishCommitStatus(r.Context(), owner, name, payload.After, forgejo.StatusPending, "Building", app, false)
+		s.publishCommitStatus(r.Context(), owner, name, payload.After, git.StatusPending, "Building", app, false)
 	}
 	s.kick()
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
@@ -126,10 +126,10 @@ func (s *Server) queuePullRequest(w http.ResponseWriter, r *http.Request, app st
 		return
 	}
 	if action != "closed" && sha != "" {
-		owner, name, parseErr := forgejo.ParseOwnerName(app.ForgejoRepository)
+		owner, name, parseErr := git.SplitOwnerName(app.ForgejoRepository)
 		if parseErr == nil {
 			host := promotePreviewHost(app.Name, n, s.cfg.Platform.PreviewDomain)
-			s.publishStatus(r.Context(), owner, name, sha, forgejo.StatusPending, "Building preview", forgejo.PreviewContext, "https://"+host)
+			s.publishStatus(r.Context(), owner, name, sha, git.StatusPending, "Building preview", git.PreviewContext, "https://"+host)
 		}
 	}
 	s.kick()

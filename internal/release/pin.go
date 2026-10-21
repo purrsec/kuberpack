@@ -13,7 +13,7 @@ import (
 // PinExisting writes GitOps image from an already published sha-<commit>.
 // It does not build and does not require the SHA to be branch HEAD.
 func PinExisting(ctx context.Context, req Request) (Result, error) {
-	if req.Client == nil {
+	if req.Provider == nil {
 		return Result{}, fail.Text(fail.Clone, "forgejo client is nil")
 	}
 	sha := strings.ToLower(strings.TrimSpace(req.SHA))
@@ -27,7 +27,7 @@ func PinExisting(ctx context.Context, req Request) (Result, error) {
 		req.ChartPath = "charts/stateless"
 	}
 
-	ociRepo, err := ImageRepository(req.ImageRepository, req.Client.BaseURL, req.Owner, req.Name)
+	ociRepo, err := ImageRepository(req.ImageRepository, req.registryURL(), req.Owner, req.Name)
 	if err != nil {
 		return Result{}, fail.Stage(fail.Image, err)
 	}
@@ -41,7 +41,7 @@ func PinExisting(ctx context.Context, req Request) (Result, error) {
 	}
 	digest := strings.TrimSpace(req.digestOverride())
 	if digest == "" {
-		reg, err := oci.New(req.Client.BaseURL, regUser, req.Token)
+		reg, err := oci.New(req.registryURL(), regUser, req.Token)
 		if err != nil {
 			return Result{}, fail.Stage(fail.Push, err)
 		}

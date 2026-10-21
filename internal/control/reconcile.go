@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"git.host.bzh/pepe/kuberpack/internal/forgejo"
+	"git.host.bzh/pepe/kuberpack/internal/git"
 	"git.host.bzh/pepe/kuberpack/internal/hmacsig"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
 	"git.host.bzh/pepe/kuberpack/internal/store"
@@ -72,11 +72,11 @@ func (s *Server) reconcileApp(ctx context.Context, project string, desc promote.
 	}
 
 	if s.cfg.WebhookURL != "" {
-		owner, repo, err := forgejo.ParseOwnerName(app.ForgejoRepository)
+		owner, repo, err := git.SplitOwnerName(app.ForgejoRepository)
 		if err != nil {
 			return fmt.Errorf("app %s: %w", desc.Name, err)
 		}
-		hook, err := s.cfg.Client.EnsureHook(ctx, owner, repo, s.cfg.WebhookURL, secret)
+		hook, err := s.cfg.Provider.EnsureHook(ctx, owner, repo, s.cfg.WebhookURL, secret)
 		if err != nil {
 			return fmt.Errorf("app %s: webhook: %w", desc.Name, err)
 		}
@@ -100,8 +100,8 @@ func (s *Server) reconcileApp(ctx context.Context, project string, desc promote.
 // record.
 func (s *Server) removeApp(ctx context.Context, app store.App) error {
 	if app.WebhookID > 0 {
-		if owner, repo, err := forgejo.ParseOwnerName(app.ForgejoRepository); err == nil {
-			_ = s.cfg.Client.DeleteHook(ctx, owner, repo, app.WebhookID)
+		if owner, repo, err := git.SplitOwnerName(app.ForgejoRepository); err == nil {
+			_ = s.cfg.Provider.DeleteHook(ctx, owner, repo, app.WebhookID)
 		}
 	}
 	_ = s.cfg.Secrets.Delete(app.ID)
@@ -165,11 +165,11 @@ func buildParametersChanged(previous, current store.App) bool {
 // be reached is not an error: the push of that repository will trigger the
 // build later.
 func (s *Server) queueFirstBuild(ctx context.Context, app store.App) error {
-	owner, repo, err := forgejo.ParseOwnerName(app.ForgejoRepository)
+	owner, repo, err := git.SplitOwnerName(app.ForgejoRepository)
 	if err != nil {
 		return err
 	}
-	sha, err := s.cfg.Client.BranchSHA(ctx, owner, repo, app.ProductionBranch)
+	sha, err := s.cfg.Provider.BranchSHA(ctx, owner, repo, app.ProductionBranch)
 	if err != nil || strings.TrimSpace(sha) == "" {
 		return nil
 	}
@@ -183,7 +183,7 @@ func (s *Server) queueFirstBuild(ctx context.Context, app store.App) error {
 	}); err != nil && !errors.Is(err, store.ErrDuplicate) {
 		return err
 	}
-	s.publishCommitStatus(ctx, owner, repo, sha, forgejo.StatusPending, "Building", app, false)
+	s.publishCommitStatus(ctx, owner, repo, sha, git.StatusPending, "Building", app, false)
 	s.kick()
 	return nil
 }

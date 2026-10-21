@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"git.host.bzh/pepe/kuberpack/internal/forgejo"
 	"git.host.bzh/pepe/kuberpack/internal/image"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
 	"git.host.bzh/pepe/kuberpack/internal/release"
@@ -38,15 +37,12 @@ func TestProductionPromotionTargetsTheAppDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	client, err := forgejo.New("https://git.invalid", "tok")
-	if err != nil {
-		t.Fatal(err)
-	}
+	provider := mustProvider(t, "https://git.invalid", nil)
 	got := make(chan string, 1)
 	srv := New(Config{
 		Store:    st,
 		Secrets:  store.SecretsDir(filepath.Join(dir, "secrets")),
-		Client:   client,
+		Provider: provider,
 		APIToken: "api",
 		Platform: promote.Platform{AppsDir: "kubernetes/vps/apps"},
 		Run: func(ctx context.Context, req release.Request) (release.Result, error) {

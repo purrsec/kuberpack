@@ -5,7 +5,7 @@ import (
 	"errors"
 	"log"
 
-	"git.host.bzh/pepe/kuberpack/internal/forgejo"
+	"git.host.bzh/pepe/kuberpack/internal/git"
 	"git.host.bzh/pepe/kuberpack/internal/image"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
 	"git.host.bzh/pepe/kuberpack/internal/release"
@@ -29,15 +29,19 @@ func (s *Server) gitOpsValues(ctx context.Context, app store.App) ([]byte, error
 	if s.cfg.GitOpsFile != nil {
 		return s.cfg.GitOpsFile(ctx, app)
 	}
-	if s.cfg.GitOpsURL == "" || s.cfg.Client == nil {
+	if s.cfg.GitOpsURL == "" || s.cfg.Provider == nil {
 		return nil, errors.New("gitops is not configured")
 	}
-	owner, repo, err := forgejo.RepoOwnerNameFromURL(s.cfg.GitOpsURL)
+	owner, repo, err := git.RepoOwnerNameFromURL(s.cfg.GitOpsURL)
 	if err != nil {
 		return nil, err
 	}
 	path := appValuesPath(s.cfg.Platform, app)
-	return s.cfg.Client.RawFile(ctx, owner, repo, path, s.cfg.GitOpsBranch)
+	raw, err := s.cfg.Provider.RawFile(ctx, owner, repo, path, s.cfg.GitOpsBranch)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(raw), nil
 }
 
 func (s *Server) alignTracks(ctx context.Context) {
@@ -72,12 +76,12 @@ func (s *Server) alignTrack(ctx context.Context, app store.App) {
 			return
 		}
 	}
-	owner, name, err := forgejo.ParseOwnerName(app.ForgejoRepository)
-	if err != nil || s.cfg.Client == nil {
+	owner, name, err := git.SplitOwnerName(app.ForgejoRepository)
+	if err != nil || s.cfg.Provider == nil {
 		return
 	}
 	sha := meta.Track.SHA
-	if resolved, err := s.cfg.Client.ResolveCommit(ctx, owner, name, sha); err == nil {
+	if resolved, err := s.cfg.Provider.ResolveCommit(ctx, owner, name, sha); err == nil {
 		sha = resolved
 	}
 	digest := ""
@@ -88,7 +92,8 @@ func (s *Server) alignTrack(ctx context.Context, app store.App) {
 		}
 	}
 	result, err := release.PinExisting(ctx, release.Request{
-		Client:       s.cfg.Client,
+		Provider:     s.cfg.Provider,
+		RegistryURL:  s.cfg.RegistryURL,
 		Token:        s.cfg.Token,
 		Owner:        owner,
 		Name:         name,
@@ -109,6 +114,6 @@ func (s *Server) alignTrack(ctx context.Context, app store.App) {
 	}
 	if result.Changed {
 		log.Printf("kuberpack froze %s at %s (%s)", app.Name, result.Image, result.InfraCommitSHA)
-		s.publishCommitStatus(ctx, owner, name, sha, forgejo.StatusSuccess, "Deployed", app, false)
+		s.publishCommitStatus(ctx, owner, name, sha, git.StatusSuccess, "Deployed", app, false)
 	}
 }

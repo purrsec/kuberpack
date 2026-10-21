@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"git.host.bzh/pepe/kuberpack/internal/forgejo"
+	gitpkg "git.host.bzh/pepe/kuberpack/internal/git"
 	"git.host.bzh/pepe/kuberpack/internal/hmacsig"
 	"git.host.bzh/pepe/kuberpack/internal/image"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
@@ -61,17 +62,13 @@ func TestWebhookHMACAndQueue(t *testing.T) {
 	})
 	git := httptest.NewServer(mux)
 	t.Cleanup(git.Close)
-	client, err := forgejo.New(git.URL, "tok")
-	if err != nil {
-		t.Fatal(err)
-	}
-	client.HTTPClient = git.Client()
+	provider := mustProvider(t, git.URL, git.Client())
 
 	ran := make(chan string, 1)
 	srv := New(Config{
 		Store:    st,
 		Secrets:  secrets,
-		Client:   client,
+		Provider: provider,
 		APIToken: "api",
 		Run: func(ctx context.Context, req release.Request) (release.Result, error) {
 			ran <- req.SHA
@@ -180,17 +177,13 @@ func TestFrozenTrackSkipsPromote(t *testing.T) {
 	})
 	git := httptest.NewServer(mux)
 	t.Cleanup(git.Close)
-	client, err := forgejo.New(git.URL, "tok")
-	if err != nil {
-		t.Fatal(err)
-	}
-	client.HTTPClient = git.Client()
+	provider := mustProvider(t, git.URL, git.Client())
 
 	skip := make(chan bool, 1)
 	srv := New(Config{
 		Store:    st,
 		Secrets:  secrets,
-		Client:   client,
+		Provider: provider,
 		APIToken: "api",
 		GitOpsFile: func(context.Context, store.App) ([]byte, error) {
 			return []byte(`track: f10cf296ea2c210d374847d1368d0ef9c848664c
@@ -241,7 +234,7 @@ func TestCreateProjectUnauthorized(t *testing.T) {
 		Store:    st,
 		Secrets:  store.SecretsDir(filepath.Join(dir, "secrets")),
 		APIToken: "api",
-		Client:   mustForgejo(t),
+		Provider: mustForgejo(t),
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects", bytes.NewReader([]byte(`{"project":"web"}`)))
 	rec := httptest.NewRecorder()
@@ -283,11 +276,7 @@ func TestReconcileArmsThePipeline(t *testing.T) {
 	})
 	git := httptest.NewServer(mux)
 	t.Cleanup(git.Close)
-	client, err := forgejo.New(git.URL, "tok")
-	if err != nil {
-		t.Fatal(err)
-	}
-	client.HTTPClient = git.Client()
+	provider := mustProvider(t, git.URL, git.Client())
 
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "db.sqlite"))
@@ -300,7 +289,7 @@ func TestReconcileArmsThePipeline(t *testing.T) {
 	srv := New(Config{
 		Store:      st,
 		Secrets:    store.SecretsDir(filepath.Join(dir, "secrets")),
-		Client:     client,
+		Provider:   provider,
 		Token:      "tok",
 		APIToken:   "api",
 		WebhookURL: "https://kp.example/hooks/forgejo",
@@ -429,17 +418,13 @@ func TestCommitStatusOnBuildFailure(t *testing.T) {
 	})
 	git := httptest.NewServer(mux)
 	t.Cleanup(git.Close)
-	client, err := forgejo.New(git.URL, "tok")
-	if err != nil {
-		t.Fatal(err)
-	}
-	client.HTTPClient = git.Client()
+	provider := mustProvider(t, git.URL, git.Client())
 
 	done := make(chan struct{}, 1)
 	srv := New(Config{
 		Store:    st,
 		Secrets:  secrets,
-		Client:   client,
+		Provider: provider,
 		APIToken: "api",
 		Run: func(context.Context, release.Request) (release.Result, error) {
 			done <- struct{}{}
@@ -524,16 +509,12 @@ func TestPullRequestPreviewAndForkDenied(t *testing.T) {
 	})
 	git := httptest.NewServer(mux)
 	t.Cleanup(git.Close)
-	client, err := forgejo.New(git.URL, "tok")
-	if err != nil {
-		t.Fatal(err)
-	}
-	client.HTTPClient = git.Client()
+	provider := mustProvider(t, git.URL, git.Client())
 	ran := make(chan bool, 1)
 	srv := New(Config{
 		Store:    st,
 		Secrets:  secrets,
-		Client:   client,
+		Provider: provider,
 		APIToken: "api",
 		Platform: promote.Platform{PreviewDomain: "preview.host.bzh"},
 		Run: func(ctx context.Context, req release.Request) (release.Result, error) {
@@ -620,12 +601,8 @@ func TestListBuildsAndRemoveApp(t *testing.T) {
 	})
 	git := httptest.NewServer(mux)
 	t.Cleanup(git.Close)
-	client, err := forgejo.New(git.URL, "tok")
-	if err != nil {
-		t.Fatal(err)
-	}
-	client.HTTPClient = git.Client()
-	srv := New(Config{Store: st, Secrets: store.SecretsDir(filepath.Join(dir, "secrets")), Client: client, APIToken: "api"})
+	provider := mustProvider(t, git.URL, git.Client())
+	srv := New(Config{Store: st, Secrets: store.SecretsDir(filepath.Join(dir, "secrets")), Provider: provider, APIToken: "api"})
 
 	list := httptest.NewRequest(http.MethodGet, "/api/v1/apps/demo-web/builds", nil)
 	list.Header.Set("Authorization", "Bearer api")
@@ -678,12 +655,8 @@ func TestFluxHookMarksRolledBack(t *testing.T) {
 	})
 	git := httptest.NewServer(mux)
 	t.Cleanup(git.Close)
-	client, err := forgejo.New(git.URL, "tok")
-	if err != nil {
-		t.Fatal(err)
-	}
-	client.HTTPClient = git.Client()
-	srv := New(Config{Store: st, Client: client, APIToken: "api", FluxSecret: "flux-secret"})
+	provider := mustProvider(t, git.URL, git.Client())
+	srv := New(Config{Store: st, Provider: provider, APIToken: "api", FluxSecret: "flux-secret"})
 	body := []byte(`{"severity":"error","message":"Helm test failed","involvedObject":{"kind":"HelmRelease","name":"hello-world","namespace":"apps"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/hooks/flux", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer flux-secret")
@@ -706,11 +679,24 @@ func TestFluxHookMarksRolledBack(t *testing.T) {
 	}
 }
 
-func mustForgejo(t *testing.T) *forgejo.Client {
+// mustProvider builds a provider that talks to a test server.
+func mustProvider(t *testing.T, baseURL string, client *http.Client) gitpkg.Provider {
 	t.Helper()
-	c, err := forgejo.New("https://git.host.bzh", "tok")
+	c, err := forgejo.New(baseURL, "tok")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return c
+	if client != nil {
+		c.HTTPClient = client
+	}
+	return &gitpkg.ForgejoProvider{Client: c}
+}
+
+func mustForgejo(t *testing.T) gitpkg.Provider {
+	t.Helper()
+	p, err := gitpkg.NewForgejo("https://git.host.bzh", "tok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
 }

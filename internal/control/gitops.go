@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"git.host.bzh/pepe/kuberpack/internal/forgejo"
+	"git.host.bzh/pepe/kuberpack/internal/git"
 	"git.host.bzh/pepe/kuberpack/internal/hmacsig"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
 	"git.host.bzh/pepe/kuberpack/internal/store"
@@ -24,7 +24,7 @@ func (s *Server) gitOpsRepo() (string, string, bool) {
 	if s.cfg.GitOpsURL == "" {
 		return "", "", false
 	}
-	owner, repo, err := forgejo.RepoOwnerNameFromURL(s.cfg.GitOpsURL)
+	owner, repo, err := git.RepoOwnerNameFromURL(s.cfg.GitOpsURL)
 	if err != nil {
 		return "", "", false
 	}
@@ -49,7 +49,7 @@ func (s *Server) ensureGitOpsHook(ctx context.Context) error {
 	if !ok {
 		return nil
 	}
-	if s.cfg.WebhookURL == "" || s.cfg.Client == nil {
+	if s.cfg.WebhookURL == "" || s.cfg.Provider == nil {
 		return nil
 	}
 	secret, err := s.cfg.Secrets.Get(gitOpsSecretID)
@@ -62,7 +62,7 @@ func (s *Server) ensureGitOpsHook(ctx context.Context) error {
 			return err
 		}
 	}
-	hook, err := s.cfg.Client.EnsureHook(ctx, owner, repo, s.cfg.WebhookURL, secret)
+	hook, err := s.cfg.Provider.EnsureHook(ctx, owner, repo, s.cfg.WebhookURL, secret)
 	if err != nil {
 		return err
 	}
@@ -82,11 +82,11 @@ func (s *Server) handleGitOpsWebhook(w http.ResponseWriter, r *http.Request, pay
 		http.Error(w, "webhook secret missing", http.StatusInternalServerError)
 		return
 	}
-	if !hmacsig.Valid(secret, hmacsig.Header(r.Header), body) {
+	if !s.cfg.Provider.VerifyWebhook(secret, r.Header, body) {
 		http.Error(w, "invalid signature", http.StatusUnauthorized)
 		return
 	}
-	event := hmacsig.Event(r.Header)
+	event := s.cfg.Provider.Event(r.Header)
 	if event != "" && event != "push" {
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -143,8 +143,8 @@ func (s *Server) handleGitOpsPush(ctx context.Context, payload pushPayload) erro
 		Platform:     s.cfg.Platform,
 	})
 	if err != nil {
-		s.publishStatus(ctx, owner, repo, payload.After, forgejo.StatusFailure,
-			"manifest: "+err.Error(), forgejo.ProductionContext, "")
+		s.publishStatus(ctx, owner, repo, payload.After, git.StatusFailure,
+			"manifest: "+err.Error(), git.ProductionContext, "")
 		return err
 	}
 
@@ -152,15 +152,15 @@ func (s *Server) handleGitOpsPush(ctx context.Context, payload pushPayload) erro
 	// manifest decides which apps exist, which webhooks and which builds.
 	for _, project := range result.Projects {
 		if err := s.reconcileApps(ctx, project.Project, project.Apps); err != nil {
-			s.publishStatus(ctx, owner, repo, payload.After, forgejo.StatusFailure,
-				"reconcile: "+err.Error(), forgejo.ProductionContext, "")
+			s.publishStatus(ctx, owner, repo, payload.After, git.StatusFailure,
+				"reconcile: "+err.Error(), git.ProductionContext, "")
 			return err
 		}
 	}
 	for _, project := range result.Removed {
 		if err := s.reconcileApps(ctx, project, nil); err != nil {
-			s.publishStatus(ctx, owner, repo, payload.After, forgejo.StatusFailure,
-				"reconcile: "+err.Error(), forgejo.ProductionContext, "")
+			s.publishStatus(ctx, owner, repo, payload.After, git.StatusFailure,
+				"reconcile: "+err.Error(), git.ProductionContext, "")
 			return err
 		}
 	}
@@ -169,7 +169,7 @@ func (s *Server) handleGitOpsPush(ctx context.Context, payload pushPayload) erro
 	if len(result.Removed) > 0 {
 		description = fmt.Sprintf("%s, %d removed", description, len(result.Removed))
 	}
-	s.publishStatus(ctx, owner, repo, payload.After, forgejo.StatusSuccess, description, forgejo.ProductionContext, "")
+	s.publishStatus(ctx, owner, repo, payload.After, git.StatusSuccess, description, git.ProductionContext, "")
 	return nil
 }
 

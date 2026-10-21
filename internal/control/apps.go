@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"git.host.bzh/pepe/kuberpack/internal/forgejo"
+	"git.host.bzh/pepe/kuberpack/internal/git"
 	"git.host.bzh/pepe/kuberpack/internal/hmacsig"
 	"git.host.bzh/pepe/kuberpack/internal/store"
 )
@@ -56,12 +56,12 @@ func (s *Server) redeployApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	owner, name, err := forgejo.ParseOwnerName(app.ForgejoRepository)
+	owner, name, err := git.SplitOwnerName(app.ForgejoRepository)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	sha, err := s.cfg.Client.BranchSHA(r.Context(), owner, name, app.ProductionBranch)
+	sha, err := s.cfg.Provider.BranchSHA(r.Context(), owner, name, app.ProductionBranch)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -78,7 +78,7 @@ func (s *Server) redeployApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.publishCommitStatus(r.Context(), owner, name, sha, forgejo.StatusPending, "Building", app, false)
+	s.publishCommitStatus(r.Context(), owner, name, sha, git.StatusPending, "Building", app, false)
 	s.kick()
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued", "commit_sha": sha})
 }
@@ -145,9 +145,9 @@ func (s *Server) fluxHook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	owner, name, parseErr := forgejo.ParseOwnerName(app.ForgejoRepository)
+	owner, name, parseErr := git.SplitOwnerName(app.ForgejoRepository)
 	if parseErr == nil {
-		s.publishStatus(r.Context(), owner, name, b.CommitSHA, forgejo.StatusWarning, "rolled_back: "+msg, forgejo.ProductionContext, appTargetURL(app))
+		s.publishStatus(r.Context(), owner, name, b.CommitSHA, git.StatusWarning, "rolled_back: "+msg, git.ProductionContext, appTargetURL(app))
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "rolled_back"})
 }

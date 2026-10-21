@@ -8,14 +8,16 @@ import (
 	"strings"
 	"time"
 
-	"git.host.bzh/pepe/kuberpack/internal/forgejo"
+	"git.host.bzh/pepe/kuberpack/internal/git"
 	"git.host.bzh/pepe/kuberpack/internal/release"
 	"git.host.bzh/pepe/kuberpack/internal/strategy"
 )
 
 func runTrigger(args []string) error {
 	fs := flag.NewFlagSet("trigger", flag.ContinueOnError)
-	forgejoURL := fs.String("forgejo-url", getenv("FORGEJO_URL", "https://git.host.bzh"), "Forgejo base URL")
+	gitProvider := fs.String("git-provider", getenv("KUBERPACK_GIT_PROVIDER", "forgejo"), "git forge: forgejo, github or gitlab")
+	gitURL := fs.String("git-url", getenv("KUBERPACK_GIT_URL", getenv("FORGEJO_URL", "https://git.host.bzh")), "base URL of the git forge")
+	registryURL := fs.String("registry-url", getenv("KUBERPACK_REGISTRY_URL", ""), "OCI registry the images are pushed to (defaults to the forge URL)")
 	repository := fs.String("repository", "", "Forgejo repository owner/name")
 	branch := fs.String("branch", "main", "production branch")
 	strategyName := fs.String("strategy", "auto", "auto, uv, or railpack")
@@ -31,7 +33,7 @@ func runTrigger(args []string) error {
 		return err
 	}
 
-	owner, name, err := forgejo.ParseOwnerName(*repository)
+	owner, name, err := git.SplitOwnerName(*repository)
 	if err != nil {
 		return err
 	}
@@ -39,14 +41,15 @@ func runTrigger(args []string) error {
 		return err
 	}
 
-	token := strings.TrimSpace(os.Getenv("FORGEJO_TOKEN"))
-	client, err := forgejo.New(*forgejoURL, token)
+	token := strings.TrimSpace(getenv("KUBERPACK_GIT_TOKEN", os.Getenv("FORGEJO_TOKEN")))
+	provider, err := git.New(git.Config{Kind: *gitProvider, URL: *gitURL, Token: token})
 	if err != nil {
 		return err
 	}
 
 	_, err = release.Run(context.Background(), release.Request{
-		Client:          client,
+		Provider:        provider,
+		RegistryURL:     *registryURL,
 		Token:           token,
 		Owner:           owner,
 		Name:            name,

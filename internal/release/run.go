@@ -11,7 +11,7 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/builder"
 	"git.host.bzh/pepe/kuberpack/internal/fail"
 	"git.host.bzh/pepe/kuberpack/internal/fetch"
-	"git.host.bzh/pepe/kuberpack/internal/forgejo"
+	"git.host.bzh/pepe/kuberpack/internal/git"
 	"git.host.bzh/pepe/kuberpack/internal/image"
 	"git.host.bzh/pepe/kuberpack/internal/oci"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
@@ -19,10 +19,15 @@ import (
 )
 
 type Request struct {
-	Builder           builder.Runner
-	BuildID           int64
-	DeliveryID        string
-	Client            *forgejo.Client
+	Builder    builder.Runner
+	BuildID    int64
+	DeliveryID string
+	// Provider is the git forge the application lives in.
+	Provider git.Provider
+	// RegistryURL is the OCI registry the image is pushed to. It defaults
+	// to the web URL of the forge, which is where a Forgejo serves its
+	// registry.
+	RegistryURL       string
 	Token             string
 	Owner             string
 	Name              string
@@ -53,6 +58,17 @@ type Request struct {
 	Log               func(string, ...any)
 }
 
+// registryURL is the registry the image is pushed to.
+func (r Request) registryURL() string {
+	if url := strings.TrimSpace(r.RegistryURL); url != "" {
+		return url
+	}
+	if r.Provider != nil {
+		return r.Provider.WebURL()
+	}
+	return ""
+}
+
 type Result struct {
 	SHA            string
 	Image          image.Ref
@@ -76,7 +92,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if req.ChartPath == "" {
 		req.ChartPath = "charts/stateless"
 	}
-	if req.Client == nil {
+	if req.Provider == nil {
 		return Result{}, fail.Text(fail.Clone, "forgejo client is nil")
 	}
 
@@ -85,13 +101,13 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		return Result{}, fail.Stage(fail.Strategy, err)
 	}
 
-	repo, err := req.Client.Repo(ctx, req.Owner, req.Name)
+	repo, err := req.Provider.Repository(ctx, req.Owner, req.Name)
 	if err != nil {
 		return Result{}, fail.Stage(fail.Clone, err)
 	}
 	sha := strings.ToLower(strings.TrimSpace(req.SHA))
 	if sha == "" {
-		sha, err = req.Client.BranchSHA(ctx, req.Owner, req.Name, req.Branch)
+		sha, err = req.Provider.BranchSHA(ctx, req.Owner, req.Name, req.Branch)
 		if err != nil {
 			return Result{}, fail.Stage(fail.Clone, err)
 		}
@@ -124,7 +140,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		log("uv.lock present; Railpack consumes the lockfile")
 	}
 
-	ociRepo, err := ImageRepository(req.ImageRepository, req.Client.BaseURL, req.Owner, req.Name)
+	ociRepo, err := ImageRepository(req.ImageRepository, req.registryURL(), req.Owner, req.Name)
 	if err != nil {
 		return Result{}, fail.Stage(fail.Image, err)
 	}
@@ -161,7 +177,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if regUser == "" {
 		regUser = req.Owner
 	}
-	reg, err := oci.New(req.Client.BaseURL, regUser, req.Token)
+	reg, err := oci.New(req.registryURL(), regUser, req.Token)
 	if err != nil {
 		return Result{}, fail.Stage(fail.Push, err)
 	}
@@ -181,7 +197,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	log("image: %s", ref.String())
 
 	if !req.AllowNonHEAD {
-		head, err := req.Client.BranchSHA(ctx, req.Owner, req.Name, req.Branch)
+		head, err := req.Provider.BranchSHA(ctx, req.Owner, req.Name, req.Branch)
 		if err != nil {
 			return Result{}, fail.Stage(fail.Clone, err)
 		}

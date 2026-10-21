@@ -28,6 +28,8 @@ type Repo struct {
 	CloneURL string
 	SSHURL   string
 	Private  bool
+	// DefaultBranch is the branch the forge expects the pushes on.
+	DefaultBranch string
 }
 
 func New(baseURL, token string) (*Client, error) {
@@ -50,11 +52,12 @@ func New(baseURL, token string) (*Client, error) {
 
 func (c *Client) Repo(ctx context.Context, owner, name string) (Repo, error) {
 	var raw struct {
-		FullName string `json:"full_name"`
-		CloneURL string `json:"clone_url"`
-		SSHURL   string `json:"ssh_url"`
-		Private  bool   `json:"private"`
-		Owner    struct {
+		FullName      string `json:"full_name"`
+		CloneURL      string `json:"clone_url"`
+		SSHURL        string `json:"ssh_url"`
+		Private       bool   `json:"private"`
+		DefaultBranch string `json:"default_branch"`
+		Owner         struct {
 			Login string `json:"login"`
 		} `json:"owner"`
 		Name string `json:"name"`

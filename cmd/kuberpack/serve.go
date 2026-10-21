@@ -12,7 +12,7 @@ import (
 
 	"git.host.bzh/pepe/kuberpack/internal/builder"
 	"git.host.bzh/pepe/kuberpack/internal/control"
-	"git.host.bzh/pepe/kuberpack/internal/forgejo"
+	"git.host.bzh/pepe/kuberpack/internal/git"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
 	"git.host.bzh/pepe/kuberpack/internal/store"
 )
@@ -21,7 +21,9 @@ func runServe(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	addr := fs.String("addr", getenv("KUBERPACK_ADDR", ":8080"), "listen address")
 	dataDir := fs.String("data", getenv("KUBERPACK_DATA", "data"), "SQLite and HMAC secrets directory")
-	forgejoURL := fs.String("forgejo-url", getenv("FORGEJO_URL", "https://git.host.bzh"), "Forgejo base URL")
+	gitProvider := fs.String("git-provider", getenv("KUBERPACK_GIT_PROVIDER", "forgejo"), "git forge: forgejo, github or gitlab")
+	gitURL := fs.String("git-url", getenv("KUBERPACK_GIT_URL", getenv("FORGEJO_URL", "https://git.host.bzh")), "base URL of the git forge")
+	registryURL := fs.String("registry-url", getenv("KUBERPACK_REGISTRY_URL", ""), "OCI registry the images are pushed to (defaults to the forge URL)")
 	webhookURL := fs.String("webhook-url", getenv("KUBERPACK_WEBHOOK_URL", ""), "public URL for POST /hooks/forgejo")
 	gitopsURL := fs.String("gitops-url", getenv("KUBERPACK_GITOPS_URL", "https://git.host.bzh/pepe/infra-homelab.git"), "GitOps repository URL")
 	gitopsBranch := fs.String("gitops-branch", getenv("KUBERPACK_GITOPS_BRANCH", "main"), "GitOps branch")
@@ -31,9 +33,15 @@ func runServe(args []string) error {
 		return err
 	}
 
-	token := strings.TrimSpace(os.Getenv("FORGEJO_TOKEN"))
+	// The read token opens the repositories. The build token pushes the
+	// images: the builder reads them from their own secrets.
+	token := strings.TrimSpace(getenv("KUBERPACK_GIT_TOKEN", os.Getenv("FORGEJO_TOKEN")))
 	apiToken := getenv("KUBERPACK_API_TOKEN", token)
-	client, err := forgejo.New(*forgejoURL, token)
+	provider, err := git.New(git.Config{
+		Kind:  *gitProvider,
+		URL:   *gitURL,
+		Token: token,
+	})
 	if err != nil {
 		return err
 	}
@@ -71,7 +79,8 @@ func runServe(args []string) error {
 		Builder:      jobBuilder,
 		Store:        db,
 		Secrets:      store.SecretsDir(filepath.Join(*dataDir, "secrets")),
-		Client:       client,
+		Provider:     provider,
+		RegistryURL:  *registryURL,
 		Token:        token,
 		APIToken:     apiToken,
 		WebhookURL:   strings.TrimSpace(*webhookURL),

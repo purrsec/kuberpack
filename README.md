@@ -73,6 +73,12 @@ export KUBERPACK_API_TOKEN=$FORGEJO_TOKEN
 
 `serve` est déployé sur le mini-pc (`https://kuberpack.host.bzh/`), hors du Flux `wait: true`.
 
+## Installation
+
+Voir [docs/install.md](docs/install.md) : un cluster, une forge git
+(Forgejo, GitHub, GitLab), un registre OCI et deux jetons (un pour lire les
+dépôts, un pour pousser les images).
+
 ## État
 
 Voir [docs/status.md](docs/status.md). En une ligne : webhook → Job Railpack → pin digest → Flux, avec previews PR, `rolled_back` via notification Flux, et archive de build optionnelle.

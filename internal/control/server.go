@@ -17,7 +17,7 @@ import (
 	"unicode"
 
 	"git.host.bzh/pepe/kuberpack/internal/builder"
-	"git.host.bzh/pepe/kuberpack/internal/forgejo"
+	"git.host.bzh/pepe/kuberpack/internal/git"
 	"git.host.bzh/pepe/kuberpack/internal/hmacsig"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
 	"git.host.bzh/pepe/kuberpack/internal/release"
@@ -39,10 +39,16 @@ func deliveryNonce() string {
 const maxBody = 1 << 20
 
 type Config struct {
-	Builder      builder.Runner
-	Store        *store.Store
-	Secrets      store.SecretsDir
-	Client       *forgejo.Client
+	Builder builder.Runner
+	Store   *store.Store
+	Secrets store.SecretsDir
+	// Provider is the git forge Kuberpack talks to. It is the only thing
+	// that knows whether the world is a Forgejo, a GitHub or a GitLab.
+	Provider git.Provider
+	// RegistryURL is the OCI registry the images are pushed to. It is
+	// independent of the forge: GitHub pushes to ghcr.io, GitLab to its own
+	// registry, a Forgejo to its own port.
+	RegistryURL  string
 	Token        string
 	APIToken     string
 	WebhookURL   string
@@ -307,7 +313,7 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 		_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", err.Error())
 		return
 	}
-	owner, name, err := forgejo.ParseOwnerName(app.ForgejoRepository)
+	owner, name, err := git.SplitOwnerName(app.ForgejoRepository)
 	if err != nil {
 		_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", err.Error())
 		return
@@ -323,7 +329,7 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 		_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", err.Error())
 		return
 	}
-	s.publishStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusPending, "Building", forgejo.ProductionContext, appTargetURL(app))
+	s.publishStatus(ctx, owner, name, d.CommitSHA, git.StatusPending, "Building", git.ProductionContext, appTargetURL(app))
 
 	track := s.trackFor(ctx, app)
 	skipPromote := !track.FollowsMain() && !track.MatchesCommit(d.CommitSHA)
@@ -332,7 +338,8 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 		Builder:       s.cfg.Builder,
 		BuildID:       buildID,
 		DeliveryID:    d.ID,
-		Client:        s.cfg.Client,
+		Provider:      s.cfg.Provider,
+		RegistryURL:   s.cfg.RegistryURL,
 		Token:         s.cfg.Token,
 		Owner:         owner,
 		Name:          name,
@@ -366,9 +373,9 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 		_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", runErr.Error())
 		target := finished.ArchiveURL
 		if target == "" {
-			target = commitURL(s.cfg.Client.BaseURL, owner, name, d.CommitSHA)
+			target = commitURL(s.cfg.Provider.WebURL(), owner, name, d.CommitSHA)
 		}
-		s.publishStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusFailure, runErr.Error(), forgejo.ProductionContext, target)
+		s.publishStatus(ctx, owner, name, d.CommitSHA, git.StatusFailure, runErr.Error(), git.ProductionContext, target)
 		log.Printf("kuberpack build %s %s: %v", app.Name, d.CommitSHA, runErr)
 		return
 	}
@@ -385,9 +392,9 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 		target = appTargetURL(app)
 	}
 	if skipPromote {
-		s.publishStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusWarning, "Built, frozen at "+track.Short(), forgejo.ProductionContext, appTargetURL(app))
+		s.publishStatus(ctx, owner, name, d.CommitSHA, git.StatusWarning, "Built, frozen at "+track.Short(), git.ProductionContext, appTargetURL(app))
 	} else {
-		s.publishStatus(ctx, owner, name, d.CommitSHA, forgejo.StatusSuccess, "Deployed", forgejo.ProductionContext, target)
+		s.publishStatus(ctx, owner, name, d.CommitSHA, git.StatusSuccess, "Deployed", git.ProductionContext, target)
 	}
 	s.alignTrack(ctx, app)
 }
@@ -395,19 +402,19 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 func (s *Server) publishCommitStatus(ctx context.Context, owner, repo, sha, state, description string, app store.App, failed bool) {
 	target := appTargetURL(app)
 	if failed {
-		target = commitURL(s.cfg.Client.BaseURL, owner, repo, sha)
+		target = commitURL(s.cfg.Provider.WebURL(), owner, repo, sha)
 	}
-	s.publishStatus(ctx, owner, repo, sha, state, description, forgejo.ProductionContext, target)
+	s.publishStatus(ctx, owner, repo, sha, state, description, git.ProductionContext, target)
 }
 
 func (s *Server) publishStatus(ctx context.Context, owner, repo, sha, state, description, contextName, target string) {
-	if s.cfg.Client == nil {
+	if s.cfg.Provider == nil {
 		return
 	}
 	if contextName == "" {
-		contextName = forgejo.ProductionContext
+		contextName = git.ProductionContext
 	}
-	err := s.cfg.Client.CreateCommitStatus(ctx, owner, repo, sha, forgejo.CommitStatus{
+	err := s.cfg.Provider.CommitStatus(ctx, owner, repo, sha, git.Status{
 		State:       state,
 		Context:     contextName,
 		Description: description,
