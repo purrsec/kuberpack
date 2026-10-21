@@ -122,9 +122,24 @@ func git(ctx context.Context, dir string, extra []string, args ...string) (strin
 		if msg == "" {
 			msg = err.Error()
 		}
-		return "", fmt.Errorf("git %s: %s", strings.Join(all, " "), msg)
+		// Never echo the Authorization header back: it carries the token.
+		return "", fmt.Errorf("git %s: %s", strings.Join(sanitizeGitArgs(all), " "), msg)
 	}
 	return strings.TrimSpace(stdout.String()), nil
+}
+
+// sanitizeGitArgs hides the bearer token carried by http.extraHeader.
+func sanitizeGitArgs(args []string) []string {
+	out := append([]string(nil), args...)
+	for i := 0; i < len(out)-1; i++ {
+		if out[i] != "-c" {
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(out[i+1]), "http.extraheader=authorization:") {
+			out[i+1] = "http.extraHeader=Authorization: ***"
+		}
+	}
+	return out
 }
 
 func sanitize(s string) string {

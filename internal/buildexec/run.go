@@ -40,6 +40,17 @@ type Request struct {
 	Environment       string
 }
 
+// The builder Secret is written by the operator (Infisical or kubectl). Its
+// keys may be named either by their short role or by their Infisical key: the
+// mounted file names are the Secret keys, so both spellings are accepted.
+const (
+	gitTokenPath         = "/secrets/git-token"
+	gitTokenInfisicalKey = "/secrets/kuberpack-builder-git-token"
+	registryTokenPath    = "/secrets/registry-token"
+	registryTokenKey     = "/secrets/kuberpack-builder-registry-token"
+	buildsTokenPath      = "/secrets/builds-token"
+)
+
 // Run builds one commit in a Kubernetes Job. BuildKit runs in a separate
 // rootless sidecar; the resulting application image never contains these tools.
 func Run(ctx context.Context, req Request) (digest string, err error) {
@@ -60,17 +71,11 @@ func Run(ctx context.Context, req Request) (digest string, err error) {
 	if err != nil {
 		return "", fail.Stage(fail.Image, err)
 	}
-	if req.GitTokenFile == "" {
-		req.GitTokenFile = "/secrets/git-token"
-	}
-	if req.RegistryTokenFile == "" {
-		req.RegistryTokenFile = "/secrets/registry-token"
-	}
-	gitToken, err := readToken(req.GitTokenFile)
+	gitToken, err := readFirstToken(gitTokenPaths(req.GitTokenFile)...)
 	if err != nil {
 		return "", fail.Stage(fail.Auth, err)
 	}
-	registryToken, err := readToken(req.RegistryTokenFile)
+	registryToken, err := readFirstToken(registryTokenPaths(req.RegistryTokenFile)...)
 	if err != nil {
 		return "", fail.Stage(fail.Auth, err)
 	}
@@ -236,8 +241,36 @@ func readToken(path string) (string, error) {
 	return token, nil
 }
 
-func command(ctx context.Context, name string, args ...string) error {
-	return commandLogged(ctx, nil, name, args...)
+// readFirstToken returns the first readable, non-empty credential among the
+// candidates.
+func readFirstToken(paths ...string) (string, error) {
+	if len(paths) == 0 {
+		return "", fmt.Errorf("no credential path given")
+	}
+	for _, path := range paths {
+		if token, err := readToken(path); err == nil {
+			return token, nil
+		}
+	}
+	return "", fmt.Errorf("no readable credential in %s", strings.Join(paths, ", "))
+}
+
+// gitTokenPaths lists where the app-clone token may be mounted.
+func gitTokenPaths(explicit string) []string {
+	out := make([]string, 0, 3)
+	if p := strings.TrimSpace(explicit); p != "" {
+		out = append(out, p)
+	}
+	return append(out, gitTokenPath, gitTokenInfisicalKey)
+}
+
+// registryTokenPaths lists where the registry token may be mounted.
+func registryTokenPaths(explicit string) []string {
+	out := make([]string, 0, 3)
+	if p := strings.TrimSpace(explicit); p != "" {
+		out = append(out, p)
+	}
+	return append(out, registryTokenPath, registryTokenKey)
 }
 
 func commandLogged(ctx context.Context, logBuf *bytes.Buffer, name string, args ...string) error {
@@ -263,10 +296,7 @@ func archiveBuild(ctx context.Context, req Request, sbom []byte, status, reason,
 		return
 	}
 	token := ""
-	for _, path := range []string{"/secrets/builds-token", req.GitTokenFile} {
-		if path == "" {
-			continue
-		}
+	for _, path := range append([]string{buildsTokenPath}, gitTokenPaths(req.GitTokenFile)...) {
 		if t, err := readToken(path); err == nil {
 			token = t
 			break
