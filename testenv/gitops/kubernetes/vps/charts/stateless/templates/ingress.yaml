@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "stateless.fullname" . }}
+  labels:
+    {{- include "stateless.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingressClassName }}
+  ingressClassName: {{ .Values.ingressClassName | quote }}
+  {{- end }}
+  rules:
+    - host: {{ required "hostname is required" .Values.hostname | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "stateless.fullname" . }}
+                port:
+                  name: http
+  {{- if .Values.ingress.tls }}
+  tls:
+    - hosts:
+        - {{ .Values.hostname | quote }}
+  {{- end }}

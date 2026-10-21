@@ -1,0 +1,18 @@
+[req]
+distinguished_name = dn
+req_extensions = v3_req
+prompt = no
+[dn]
+CN = forgejo.kuberpack.test
+O = kuberpack-test
+[v3_req]
+basicConstraints = CA:FALSE
+keyUsage = critical,digitalSignature,keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt
+[alt]
+DNS.1 = forgejo
+DNS.2 = forgejo.kuberpack.test
+DNS.3 = localhost
+IP.1 = 172.29.90.10
+IP.2 = 127.0.0.1

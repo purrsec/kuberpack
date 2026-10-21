@@ -28,6 +28,12 @@ vendor/
 hello-world/
 kubero-main/
 
+# Test environment (testenv/): generated secrets and machine specific material
+testenv/.forgejo-secrets.env
+testenv/pki/ca-bundle-merged.crt
+testenv/pki/*.csr
+testenv/pki/*.srl
+
 # IDE
 .idea/
 .vscode/

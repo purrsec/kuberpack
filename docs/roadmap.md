@@ -10,7 +10,7 @@ Une app enregistrée sans toucher à son dépôt. Un push construit une image sc
 2. **Chart Helm stateless** — probes, test, `remediation.rollback`. Le stateful reste hors chart.
 3. **Control plane** — `serve` : SQLite, HMAC, `POST /api/v1/apps`, file. Pas encore d’image k3s.
 4. **Previews** — branche générée, `prune: true`, GC. Implémenté côté control plane.
-5. **UX** — CLI ou UI : liste, redeploy ; logs UI hors `serve`.
+5. **UX** — CLI ou UI : liste, redeploy ; logs UI hors `serve`. Le détail des chantiers ouverts est dans [todo.md](../todo.md).
 
 ## Plus tard
 
