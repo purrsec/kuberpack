@@ -210,11 +210,12 @@ func SyncRuntime(ctx context.Context, req EnsureRequest) (Result, error) {
 			return Result{}, err
 		} else {
 			patched, err := PatchRuntime(raw, RuntimePatch{
-				Hostname:    spec.Hostname,
-				Port:        spec.Port,
-				Healthcheck: spec.Healthcheck,
-				Internet:    spec.Internet,
-				Peers:       spec.Peers,
+				Hostname:      spec.Hostname,
+				Port:          spec.Port,
+				Healthcheck:   spec.Healthcheck,
+				Internet:      spec.Internet,
+				Peers:         spec.Peers,
+				NetworkPolicy: &platform.NetworkPolicy,
 			})
 			if err != nil {
 				return Result{}, err

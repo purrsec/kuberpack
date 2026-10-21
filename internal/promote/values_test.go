@@ -85,3 +85,30 @@ func TestPatchImageRejectsEmptyAndNonMapping(t *testing.T) {
 		t.Fatal("expected error for sequence")
 	}
 }
+
+// A platform-wide opt-out must survive a PATCH: the chart renders no
+// NetworkPolicy at all when it is disabled.
+func TestPatchRuntimeKeepsThePlatformNetworkPolicyDecision(t *testing.T) {
+	in := []byte("image: keep\nport: 8080\nnetworkPolicy:\n  enabled: false\n  internet: true\n  peers: []\n")
+	off := false
+	out, err := PatchRuntime(in, RuntimePatch{
+		Port:          8080,
+		Internet:      &off,
+		NetworkPolicy: &off,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "enabled: false") {
+		t.Fatalf("networkPolicy re-enabled:\n%s", out)
+	}
+
+	// Without an explicit decision the existing value is left untouched.
+	out, err = PatchRuntime(in, RuntimePatch{Port: 8080})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "enabled: false") {
+		t.Fatalf("networkPolicy changed without a decision:\n%s", out)
+	}
+}

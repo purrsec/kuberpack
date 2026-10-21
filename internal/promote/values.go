@@ -102,6 +102,10 @@ type RuntimePatch struct {
 	Healthcheck string
 	Internet    *bool
 	Peers       []string
+	// NetworkPolicy carries the platform decision "is a NetworkPolicy rendered
+	// at all". Nil leaves the existing value untouched; false must disable it,
+	// so a platform-wide opt-out survives a PATCH.
+	NetworkPolicy *bool
 }
 
 // PatchRuntime updates the runtime contract in values.yaml: hostname, port,
@@ -139,7 +143,9 @@ func PatchRuntime(in []byte, p RuntimePatch) ([]byte, error) {
 	}
 
 	np := getOrCreateMap(root, "networkPolicy")
-	setBool(np, "enabled", true)
+	if p.NetworkPolicy != nil {
+		setBool(np, "enabled", *p.NetworkPolicy)
+	}
 	if p.Internet != nil {
 		setBool(np, "internet", *p.Internet)
 	}
