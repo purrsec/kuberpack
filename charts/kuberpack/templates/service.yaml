@@ -10,6 +10,24 @@ spec:
     - name: http
       port: 8080
       targetPort: http
+{{- if .Values.nodePort.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kuberpack-nodeport
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: kuberpack
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      nodePort: {{ .Values.nodePort.port }}
+{{- end }}
+{{- if .Values.ingress.enabled }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -36,3 +54,4 @@ spec:
   tls:
     - hosts:
         - {{ .Values.host | quote }}
+{{- end }}

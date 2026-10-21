@@ -5,8 +5,8 @@ metadata:
   namespace: kuberpack-build
 spec:
   hard:
-    pods: "4"
-    requests.cpu: "2"
-    requests.memory: 2Gi
-    limits.cpu: "8"
-    limits.memory: 12Gi
+    pods: {{ .Values.buildQuota.pods | quote }}
+    requests.cpu: {{ .Values.buildQuota.requestsCPU | quote }}
+    requests.memory: {{ .Values.buildQuota.requestsMemory | quote }}
+    limits.cpu: {{ .Values.buildQuota.limitsCPU | quote }}
+    limits.memory: {{ .Values.buildQuota.limitsMemory | quote }}

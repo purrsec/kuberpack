@@ -47,4 +47,8 @@ Le code du builder k3s est dans `internal/buildexec` et `internal/builder`. `Doc
 
 Le builder se configure avec `KUBERPACK_BUILDER_IMAGE` sur `serve` (`ghcr.io/purrsec/kuberpack-builder:latest`). `helmfile apply` installe le namespace builder, le RBAC et le control plane. L’image cible `linux/amd64`. Le Job garde ses logs pendant 24 h, puis est supprimé par TTL. Si `KUBERPACK_BUILDS_GIT_URL` est défini, le worker pousse SBOM SPDX et un extrait de log dans ce dépôt (Flux ne le watch jamais). Sinon l’archive est un no-op.
 
+`KUBERPACK_BUILDKIT_IMAGE` remplace l’image du sidecar BuildKit rootless (par défaut `moby/buildkit:v0.33.0-rootless` épinglé par digest). Utile pour un miroir, une image interne ou une CA privée : le sidecar pousse et tire le cache de build dans le registre OCI, il doit donc faire confiance au certificat du registre.
+
+Le nom du Job est stable par livraison webhook : un redémarrage du control plane ne déclenche pas un second build. En revanche, un Job **en échec** est supprimé et recréé au retry, sinon il bloquerait la reprise du même commit jusqu’à son TTL.
+
 `serve` exige `KUBERPACK_BUILDER_IMAGE` et lit uniquement le tag `sha-<commit>`. Le builder ne committe jamais le dépôt GitOps applicatif.

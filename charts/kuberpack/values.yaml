@@ -7,3 +7,41 @@ gitopsChart: ./charts/stateless
 gitopsSource: gitops
 previewDomain: preview.example.com
 host: kuberpack.example.com
+
+# Public URL of the Forgejo webhook endpoint. Empty means "derive it from
+# `host`" (https://<host>/hooks/forgejo). Set it when the control plane is
+# reachable on another address or scheme (test environments, internal DNS).
+webhookURL: ""
+
+# Extra environment entries for the control plane. Each item accepts the
+# `name`/`value` pair or a `valueFrom` block.
+extraEnv: []
+
+# Public ingress of the control plane.
+ingress:
+  enabled: true
+
+# NodePort service of the control plane. Useful when no public ingress or
+# TLS termination is available (test environments).
+nodePort:
+  enabled: false
+  port: 30080
+
+# Egress policy of the build namespace. Disable it when the builder must
+# reach hosts on a private range that the default policy excludes.
+buildNetworkPolicy:
+  enabled: true
+
+# Resource quota of the build namespace. It must leave room for one build Job
+# (builder + rootless BuildKit sidecar).
+buildQuota:
+  pods: "4"
+  requestsCPU: "2"
+  requestsMemory: 2Gi
+  limitsCPU: "16"
+  limitsMemory: 24Gi
+
+# Maximum duration of a build: how long the control plane waits for the image
+# digest, and the deadline of the build Job. Raise it for slow toolchains
+# (a first Python build downloads a large base image).
+wait: 15m

@@ -31,7 +31,16 @@ spec:
         - name: kuberpack
           image: {{ required "image is required" .Values.image | quote }}
           imagePullPolicy: IfNotPresent
-          args: ["serve", "--addr", ":8080", "--data", "/var/lib/kuberpack"]
+          args:
+            - serve
+            - --addr
+            - ":8080"
+            - --data
+            - /var/lib/kuberpack
+            {{- if .Values.wait }}
+            - --wait
+            - {{ .Values.wait | quote }}
+            {{- end }}
           env:
             - name: FORGEJO_URL
               value: {{ required "forgejoURL is required" .Values.forgejoURL | quote }}
@@ -46,11 +55,18 @@ spec:
             - name: KUBERPACK_PREVIEW_DOMAIN
               value: {{ .Values.previewDomain | quote }}
             - name: KUBERPACK_WEBHOOK_URL
+              {{- if .Values.webhookURL }}
+              value: {{ .Values.webhookURL | quote }}
+              {{- else }}
               value: {{ printf "https://%s/hooks/forgejo" (required "host is required" .Values.host) | quote }}
+              {{- end }}
             - name: KUBERPACK_BUILDER_IMAGE
               value: {{ required "builderImage is required" .Values.builderImage | quote }}
             - name: KUBERPACK_BUILDER_NAMESPACE
               value: kuberpack-build
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
             - name: HOME
               value: /home/kuberpack
             - name: FORGEJO_TOKEN

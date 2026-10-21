@@ -395,7 +395,10 @@ func valuesYAML(spec AppSpec, p Platform) string {
 	if p.TraefikEntrypoint != "" {
 		b.WriteString("    traefik.ingress.kubernetes.io/router.entrypoints: " + p.TraefikEntrypoint + "\n")
 	}
-	if p.TraefikCertResolver != "" {
+	// The certificate resolver belongs to the TLS configuration: Traefik
+	// refuses to create a router that points to a resolver it does not know,
+	// and an ingress without TLS has no certificate to resolve.
+	if p.IngressTLS && p.TraefikCertResolver != "" {
 		b.WriteString("    traefik.ingress.kubernetes.io/router.tls.certresolver: " + p.TraefikCertResolver + "\n")
 	}
 	b.WriteString("networkPolicy:\n")
