@@ -344,13 +344,22 @@ func TestTheReloadRefusesAPlatformThatDoesNotFit(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_, err := ReloadProjects(context.Background(), ReloadRequest{
+	result, err := ReloadProjects(context.Background(), ReloadRequest{
 		GitOpsURL: bare, GitOpsBranch: "main", Platform: platform,
 	})
-	if err == nil {
-		t.Fatal("a platform whose projects do not fit together must be refused")
+	if err != nil {
+		t.Fatalf("the reload must not fail: %v", err)
 	}
-	if !strings.Contains(err.Error(), "big") || !strings.Contains(err.Error(), "other") {
-		t.Errorf("the error does not name the projects: %v", err)
+	// The project that tips the total over is refused; the other one is
+	// deployed. Refusing everything would leave the platform without any
+	// application.
+	if len(result.Refused) != 1 {
+		t.Fatalf("the refused projects are %v", result.Refused)
+	}
+	if !strings.Contains(result.Refused[0], "does not fit") && !strings.Contains(result.Refused[0], "memory") {
+		t.Errorf("the refusal does not say why: %v", result.Refused)
+	}
+	if len(result.Projects) != 1 {
+		t.Errorf("the projects that fit must be deployed: %v", result.Projects)
 	}
 }

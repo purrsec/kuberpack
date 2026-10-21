@@ -36,6 +36,10 @@ type ReloadResult struct {
 	// Removed are the projects whose manifest disappeared: they are deleted
 	// from the GitOps.
 	Removed []string
+	// Refused are the projects that were not compiled because they do not
+	// fit in the node. The others are deployed: a platform that does not
+	// fit refuses the project that tips it over, not everything.
+	Refused []string
 	// InfraCommitSHA is the commit that carries the recompilation.
 	InfraCommitSHA string
 	Changed        bool
@@ -84,13 +88,8 @@ func ReloadProjects(ctx context.Context, req ReloadRequest) (ReloadResult, error
 			return result, err
 		}
 
-		// The whole platform must fit in the node. It is the total that
-		// kills a cluster, not one project.
-		if err := checkClusterCapacity(work, platform); err != nil {
-			return result, err
-		}
-
 		result = ReloadResult{}
+		already := 0.0
 		for _, name := range wanted {
 			manifestPath := filepath.Join(work, filepath.FromSlash(platform.ProjectManifestPath(name)))
 			raw, err := os.ReadFile(manifestPath)
@@ -109,10 +108,18 @@ func ReloadProjects(ctx context.Context, req ReloadRequest) (ReloadResult, error
 			if err != nil {
 				return result, fmt.Errorf("project %s: %w", name, err)
 			}
+			// The platform must fit in the node. It is the total that
+			// kills a cluster, not one project: the project that tips
+			// the total over is refused, and the others are deployed.
+			if err := checkClusterAddition(work, platform, manifest, already); err != nil {
+				result.Refused = append(result.Refused, name+": "+err.Error())
+				continue
+			}
 			services, adds, apps, err := compileProjectFiles(work, manifest, platform, string(raw), false)
 			if err != nil {
 				return result, fmt.Errorf("project %s: %w", name, err)
 			}
+			already += projectMemoryLimit(manifest)
 			result.Projects = append(result.Projects, ProjectResult{
 				Project:        sanitizeName(manifest.Project),
 				Namespace:      projectNamespace(manifest, sanitizeName(manifest.Project)),
@@ -142,6 +149,9 @@ func ReloadProjects(ctx context.Context, req ReloadRequest) (ReloadResult, error
 			return result, err
 		}
 		msg := fmt.Sprintf("compile %d project(s)", len(result.Projects))
+		if len(result.Refused) > 0 {
+			msg = fmt.Sprintf("%s, %d refused", msg, len(result.Refused))
+		}
 		if _, err := runGit(ctx, work, gitConfig("commit", "-m", msg)...); err != nil {
 			return result, err
 		}
