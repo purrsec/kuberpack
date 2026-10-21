@@ -11,10 +11,26 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/fetch"
 )
 
-// EnvVar is a literal environment variable of the application.
+// AddonPeer is a network peer that is an addon of the project: the
+// NetworkPolicy lets the application reach it.
+type AddonPeer struct {
+	// Kind is the kind of the addon (postgres, valkey).
+	Kind string
+	// For is the project the addon belongs to.
+	For string
+	// Port is the port the addon listens on.
+	Port int
+}
+
+// EnvVar is an environment variable of the application: a literal value, or
+// a reference to a Kubernetes Secret. An addon provides the second kind.
 type EnvVar struct {
 	Name  string `yaml:"name" json:"name"`
-	Value string `yaml:"value" json:"value"`
+	Value string `yaml:"value,omitempty" json:"value,omitempty"`
+	// SecretName and SecretKey reference a value in a Secret. The value
+	// never transits through Kuberpack.
+	SecretName string `yaml:"secret_name,omitempty" json:"secret_name,omitempty"`
+	SecretKey  string `yaml:"secret_key,omitempty" json:"secret_key,omitempty"`
 }
 
 // AppSpec is what you describe. Kuberpack expands it to Helm + Kustomize.
@@ -29,6 +45,8 @@ type AppSpec struct {
 	Peers       []string
 	// Env are the literal environment variables of the application.
 	Env []EnvVar
+	// AddonPeers are the addons of the project the application may reach.
+	AddonPeers []AddonPeer
 	// NetworkPolicy overrides the platform default for the NetworkPolicy of
 	// the service. A manifest with defaultDeny: false declares an app that
 	// is not isolated.
@@ -274,6 +292,16 @@ func valuesYAML(spec AppSpec, p Platform) string {
 			b.WriteString("    - " + peer + "\n")
 		}
 	}
+	if len(spec.AddonPeers) == 0 {
+		b.WriteString("  addonPeers: []\n")
+	} else {
+		b.WriteString("  addonPeers:\n")
+		for _, peer := range spec.AddonPeers {
+			b.WriteString("    - kind: " + peer.Kind + "\n")
+			b.WriteString("      for: " + peer.For + "\n")
+			b.WriteString("      port: " + strconv.Itoa(peer.Port) + "\n")
+		}
+	}
 	if spec.Preview {
 		b.WriteString("resources:\n")
 		b.WriteString("  requests:\n")
@@ -360,6 +388,13 @@ func envYAML(spec AppSpec) string {
 			continue
 		}
 		b.WriteString("- name: " + e.Name + "\n")
+		if e.SecretName != "" {
+			b.WriteString("  valueFrom:\n")
+			b.WriteString("    secretKeyRef:\n")
+			b.WriteString("      name: " + e.SecretName + "\n")
+			b.WriteString("      key: " + e.SecretKey + "\n")
+			continue
+		}
 		b.WriteString("  value: " + strconv.Quote(e.Value) + "\n")
 	}
 	return b.String()

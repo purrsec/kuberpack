@@ -44,6 +44,9 @@ type Service struct {
 	SecretEnv   string   `yaml:"secret_env,omitempty" json:"secret_env,omitempty"`
 	// Env are literal environment variables of the application.
 	Env map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
+	// Addons are the addons of the project the service uses: it gets their
+	// environment and may reach them.
+	Addons []string `yaml:"addons,omitempty" json:"addons,omitempty"`
 	// Build holds the build-time overrides of the service.
 	Build *BuildOptions `yaml:"build,omitempty" json:"build,omitempty"`
 }
@@ -130,12 +133,16 @@ func validateManifest(m ProjectManifest) error {
 				return fmt.Errorf("service %q: strategy %q is not supported (auto, uv, railpack)", name, s)
 			}
 		}
+		for _, addon := range svc.Addons {
+			if _, ok := m.Addons[strings.TrimSpace(addon)]; !ok {
+				return fmt.Errorf("service %q: addon %q is not declared in the project", name, addon)
+			}
+		}
 	}
 	for name, addon := range m.Addons {
-		switch strings.ToLower(strings.TrimSpace(addon.Engine)) {
-		case "cnpg":
-		default:
-			return fmt.Errorf("addon %q: engine %q is not supported (cnpg)", name, addon.Engine)
+		if _, ok := AddonEngineFor(addon.Engine); !ok {
+			return fmt.Errorf("addon %q: engine %q is not available (%s)",
+				name, addon.Engine, strings.Join(AddonEngineNames(), ", "))
 		}
 		if addon.Backup != nil && strings.TrimSpace(addon.Backup.S3) != "" {
 			return fmt.Errorf("addon %q: backup.s3 is not supported yet", name)
@@ -375,10 +382,18 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string,
 	}
 
 	net := m.Policies.Internet
-	servicePeers := projectPeers(m)
 	namespace := projectNamespace(m, project)
 	// The NetworkPolicy of the services follows the policy of the project.
 	isolated := m.Policies.defaultDenyEnabled()
+
+	// The addons are rendered first: the services consume them.
+	addons, addonResults, err := compileAddons(work, m, project, namespace, p)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	// The policy peers are either services of the project or addons of the
+	// project.
+	servicePeers, policyAddonPeers := projectPeers(m, addonResults)
 
 	services := make([]string, 0, len(m.Services))
 	apps := make([]ProjectApp, 0, len(m.Services))
@@ -404,6 +419,14 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string,
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("service %q: %w", name, err)
 		}
+		// The addons the service uses give it their environment and their
+		// network peer.
+		used, err := serviceAddons(svc, project, addonResults)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("service %q: %w", name, err)
+		}
+		spec.Env = append(spec.Env, used.env...)
+		spec.AddonPeers = mergeAddonPeers(policyAddonPeers, used.peers)
 		dir := filepath.Join(work, filepath.FromSlash(p.projectServiceDir(project, sname)))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, nil, nil, err
@@ -444,23 +467,6 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string,
 	}
 	sort.Strings(services)
 	sort.Slice(apps, func(i, j int) bool { return apps[i].Name < apps[j].Name })
-
-	addons := make([]string, 0, len(m.Addons))
-	for name, addon := range m.Addons {
-		aname := sanitizeName(name)
-		dir := filepath.Join(work, filepath.FromSlash(p.projectServiceDir(project, aname)))
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, nil, nil, err
-		}
-		if err := writeIfMissing(filepath.Join(dir, "database.yaml"), RenderProjectPostgres(project, aname, addon, namespace, p)); err != nil {
-			return nil, nil, nil, err
-		}
-		if err := writeIfMissing(filepath.Join(dir, "kustomization.yaml"), "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\n\nresources:\n  - database.yaml\n"); err != nil {
-			return nil, nil, nil, err
-		}
-		addons = append(addons, aname)
-	}
-	sort.Strings(addons)
 
 	// A service whose image is not pinned yet is not activated: Flux would
 	// otherwise install a HelmRelease whose chart requires a digest.
@@ -626,24 +632,120 @@ func serviceHasPinnedImage(dir string) bool {
 	return strings.TrimSpace(meta.Image) != ""
 }
 
-// projectPeers turns manifest policy peers into chart peer strings. A bare
-// addon name targets that addon of the project ("postgres:<project>"), a
-// service name targets the service itself.
-func projectPeers(m ProjectManifest) []string {
+// compileAddons renders the addons of a project. The engine of each addon
+// is looked up in the registry: an unknown engine is refused with the list
+// of the available ones.
+func compileAddons(work string, m ProjectManifest, project string, namespace string, p Platform) ([]string, map[string]AddonResult, error) {
+	results := map[string]AddonResult{}
+	names := make([]string, 0, len(m.Addons))
+	for name, addon := range m.Addons {
+		engine, ok := AddonEngineFor(addon.Engine)
+		if !ok {
+			return nil, nil, fmt.Errorf("addon %q: engine %q is not available (%s)",
+				name, addon.Engine, strings.Join(AddonEngineNames(), ", "))
+		}
+		aname := sanitizeName(name)
+		dir := filepath.Join(work, filepath.FromSlash(p.projectServiceDir(project, aname)))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, nil, err
+		}
+		result, err := engine.Render(dir, AddonSpec{
+			Name:      aname,
+			Project:   project,
+			Namespace: namespace,
+			Database:  addon.Database,
+			Owner:     addon.Owner,
+			Backup:    addon.Backup,
+		}, p)
+		if err != nil {
+			return nil, nil, fmt.Errorf("addon %q: %w", name, err)
+		}
+		results[aname] = result
+		names = append(names, aname)
+	}
+	sort.Strings(names)
+	return names, results, nil
+}
+
+// serviceAddons returns what the addons a service uses give to it: their
+// environment and their network peer.
+func serviceAddons(svc Service, project string, results map[string]AddonResult) (struct {
+	env   []EnvVar
+	peers []AddonPeer
+}, error) {
+	var out struct {
+		env   []EnvVar
+		peers []AddonPeer
+	}
+	seen := map[string]bool{}
+	for _, name := range svc.Addons {
+		aname := sanitizeName(name)
+		result, ok := results[aname]
+		if !ok {
+			return out, fmt.Errorf("addon %q is not declared in the project", name)
+		}
+		if seen[aname] {
+			continue
+		}
+		seen[aname] = true
+		for _, env := range result.Env {
+			out.env = append(out.env, EnvVar{
+				Name:       env.Name,
+				Value:      env.Value,
+				SecretName: env.SecretName,
+				SecretKey:  env.SecretKey,
+			})
+		}
+		if result.Kind != "" {
+			out.peers = append(out.peers, AddonPeer{
+				Kind: result.Kind,
+				For:  sanitizeName(project),
+				Port: result.Port,
+			})
+		}
+	}
+	return out, nil
+}
+
+// mergeAddonPeers merges the peers of the addons, without duplicates: a
+// service that uses an addon named in the policy must not have it twice.
+func mergeAddonPeers(lists ...[]AddonPeer) []AddonPeer {
+	seen := map[string]bool{}
+	var out []AddonPeer
+	for _, list := range lists {
+		for _, peer := range list {
+			key := peer.Kind + "/" + peer.For
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, peer)
+		}
+	}
+	return out
+}
+
+// projectPeers splits the policy peers: the services of the project and the
+// addons of the project. A peer that is neither is refused by the
+// validation of the manifest.
+func projectPeers(m ProjectManifest, results map[string]AddonResult) ([]string, []AddonPeer) {
 	project := sanitizeName(m.Project)
-	var out []string
+	var services []string
+	var addons []AddonPeer
 	for _, peer := range m.Policies.Peers {
 		peer = strings.TrimSpace(peer)
 		if peer == "" {
 			continue
 		}
-		if _, isAddon := m.Addons[peer]; isAddon {
-			out = append(out, "postgres:"+project)
+		if result, ok := results[sanitizeName(peer)]; ok {
+			if result.Kind != "" {
+				addons = append(addons, AddonPeer{Kind: result.Kind, For: project, Port: result.Port})
+			}
 			continue
 		}
-		out = append(out, sanitizeName(peer))
+		services = append(services, sanitizeName(peer))
 	}
-	return out
+	return services, addons
 }
 
 func writeIfMissing(path, content string) error {
@@ -653,67 +755,6 @@ func writeIfMissing(path, content string) error {
 		return err
 	}
 	return os.WriteFile(path, []byte(content), 0o644)
-}
-
-// RenderProjectPostgres renders a CNPG Cluster for a project addon, with the
-// labels the stateless chart's `postgres:<project>` peer expects.
-func RenderProjectPostgres(project, addon string, a Addon, namespace string, p Platform) string {
-	p = p.withDefaults()
-	db := strings.TrimSpace(a.Database)
-	if db == "" {
-		db = "app"
-	}
-	owner := strings.TrimSpace(a.Owner)
-	if owner == "" {
-		owner = "app"
-	}
-	if strings.TrimSpace(namespace) == "" {
-		namespace = p.ReleaseNamespace
-	}
-	name := sanitizeName(project) + "-" + sanitizeName(addon)
-	var b strings.Builder
-	b.WriteString("# Generated by Kuberpack from the project manifest.\n")
-	b.WriteString("apiVersion: postgresql.cnpg.io/v1\n")
-	b.WriteString("kind: Cluster\n")
-	b.WriteString("metadata:\n")
-	b.WriteString("  name: " + name + "\n")
-	b.WriteString("  namespace: " + namespace + "\n")
-	b.WriteString("  labels:\n")
-	b.WriteString("    kuberpack.io/addon: postgres\n")
-	b.WriteString("    kuberpack.io/for: " + sanitizeName(project) + "\n")
-	b.WriteString("spec:\n")
-	b.WriteString("  instances: 1\n")
-	b.WriteString("  imageName: " + p.PreviewDatabaseImage + "\n")
-	b.WriteString("  imagePullPolicy: IfNotPresent\n")
-	b.WriteString("  inheritedMetadata:\n")
-	b.WriteString("    labels:\n")
-	b.WriteString("      kuberpack.io/addon: postgres\n")
-	b.WriteString("      kuberpack.io/for: " + sanitizeName(project) + "\n")
-	b.WriteString("  primaryUpdateStrategy: unsupervised\n")
-	b.WriteString("  enableSuperuserAccess: false\n")
-	b.WriteString("  bootstrap:\n")
-	b.WriteString("    initdb:\n")
-	b.WriteString("      database: " + db + "\n")
-	b.WriteString("      owner: " + owner + "\n")
-	b.WriteString("      encoding: UTF8\n")
-	b.WriteString("      dataChecksums: true\n")
-	b.WriteString("  storage:\n")
-	b.WriteString("    storageClass: " + p.PreviewDatabaseClass + "\n")
-	b.WriteString("    size: " + p.PreviewDatabaseStorage + "\n")
-	b.WriteString("  resources:\n")
-	b.WriteString("    requests: { cpu: 100m, memory: 256Mi }\n")
-	b.WriteString("    limits: { cpu: \"1\", memory: 1Gi }\n")
-	b.WriteString("  monitoring:\n")
-	b.WriteString("    enablePodMonitor: false\n")
-	// The retention of the backups is the only part of the backup contract
-	// the compiler renders: the S3 profile is a platform decision.
-	if a.Backup != nil {
-		if retention := strings.TrimSpace(a.Backup.Retention); retention != "" {
-			b.WriteString("  backup:\n")
-			b.WriteString("    retentionPolicy: " + retention + "\n")
-		}
-	}
-	return b.String()
 }
 
 // ErrProjectNotFound is returned when a project manifest is absent.

@@ -41,6 +41,12 @@ type Platform struct {
 	PreviewDatabaseClass   string
 	// ProjectsDir is where project manifests and their compiled artifacts live.
 	ProjectsDir string
+	// AddonImages holds the image of each addon engine, by engine name.
+	AddonImages map[string]string
+	// AddonStorage holds the volume size of each addon engine.
+	AddonStorage map[string]string
+	// AddonStorageClass is the storage class of the addon volumes.
+	AddonStorageClass string
 }
 
 func (p Platform) withDefaults() Platform {
@@ -107,6 +113,21 @@ func (p Platform) withDefaults() Platform {
 	}
 	if p.ProjectsDir == "" {
 		p.ProjectsDir = "kubernetes/vps/projects"
+	}
+	if p.AddonImages == nil {
+		p.AddonImages = map[string]string{}
+	}
+	if _, ok := p.AddonImages["valkey"]; !ok {
+		p.AddonImages["valkey"] = "docker.io/valkey/valkey:8.1-alpine"
+	}
+	if p.AddonStorage == nil {
+		p.AddonStorage = map[string]string{}
+	}
+	if _, ok := p.AddonStorage["valkey"]; !ok {
+		p.AddonStorage["valkey"] = "1Gi"
+	}
+	if p.AddonStorageClass == "" {
+		p.AddonStorageClass = p.PreviewDatabaseClass
 	}
 	return p
 }

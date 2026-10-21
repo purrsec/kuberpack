@@ -206,6 +206,26 @@ le manifeste fourni par l'API. Les deux chemins écrivent la même chose.
 Un push qui supprime un manifeste supprime le projet : l'app, son webhook et
 son secret disparaissent.
 
+### Consommer un addon
+
+Un service déclare les addons qu’il utilise :
+
+```yaml
+services:
+  site:
+    repository: pepe/site
+    addons:
+      - postgres
+      - cache
+```
+
+Le service reçoit alors l’environnement de ces addons (`DATABASE_URL`,
+`VALKEY_URL`) et peut les joindre : la `NetworkPolicy` du projet les autorise.
+La valeur d’un secret ne transite jamais par Kuberpack : seul le
+`secretKeyRef` est écrit.
+
+Un addon qui n’est pas déclaré dans le projet est **refusé**.
+
 ### Ce que fait la compilation
 
 Pour chaque service qui déclare un `repository`, la compilation :

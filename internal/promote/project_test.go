@@ -45,8 +45,12 @@ func TestEnsureProjectCompilesServicesAddonsPolicies(t *testing.T) {
 	if !strings.Contains(values, "hostname: mitame.host.bzh") {
 		t.Fatalf("service values:\n%s", values)
 	}
-	if !strings.Contains(values, "postgres:mitame") {
+	// The addon is a network peer of the services, with its own port.
+	if !strings.Contains(values, "kind: postgres") || !strings.Contains(values, "for: mitame") {
 		t.Fatalf("expected the addon peer in the service:\n%s", values)
+	}
+	if !strings.Contains(values, "port: 5432") {
+		t.Fatalf("expected the port of the addon peer:\n%s", values)
 	}
 	if !strings.Contains(values, `image: ""`) {
 		t.Fatalf("service must start unpinned:\n%s", values)

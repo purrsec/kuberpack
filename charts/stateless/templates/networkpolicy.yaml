@@ -67,22 +67,20 @@ spec:
         - { protocol: TCP, port: 443 }
     {{- end }}
     {{- range (.Values.networkPolicy.peers | default list) }}
-    {{- $peer := . | toString }}
-    {{- if hasPrefix "postgres:" $peer }}
     - to:
         - podSelector:
             matchLabels:
-              kuberpack.io/addon: postgres
-              kuberpack.io/for: {{ trimPrefix "postgres:" $peer | quote }}
-      ports:
-        - { protocol: TCP, port: 5432 }
-    {{- else }}
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: {{ $peer | quote }}
+              app.kubernetes.io/name: {{ . | toString | quote }}
               app.kubernetes.io/part-of: kuberpack
     {{- end }}
+    {{- range (.Values.networkPolicy.addonPeers | default list) }}
+    - to:
+        - podSelector:
+            matchLabels:
+              kuberpack.io/addon: {{ .kind }}
+              kuberpack.io/for: {{ .for | quote }}
+      ports:
+        - { protocol: TCP, port: {{ .port }} }
     {{- end }}
 ---
 # Helm test pods share default-deny. Without this they cannot reach the app

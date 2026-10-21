@@ -97,6 +97,12 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) Start(ctx context.Context) {
 	s.kick()
 	go s.worker(ctx)
+	// The chart of the control plane must be the one that is applied: the
+	// values it writes are rendered with it. It is written before anything
+	// is compiled.
+	if err := s.ensureChart(ctx); err != nil {
+		log.Printf("kuberpack chart: %v", err)
+	}
 	// The manifest lives in the GitOps repository: the webhook on that
 	// repository is what makes it drive the deployment.
 	go s.waitForGitOpsHook(ctx)

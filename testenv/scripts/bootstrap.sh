@@ -298,6 +298,18 @@ spec:
 EOF
 echo "flux installed"
 
+# ------------------------------------------------------------------- cnpg
+# The postgres addon of a project is a CloudNativePG cluster: the operator
+# must run in the cluster. The CRDs are too big for a client side apply.
+log "cloudnativepg operator"
+CNPG_VERSION="${CNPG_VERSION:-1.30.1}"
+curl -sSL --max-time 120 -o /tmp/cnpg-operator.yaml \
+    "https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v${CNPG_VERSION}/cnpg-${CNPG_VERSION}.yaml"
+kubectl apply --server-side --force-conflicts -f /tmp/cnpg-operator.yaml >/dev/null
+kubectl -n cnpg-system wait --for=condition=Ready pod \
+    --selector=cnpg.io/operator=true --timeout=240s >/dev/null
+echo "cloudnativepg installed"
+
 # ------------------------------------------------------------------- control plane
 log "kuberpack control plane"
 ./scripts/deploy-kuberpack.sh

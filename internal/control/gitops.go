@@ -207,7 +207,7 @@ func (s *Server) storeApps(ctx context.Context, project string) ([]store.App, er
 func (s *Server) waitForGitOpsHook(ctx context.Context) {
 	for attempt := 1; attempt <= 5; attempt++ {
 		if err := s.ensureGitOpsHook(ctx); err == nil {
-			return
+			break
 		} else {
 			log.Printf("kuberpack gitops webhook: %v", err)
 		}
@@ -217,4 +217,26 @@ func (s *Server) waitForGitOpsHook(ctx context.Context) {
 		case <-time.After(5 * time.Second):
 		}
 	}
+}
+
+// ensureChart writes the chart of the control plane in the GitOps repository.
+func (s *Server) ensureChart(ctx context.Context) error {
+	if s.cfg.GitOpsURL == "" || strings.TrimSpace(s.cfg.ChartPath) == "" {
+		return nil
+	}
+	result, err := promote.EnsureChart(ctx, promote.ChartRequest{
+		GitOpsURL:    s.cfg.GitOpsURL,
+		GitOpsBranch: s.cfg.GitOpsBranch,
+		HTTPToken:    s.cfg.Token,
+		ChartPath:    s.cfg.ChartPath,
+		ChartRef:     s.cfg.Platform.ChartRef,
+		Platform:     s.cfg.Platform,
+	})
+	if err != nil {
+		return err
+	}
+	if result.Changed {
+		log.Printf("kuberpack chart: updated in the GitOps repository (%s)", result.CommitSHA)
+	}
+	return nil
 }

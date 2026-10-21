@@ -135,7 +135,10 @@ func TestRenderChartInternetFalseOmitsPublicEgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	values := strings.ReplaceAll(string(src), "internet: true", "internet: false")
-	values = strings.ReplaceAll(values, "peers: []", "peers:\n    - billing\n    - postgres:web")
+	// The addon peers are replaced first: "peers: []" is a substring of
+	// "addonPeers: []".
+	values = strings.ReplaceAll(values, "addonPeers: []", "addonPeers:\n    - kind: postgres\n      for: web\n      port: 5432")
+	values = strings.ReplaceAll(values, "peers: []", "peers:\n    - billing")
 	path := filepath.Join(t.TempDir(), "values.yaml")
 	if err := os.WriteFile(path, []byte(values), 0o644); err != nil {
 		t.Fatal(err)

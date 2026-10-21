@@ -10,6 +10,7 @@ le travail tombe, et ce qui vaut dire « fait ».
 | 2 | [Dimensionnement CPU/RAM](#2-dimensionnement-cpuram) | à faire |
 | 3 | [CLI de pilotage](#3-cli-de-pilotage) | à faire |
 | 4 | [Le manifeste pilote le déploiement](#4-le-manifeste-pilote-le-déploiement) | fait |
+| 5 | [Les addons](#5-les-addons) | fait |
 
 La phase 5 de la [feuille de route](docs/roadmap.md) couvre le point 3.
 
@@ -377,6 +378,52 @@ chemin (port 8080, healthcheck `/`).
   GitOps, jamais construite, et n’est activée qu’après le premier pin.
 - **Le webhook Forgejo du dépôt applicatif** doit être créé et retiré en même
   temps que l’app dérivée du manifeste, sinon il reste orphelin.
+
+---
+
+## 5. Les addons
+
+Les addons sont les dépendances d’infrastructure d’un projet. Avant, un seul
+type existait (PostgreSQL), écrit en dur dans le compilateur, et rien ne
+reliait un addon à un service.
+
+### Les moteurs sont pluggables
+
+Un moteur (`AddonEngine`) écrit les objets Kubernetes d’un addon et déclare ce
+que les services consomment. Le registre est le seul point d’entrée : ajouter
+un type d’addon est ajouter un moteur, pas modifier le compilateur.
+
+| Moteur | Rendu | Service |
+| --- | --- | --- |
+| `cnpg` | `Cluster` CloudNativePG | `DATABASE_URL` (Secret `uri` généré par CNPG) |
+| `valkey` | `StatefulSet` + `Service` | `VALKEY_URL` |
+
+Un moteur inconnu est refusé, et l’erreur liste ceux qui existent.
+
+### Un service consomme un addon
+
+```yaml
+services:
+  site:
+    repository: pepe/site
+    addons: [postgres, cache]
+```
+
+Le service reçoit l’environnement des addons qu’il utilise, et la
+`NetworkPolicy` du projet l’autorise à les joindre. La valeur d’un secret ne
+transite jamais par Kuberpack : seul le `secretKeyRef` est écrit.
+
+### Pièges
+
+- **Les pairs réseau sont structurés.** Le chart ne devine plus le port
+  d’un peer : les pairs d’addons portent leur kind, leur projet et leur
+  port (`networkPolicy.addonPeers`).
+- **Le chart du dépôt GitOps doit être celui du control plane.** Il valide
+  les valeurs avec son chart local, mais Flux applique celui du dépôt : un
+  chart obsolète ignorait silencieusement les valeurs. Le control plane
+  écrit donc son chart dans le dépôt au démarrage.
+- **Un addon et un service ne doivent pas se déclarer deux fois.** Les pairs
+  sont dédupliqués.
 
 ---
 

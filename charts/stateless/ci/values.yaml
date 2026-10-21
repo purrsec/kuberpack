@@ -12,6 +12,7 @@ networkPolicy:
   enabled: true
   internet: true
   peers: []
+  addonPeers: []
 podSecurityContext:
   runAsUser: 65534
   runAsGroup: 65534
