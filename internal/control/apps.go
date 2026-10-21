@@ -56,12 +56,12 @@ func (s *Server) redeployApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	owner, name, err := git.SplitOwnerName(app.ForgejoRepository)
+	provider, owner, name, err := s.appForge(app)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	sha, err := s.cfg.Provider.BranchSHA(r.Context(), owner, name, app.ProductionBranch)
+	sha, err := provider.BranchSHA(r.Context(), owner, name, app.ProductionBranch)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -78,7 +78,7 @@ func (s *Server) redeployApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.publishCommitStatus(r.Context(), owner, name, sha, git.StatusPending, "Building", app, false)
+	s.publishCommitStatus(r.Context(), provider, owner, name, sha, git.StatusPending, "Building", app, false)
 	s.kick()
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued", "commit_sha": sha})
 }
@@ -145,9 +145,9 @@ func (s *Server) fluxHook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	owner, name, parseErr := git.SplitOwnerName(app.ForgejoRepository)
+	provider, owner, name, parseErr := s.appForge(app)
 	if parseErr == nil {
-		s.publishStatus(r.Context(), owner, name, b.CommitSHA, git.StatusWarning, "rolled_back: "+msg, git.ProductionContext, appTargetURL(app))
+		s.publishStatus(r.Context(), provider, owner, name, b.CommitSHA, git.StatusWarning, "rolled_back: "+msg, git.ProductionContext, appTargetURL(app))
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "rolled_back"})
 }

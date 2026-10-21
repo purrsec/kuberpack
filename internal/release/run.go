@@ -27,7 +27,14 @@ type Request struct {
 	// RegistryURL is the OCI registry the image is pushed to. It defaults
 	// to the web URL of the forge, which is where a Forgejo serves its
 	// registry.
-	RegistryURL       string
+	RegistryURL string
+	// RegistryUser is the namespace the image is published in. It is the
+	// account of the platform, not the owner of the application
+	// repository: the code may live in the repository of somebody else.
+	RegistryUser string
+	// ImageName is the name of the image. It is the name of the app, not
+	// the name of the repository it is built from.
+	ImageName         string
 	Token             string
 	Owner             string
 	Name              string
@@ -48,7 +55,6 @@ type Request struct {
 	PreviewDatabase   bool
 	Platform          promote.Platform
 	ImageRepository   string
-	RegistryUser      string
 	Wait              time.Duration
 	SkipPromote       bool
 	AllowNonHEAD      bool
@@ -56,6 +62,23 @@ type Request struct {
 	BuildsGitURL      string
 	Environment       string
 	Log               func(string, ...any)
+}
+
+// registryUser is the namespace the image is published in.
+func (r Request) registryUser() string {
+	if user := strings.TrimSpace(r.RegistryUser); user != "" {
+		return user
+	}
+	return r.Owner
+}
+
+// imageName is the name of the image: the name of the app, so that two
+// projects can declare a service with the same name.
+func (r Request) imageName() string {
+	if name := strings.TrimSpace(r.ImageName); name != "" {
+		return name
+	}
+	return r.Name
 }
 
 // registryURL is the registry the image is pushed to.
@@ -140,7 +163,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		log("uv.lock present; Railpack consumes the lockfile")
 	}
 
-	ociRepo, err := ImageRepository(req.ImageRepository, req.registryURL(), req.Owner, req.Name)
+	ociRepo, err := ImageRepository(req.ImageRepository, req.registryURL(), req.registryUser(), req.imageName())
 	if err != nil {
 		return Result{}, fail.Stage(fail.Image, err)
 	}
@@ -150,10 +173,11 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	}
 	log("submitting Kubernetes build Job for %s", sha)
 	buildReq := builder.Request{
+		GenerateLock:    plan.GenerateLock,
 		CloneURL:        repo.CloneURL,
 		CommitSHA:       sha,
 		ImageRepository: ociRepo,
-		RegistryUser:    req.Owner,
+		RegistryUser:    req.registryUser(),
 		StartCmd:        req.StartCmd,
 		RootDirectory:   req.RootDirectory,
 		BuildCommand:    req.BuildCommand,

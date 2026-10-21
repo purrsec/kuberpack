@@ -27,7 +27,7 @@ func PinExisting(ctx context.Context, req Request) (Result, error) {
 		req.ChartPath = "charts/stateless"
 	}
 
-	ociRepo, err := ImageRepository(req.ImageRepository, req.registryURL(), req.Owner, req.Name)
+	ociRepo, err := ImageRepository(req.ImageRepository, req.registryURL(), req.registryUser(), req.imageName())
 	if err != nil {
 		return Result{}, fail.Stage(fail.Image, err)
 	}

@@ -35,9 +35,12 @@ type Request struct {
 	BuildCommand      string
 	GitTokenFile      string
 	RegistryTokenFile string
-	BuildsGitURL      string
-	AppName           string
-	Environment       string
+	// GenerateLock tells the builder to resolve the Python dependencies when
+	// the repository has no lock file.
+	GenerateLock bool
+	BuildsGitURL string
+	AppName      string
+	Environment  string
 }
 
 // The builder Secret is written by the operator (Infisical or kubectl). Its
@@ -115,12 +118,26 @@ func Run(ctx context.Context, req Request) (digest string, err error) {
 		}
 		buildDir = candidate
 	}
-	if _, err := railpack.Prepare(ctx, railpack.Request{
+	// A Python project without a lock file: the build resolves the
+	// dependencies. The lock of the repository is used when there is one.
+	// A third party application cannot be asked for a lock.
+	if req.GenerateLock {
+		if err := resolvePythonLock(ctx, buildDir); err != nil {
+			return "", fail.Stage(fail.Strategy, err)
+		}
+	}
+	prepared, err := railpack.Prepare(ctx, railpack.Request{
 		Dir:      buildDir,
 		WorkDir:  work,
 		StartCmd: req.StartCmd,
 		BuildCmd: req.BuildCommand,
-	}); err != nil {
+	})
+	if err != nil {
+		return "", fail.Stage(fail.Railpack, err)
+	}
+	// The compiled binary of the application lives in /app. The start
+	// command finds it by its name: "miniflux" and not "./miniflux".
+	if err := addAppPath(prepared.PlanPath); err != nil {
 		return "", fail.Stage(fail.Railpack, err)
 	}
 	if err := waitForBuildkit(ctx, time.Minute); err != nil {
@@ -227,6 +244,71 @@ func waitForBuildkit(ctx context.Context, timeout time.Duration) error {
 		case <-time.After(time.Second):
 		}
 	}
+}
+
+// addAppPath puts the directory of the application in the PATH of the
+// image. The compiled binary of a Go, Rust or C application lives there: the
+// start command names it, without a path.
+func addAppPath(planPath string) error {
+	if strings.TrimSpace(planPath) == "" {
+		return nil
+	}
+	raw, err := os.ReadFile(planPath)
+	if err != nil {
+		return fmt.Errorf("read the plan: %w", err)
+	}
+	var plan map[string]any
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		return fmt.Errorf("read the plan: %w", err)
+	}
+	deploy, ok := plan["deploy"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	variables, ok := deploy["variables"].(map[string]any)
+	if !ok {
+		variables = map[string]any{}
+		deploy["variables"] = variables
+	}
+	if _, exists := variables["PATH"]; !exists {
+		variables["PATH"] = "/app:$PATH"
+	}
+	// The start command is run by a shell: it finds the binary of the
+	// application in /app, whatever the name of the binary is.
+	if command, ok := deploy["startCommand"].(string); ok && strings.TrimSpace(command) != "" {
+		deploy["startCommand"] = "export PATH=/app:$PATH; " + command
+	}
+	fmt.Printf("start command %q, PATH of the application in the image\n", deploy["startCommand"])
+	encoded, err := json.Marshal(plan)
+	if err != nil {
+		return fmt.Errorf("write the plan: %w", err)
+	}
+	return os.WriteFile(planPath, encoded, 0o600)
+}
+
+// resolvePythonLock resolves the Python dependencies of a project that has a
+// pyproject.toml and no lock. The lock is written in the build context, not
+// in the repository: Kuberpack never writes in the repository of the
+// application.
+func resolvePythonLock(ctx context.Context, dir string) error {
+	uv, err := exec.LookPath("uv")
+	if err != nil {
+		return fmt.Errorf("uv is not available to resolve the dependencies")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "uv.lock")); err == nil {
+		return nil
+	}
+	if _, err := os.Stat(filepath.Join(dir, "pyproject.toml")); err != nil {
+		return nil
+	}
+	fmt.Printf("resolving the Python dependencies (no lock in the repository)\n")
+	cmd := exec.CommandContext(ctx, uv, "lock")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("uv lock: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func readToken(path string) (string, error) {

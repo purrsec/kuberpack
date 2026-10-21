@@ -409,7 +409,7 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string,
 			Replicas:      svc.Replicas,
 			Internet:      net,
 			Peers:         servicePeers,
-			Env:           serviceEnv(svc),
+			Env:           nil,
 			Secrets:       svc.Secrets,
 			SecretEnv:     svc.SecretEnv,
 			Project:       project,
@@ -420,12 +420,13 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string,
 			return nil, nil, nil, fmt.Errorf("service %q: %w", name, err)
 		}
 		// The addons the service uses give it their environment and their
-		// network peer.
+		// network peer. The environment of the addon comes first: what the
+		// manifest declares wins.
 		used, err := serviceAddons(svc, project, addonResults)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("service %q: %w", name, err)
 		}
-		spec.Env = append(spec.Env, used.env...)
+		spec.Env = append(used.env, serviceEnv(svc)...)
 		spec.AddonPeers = mergeAddonPeers(policyAddonPeers, used.peers)
 		dir := filepath.Join(work, filepath.FromSlash(p.projectServiceDir(project, sname)))
 		if err := os.MkdirAll(dir, 0o755); err != nil {

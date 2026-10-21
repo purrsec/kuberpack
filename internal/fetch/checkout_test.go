@@ -2,6 +2,8 @@ package fetch
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -33,4 +35,28 @@ func git(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %v: %s", args, out)
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// A token that the forge refuses does not stop the build: the clone is
+// retried anonymously, which is enough for a public repository. A third
+// party application lives on another forge.
+func TestCheckoutFallsBackToAnonymous(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	// The server is not a git server: the clone fails either way, but the
+	// error must come from the anonymous attempt.
+	err := Checkout(context.Background(), server.URL+"/repo.git", "0123456789abcdef0123456789abcdef01234567", t.TempDir(),
+		[]string{"-c", "http.extraHeader=Authorization: token secret"})
+	if err == nil {
+		t.Fatal("the clone must fail")
+	}
+	if strings.Contains(err.Error(), "token secret") {
+		t.Fatalf("the token must not appear in the error: %v", err)
+	}
 }

@@ -3,7 +3,6 @@ package strategy
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -20,11 +19,17 @@ func TestResolveAutoUV(t *testing.T) {
 	}
 }
 
-func TestResolveExplicitUVMissingLock(t *testing.T) {
+// The explicit uv strategy uses uv, and resolves the dependencies when the
+// repository has no lock: a third party application cannot be asked for one.
+func TestResolveExplicitUVWithoutLockGeneratesIt(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "pyproject.toml", "[project]\nname = \"x\"\n")
-	if _, err := Resolve(dir, UV); err == nil {
-		t.Fatal("expected error")
+	plan, err := Resolve(dir, UV)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Kind != UV || !plan.GenerateLock {
+		t.Fatalf("plan: %+v", plan)
 	}
 }
 
@@ -39,25 +44,40 @@ func TestResolveAutoRailpack(t *testing.T) {
 	}
 }
 
-// A Python project without a lock file cannot be built reproducibly:
-// Railpack installs nothing and the image crashes. The build must fail with
-// a message that says what to add.
-func TestResolveAutoRefusesAPythonProjectWithoutALockFile(t *testing.T) {
+// A Python project without a lock file is built: the builder resolves the
+// dependencies. The image is pinned by its digest, the deployment stays
+// reproducible.
+func TestResolveAutoResolvesWithoutALockFile(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "pyproject.toml", "[project]\nname = \"x\"\n")
-	_, err := Resolve(dir, Auto)
-	if err == nil {
-		t.Fatal("the build must fail rather than produce an image without its dependencies")
+	plan, err := Resolve(dir, Auto)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "uv.lock") {
-		t.Fatalf("the error must say what to add: %v", err)
+	if plan.Kind != UV || !plan.GenerateLock {
+		t.Fatalf("plan: %+v", plan)
 	}
 }
 
-// A requirements.txt is another way to install the dependencies.
-func TestResolveAutoAcceptsRequirements(t *testing.T) {
+// A lock file of the repository is used as it is: the build does not resolve
+// anything.
+func TestResolveAutoUsesTheLockOfTheRepository(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "pyproject.toml", "[project]\nname = \"x\"\n")
+	write(t, dir, "uv.lock", "version = 1\n")
+	plan, err := Resolve(dir, Auto)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Kind != UV || plan.GenerateLock {
+		t.Fatalf("plan: %+v", plan)
+	}
+}
+
+// A requirements.txt is another way to install the dependencies: Railpack
+// reads it.
+func TestResolveAutoAcceptsRequirements(t *testing.T) {
+	dir := t.TempDir()
 	write(t, dir, "requirements.txt", "fastapi\n")
 	plan, err := Resolve(dir, Auto)
 	if err != nil {

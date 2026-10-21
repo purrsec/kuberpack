@@ -426,7 +426,10 @@ metadata:
   namespace: %s
 spec:
   interval: 5m
-  timeout: 5m
+  # The release does not wait for the pods: the timeout bounds the test
+  # hook, not the rollout. A broken application must not hold the pipeline
+  # for long.
+  timeout: 2m
   chart:
     spec:
       chart: %s
@@ -447,7 +450,7 @@ spec:
     # without blocking the next deployment.
     disableWait: true
     remediation:
-      retries: 3
+      retries: 2
   upgrade:
     disableWait: true
     cleanupOnFail: true

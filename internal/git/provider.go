@@ -108,6 +108,10 @@ type Provider interface {
 	// WebURL is the base URL of the forge, the one a human opens in a
 	// browser. The links of the commit statuses lead there.
 	WebURL() string
+	// CurrentUser is the account the token belongs to. The images are
+	// published under that namespace: the code may live in the repository
+	// of somebody else.
+	CurrentUser(ctx context.Context) (string, error)
 	// VerifyWebhook checks the signature of a delivery.
 	VerifyWebhook(secret string, header http.Header, body []byte) bool
 	// Event returns the event type of a delivery ("push", "pull_request").

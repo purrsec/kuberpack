@@ -42,9 +42,9 @@ func (s *Server) queuePush(w http.ResponseWriter, r *http.Request, app store.App
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	owner, name, parseErr := git.SplitOwnerName(app.ForgejoRepository)
+	provider, owner, name, parseErr := s.appForge(app)
 	if parseErr == nil {
-		s.publishCommitStatus(r.Context(), owner, name, payload.After, git.StatusPending, "Building", app, false)
+		s.publishStatus(r.Context(), provider, owner, name, payload.After, git.StatusPending, "Building", git.ProductionContext, appTargetURL(app))
 	}
 	s.kick()
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
@@ -126,10 +126,10 @@ func (s *Server) queuePullRequest(w http.ResponseWriter, r *http.Request, app st
 		return
 	}
 	if action != "closed" && sha != "" {
-		owner, name, parseErr := git.SplitOwnerName(app.ForgejoRepository)
+		provider, owner, name, parseErr := s.appForge(app)
 		if parseErr == nil {
 			host := promotePreviewHost(app.Name, n, s.cfg.Platform.PreviewDomain)
-			s.publishStatus(r.Context(), owner, name, sha, git.StatusPending, "Building preview", git.PreviewContext, "https://"+host)
+			s.publishStatus(r.Context(), provider, owner, name, sha, git.StatusPending, "Building preview", git.PreviewContext, "https://"+host)
 		}
 	}
 	s.kick()

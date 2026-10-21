@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,13 +34,16 @@ type Request struct {
 	CommitSHA       string
 	ImageRepository string
 	RegistryUser    string
-	StartCmd        string
-	RootDirectory   string
-	BuildCommand    string
-	BuildID         int64
-	BuildsGitURL    string
-	AppName         string
-	Environment     string
+	// GenerateLock tells the builder to resolve the Python dependencies when
+	// the repository has no lock file.
+	GenerateLock  bool
+	StartCmd      string
+	RootDirectory string
+	BuildCommand  string
+	BuildID       int64
+	BuildsGitURL  string
+	AppName       string
+	Environment   string
 }
 
 type Runner interface {
@@ -251,6 +255,7 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 		{Name: "KUBERPACK_COMMIT_SHA", Value: req.CommitSHA},
 		{Name: "KUBERPACK_IMAGE_REPOSITORY", Value: req.ImageRepository},
 		{Name: "KUBERPACK_REGISTRY_USER", Value: req.RegistryUser},
+		{Name: "KUBERPACK_GENERATE_LOCK", Value: strconv.FormatBool(req.GenerateLock)},
 		{Name: "KUBERPACK_START_CMD", Value: req.StartCmd},
 		{Name: "KUBERPACK_ROOT_DIRECTORY", Value: req.RootDirectory},
 		{Name: "KUBERPACK_BUILD_CMD", Value: req.BuildCommand},
@@ -258,6 +263,7 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 		{Name: "KUBERPACK_APP_NAME", Value: req.AppName},
 		{Name: "KUBERPACK_ENVIRONMENT", Value: req.Environment},
 		{Name: "HOME", Value: "/work"},
+		{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
 		{Name: "TMPDIR", Value: "/work"},
 		{Name: "TRIVY_CACHE_DIR", Value: "/work/trivy-cache"},
 	}

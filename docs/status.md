@@ -13,6 +13,11 @@ Les autres pages de `docs/` décrivent **le produit visé**. Cette page décrit 
 - Le control plane écrit son chart dans le dépôt GitOps au démarrage : le chart appliqué est celui qu’il connaît (les valeurs qu’il écrit n’iraient pas dans un chart obsolète).
 - La forge git est un **provider** (`internal/git`) : Forgejo, GitHub et GitLab sont implémentés, un seul registre les choisit (`KUBERPACK_GIT_PROVIDER`). Le registre d'images est configurable séparément de la forge (`KUBERPACK_REGISTRY_URL`).
 - Deux jetons, séparés par principe : le jeton de **lecture** (control plane : cloner, lire, poser les webhooks) et le jeton de **build** (builder : pousser l'image). Voir [install.md](install.md).
+- Une application **tierce** se déploie avec son URL de dépôt : `repository: https://github.com/miniflux/v2`. La forge de l'URL est déduite, le dépôt public est lu en anonyme, le webhook est impossible (un avertissement, pas une erreur), et l'image est publiée dans le registre de la plateforme.
+- L'image est publiée sous le namespace du **plateforme** (`<registre>/<utilisateur>/<application>`), pas sous celui du dépôt : le code d'un tiers ne dicte pas où va l'image.
+- L'addon PostgreSQL fournit aussi les variables discrètes (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_HOST`, `POSTGRES_PORT`) en plus de `DATABASE_URL` : une application tierce qui attend `POSTGRES_*` trouve sa base.
+- Le `PATH` de l'image contient le dossier de l'application : la commande de démarrage nomme le binaire compilé (`miniflux`), sans chemin.
+- Le test hook du chart dispose d'un budget court et le HelmRelease d'un timeout de 2 min : une application cassée ne tient pas le pipeline.
 - Le dépôt applicatif est une source de code : Kuberpack n’y écrit aucun fichier, il ne le crée pas et n’y pousse pas de commit. Il le clone pour construire et y pose un webhook.
 - Python : un `pyproject.toml` sans `uv.lock` (et sans `requirements.txt`) est **refusé** au build : Railpack n’y installerait rien et l’image démarrerait sans ses dépendances. Un build en échec avec un message clair vaut mieux qu’une image déployée qui crash.
 - Le HelmRelease n’attend pas les pods (`disableWait`) : une image cassée ne bloque plus le déploiement suivant. La santé de l’application reste le rôle du test hook du chart, qui la signale sans bloquer.

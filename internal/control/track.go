@@ -76,12 +76,12 @@ func (s *Server) alignTrack(ctx context.Context, app store.App) {
 			return
 		}
 	}
-	owner, name, err := git.SplitOwnerName(app.ForgejoRepository)
-	if err != nil || s.cfg.Provider == nil {
+	provider, owner, name, err := s.appForge(app)
+	if err != nil || provider == nil {
 		return
 	}
 	sha := meta.Track.SHA
-	if resolved, err := s.cfg.Provider.ResolveCommit(ctx, owner, name, sha); err == nil {
+	if resolved, err := provider.ResolveCommit(ctx, owner, name, sha); err == nil {
 		sha = resolved
 	}
 	digest := ""
@@ -94,6 +94,8 @@ func (s *Server) alignTrack(ctx context.Context, app store.App) {
 	result, err := release.PinExisting(ctx, release.Request{
 		Provider:     s.cfg.Provider,
 		RegistryURL:  s.cfg.RegistryURL,
+		RegistryUser: s.cfg.RegistryUser,
+		ImageName:    app.Name,
 		Token:        s.cfg.Token,
 		Owner:        owner,
 		Name:         name,
@@ -114,6 +116,6 @@ func (s *Server) alignTrack(ctx context.Context, app store.App) {
 	}
 	if result.Changed {
 		log.Printf("kuberpack froze %s at %s (%s)", app.Name, result.Image, result.InfraCommitSHA)
-		s.publishCommitStatus(ctx, owner, name, sha, git.StatusSuccess, "Deployed", app, false)
+		s.publishCommitStatus(ctx, provider, owner, name, sha, git.StatusSuccess, "Deployed", app, false)
 	}
 }

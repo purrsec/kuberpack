@@ -30,9 +30,11 @@ spec:
           # the ingress NetworkPolicy may not be in place yet, so the SYN is
           # dropped and an unbounded `wget` would hang until the Helm timeout
           # instead of retrying. `-T` bounds each attempt so the loop actually
-          # retries and succeeds as soon as the app answers.
+          # retries and succeeds as soon as the app answers. The budget is
+          # short on purpose: the test reports the health of the
+          # application, it does not hold the next deployment.
           i=0
-          while [ "$i" -lt 90 ]; do
+          while [ "$i" -lt 45 ]; do
             wget -q -T 2 -O /dev/null "$url" && echo "ok $url" && exit 0
             i=$((i + 1))
             sleep 1

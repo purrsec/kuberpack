@@ -281,8 +281,18 @@ func (s *Store) UpsertApp(ctx context.Context, app App) (App, bool, error) {
 		return App{}, false, err
 	}
 	if !strings.EqualFold(existing.ForgejoRepository, app.ForgejoRepository) {
-		return App{}, false, fmt.Errorf("%w: repository %s is already used by %s",
-			ErrDuplicate, app.ForgejoRepository, existing.Name)
+		// The repository of an app may change: the code moves to another
+		// forge, or the reference becomes a URL. What must not happen is
+		// two apps sharing the same repository: they would fight over its
+		// webhook.
+		other, err := s.AppByRepository(ctx, app.ForgejoRepository)
+		if err == nil && other.Name != app.Name {
+			return App{}, false, fmt.Errorf("%w: repository %s is already used by %s",
+				ErrDuplicate, app.ForgejoRepository, other.Name)
+		}
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return App{}, false, err
+		}
 	}
 	app.ID = existing.ID
 	app.WebhookID = existing.WebhookID
@@ -491,9 +501,9 @@ func (s *Store) MarkRolledBack(ctx context.Context, id int64, errMsg string) err
 
 func (s *Store) UpdateApp(ctx context.Context, app App) error {
 	_, err := s.db.ExecContext(ctx, `
-UPDATE apps SET project=?, values_path=?, production_branch=?, strategy=?, autodeploy=?, autodeploy_pr=?, hostname=?, port=?, healthcheck=?, start_command=?, root_directory=?, build_command=?, internet=?, peers=?, secrets=?, secret_env=?, inherit_secret_from=?, preview_database=?
+UPDATE apps SET project=?, values_path=?, forgejo_repository=?, production_branch=?, strategy=?, autodeploy=?, autodeploy_pr=?, hostname=?, port=?, healthcheck=?, start_command=?, root_directory=?, build_command=?, internet=?, peers=?, secrets=?, secret_env=?, inherit_secret_from=?, preview_database=?
 WHERE id=?`,
-		app.Project, app.ValuesPath, app.ProductionBranch, app.Strategy, boolInt(app.Autodeploy), boolInt(app.AutodeployPR),
+		app.Project, app.ValuesPath, app.ForgejoRepository, app.ProductionBranch, app.Strategy, boolInt(app.Autodeploy), boolInt(app.AutodeployPR),
 		app.Hostname, app.Port, app.Healthcheck, app.StartCommand, app.RootDirectory, app.BuildCommand,
 		boolInt(app.Internet), encodePeers(app.Peers), encodePeers(app.Secrets), app.SecretEnv, app.InheritSecretFrom, boolInt(app.PreviewDatabase), app.ID,
 	)

@@ -81,6 +81,7 @@ func runServe(args []string) error {
 		Secrets:      store.SecretsDir(filepath.Join(*dataDir, "secrets")),
 		Provider:     provider,
 		RegistryURL:  *registryURL,
+		RegistryUser: strings.TrimSpace(os.Getenv("KUBERPACK_REGISTRY_USER")),
 		Token:        token,
 		APIToken:     apiToken,
 		WebhookURL:   strings.TrimSpace(*webhookURL),

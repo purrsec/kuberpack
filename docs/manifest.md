@@ -178,6 +178,37 @@ kuberpack.yaml (humain)
 4. **`NetworkPolicy` :** Traduit `policies.peers` et `policies.internet` en règles d'isolation Pod réseau natives. `policies.defaultDeny: false` désactive la NetworkPolicy du service.
 5. **`InfisicalStaticSecret` :** Branche la synchronisation des secrets depuis l'instance Infisical du homelab vers un Kubernetes Secret `app-<service>` (sans que les valeurs en clair ne transitent par Kuberpack). L'objet généré est nommé `app-<projet>-<service>` pour que deux projets puissent déclarer un service du même nom.
 
+### Une application tierce
+
+Le code n'a pas besoin d'être dans un dépôt que vous possédez. Un dépôt écrit
+avec son URL pointe vers la forge qui l'héberge :
+
+```yaml
+services:
+  miniflux:
+    repository: https://github.com/miniflux/v2   # la forge est dans l'URL
+    branch: main
+    port: 8080
+    healthcheck: /healthcheck
+    build:
+      build_command: make miniflux
+      start_command: miniflux
+```
+
+Trois choses se passent alors :
+
+- la forge de l'URL est utilisée pour lire le dépôt (en anonyme pour un dépôt
+  public : le jeton de la plateforme ne vaut rien là-bas) ;
+- le webhook ne peut pas être posé — le dépôt n'est pas à vous — mais ce n'est
+  pas une erreur : l'application est déployée quand même, et un push sur le
+  manifeste la reconstruit ;
+- l'image est publiée dans le registre **de la plateforme**, sous le nom de
+  l'application : le code vient d'ailleurs, l'image reste chez vous.
+
+Kuberpack ne résout pas les dépendances Python d'un dépôt tiers : le build
+résout lui-même ce qui manque (comme le fait `npm install`). Le verrou de
+votre dépôt, s'il existe, est utilisé tel quel.
+
 ### Le dépôt applicatif est une source de code
 
 Le code d'un projet **ne vit pas dans le dépôt GitOps**. Le dépôt GitOps (le

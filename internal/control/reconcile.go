@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"git.host.bzh/pepe/kuberpack/internal/git"
@@ -72,18 +73,23 @@ func (s *Server) reconcileApp(ctx context.Context, project string, desc promote.
 	}
 
 	if s.cfg.WebhookURL != "" {
-		owner, repo, err := git.SplitOwnerName(app.ForgejoRepository)
+		provider, owner, repo, err := s.appForge(app)
 		if err != nil {
 			return fmt.Errorf("app %s: %w", desc.Name, err)
 		}
-		hook, err := s.cfg.Provider.EnsureHook(ctx, owner, repo, s.cfg.WebhookURL, secret)
+		hook, err := provider.EnsureHook(ctx, owner, repo, s.cfg.WebhookURL, secret)
 		if err != nil {
-			return fmt.Errorf("app %s: webhook: %w", desc.Name, err)
+			// The repository of a third party application is not ours to
+			// write in: the webhook cannot be posed. The application is
+			// still deployed, and a push on the manifest rebuilds it. This
+			// is a warning, not a failure.
+			log.Printf("kuberpack app %s: webhook not configured on %s: %v", desc.Name, app.ForgejoRepository, err)
+		} else {
+			if err := s.cfg.Store.SetWebhookID(ctx, app.ID, hook.ID); err != nil {
+				return fmt.Errorf("app %s: %w", desc.Name, err)
+			}
+			app.WebhookID = hook.ID
 		}
-		if err := s.cfg.Store.SetWebhookID(ctx, app.ID, hook.ID); err != nil {
-			return fmt.Errorf("app %s: %w", desc.Name, err)
-		}
-		app.WebhookID = hook.ID
 	}
 
 	// A new app is built right away. An app whose build parameters changed
@@ -100,7 +106,8 @@ func (s *Server) reconcileApp(ctx context.Context, project string, desc promote.
 // record.
 func (s *Server) removeApp(ctx context.Context, app store.App) error {
 	if app.WebhookID > 0 {
-		if owner, repo, err := git.SplitOwnerName(app.ForgejoRepository); err == nil {
+		if provider, owner, repo, err := s.appForge(app); err == nil {
+			_ = provider
 			_ = s.cfg.Provider.DeleteHook(ctx, owner, repo, app.WebhookID)
 		}
 	}
@@ -165,12 +172,20 @@ func buildParametersChanged(previous, current store.App) bool {
 // be reached is not an error: the push of that repository will trigger the
 // build later.
 func (s *Server) queueFirstBuild(ctx context.Context, app store.App) error {
-	owner, repo, err := git.SplitOwnerName(app.ForgejoRepository)
+	provider, owner, repo, err := s.appForge(app)
 	if err != nil {
 		return err
 	}
-	sha, err := s.cfg.Provider.BranchSHA(ctx, owner, repo, app.ProductionBranch)
-	if err != nil || strings.TrimSpace(sha) == "" {
+	sha, err := provider.BranchSHA(ctx, owner, repo, app.ProductionBranch)
+	if err != nil {
+		// The branch cannot be read: the build waits for the next push.
+		// It is said out loud: a build that never starts must not be
+		// silent.
+		log.Printf("kuberpack app %s: branch %s of %s not read: %v", app.Name, app.ProductionBranch, app.ForgejoRepository, err)
+		return nil
+	}
+	if strings.TrimSpace(sha) == "" {
+		log.Printf("kuberpack app %s: branch %s of %s is empty", app.Name, app.ProductionBranch, app.ForgejoRepository)
 		return nil
 	}
 	del := "register-" + app.Name + "-" + sha + "-" + deliveryNonce()
@@ -183,7 +198,7 @@ func (s *Server) queueFirstBuild(ctx context.Context, app store.App) error {
 	}); err != nil && !errors.Is(err, store.ErrDuplicate) {
 		return err
 	}
-	s.publishCommitStatus(ctx, owner, repo, sha, git.StatusPending, "Building", app, false)
+	s.publishCommitStatus(ctx, provider, owner, repo, sha, git.StatusPending, "Building", app, false)
 	s.kick()
 	return nil
 }

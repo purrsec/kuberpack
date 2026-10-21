@@ -50,6 +50,7 @@ func main() {
 			BuildsGitURL:    os.Getenv("KUBERPACK_BUILDS_GIT_URL"),
 			AppName:         os.Getenv("KUBERPACK_APP_NAME"),
 			Environment:     os.Getenv("KUBERPACK_ENVIRONMENT"),
+			GenerateLock:    os.Getenv("KUBERPACK_GENERATE_LOCK") == "1" || os.Getenv("KUBERPACK_GENERATE_LOCK") == "true",
 		}); err != nil {
 			buildexec.WriteTermination(err.Error())
 			fmt.Fprintf(os.Stderr, "kuberpack builder: %v\n", err)

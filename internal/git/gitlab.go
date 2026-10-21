@@ -36,9 +36,9 @@ func NewGitLab(apiURL, token string) (*GitLabProvider, error) {
 	if _, err := url.Parse(apiURL); err != nil {
 		return nil, fmt.Errorf("GitLab API URL: %w", err)
 	}
-	if strings.TrimSpace(token) == "" {
-		return nil, fmt.Errorf("GitLab token is empty")
-	}
+	// An empty token means an anonymous access: enough to read a public
+	// repository of a forge the platform has no token for.
+	_ = strings.TrimSpace(token)
 	return &GitLabProvider{
 		APIURL:     apiURL,
 		Token:      strings.TrimSpace(token),
@@ -194,6 +194,19 @@ func (p *GitLabProvider) WebURL() string {
 	return strings.TrimSuffix(p.APIURL, "/api/v4")
 }
 
+func (p *GitLabProvider) CurrentUser(ctx context.Context) (string, error) {
+	var raw struct {
+		Username string `json:"username"`
+	}
+	if err := p.doJSON(ctx, http.MethodGet, "/user", nil, &raw); err != nil {
+		return "", err
+	}
+	if raw.Username == "" {
+		return "", fmt.Errorf("gitlab: the token has no user")
+	}
+	return raw.Username, nil
+}
+
 // VerifyWebhook checks the X-Gitlab-Token header of a delivery. GitLab
 // sends the secret as is, it does not sign the body.
 func (p *GitLabProvider) VerifyWebhook(secret string, header http.Header, body []byte) bool {
@@ -232,7 +245,9 @@ func (p *GitLabProvider) doJSON(ctx context.Context, method, path string, body a
 	if err != nil {
 		return err
 	}
-	req.Header.Set("PRIVATE-TOKEN", p.Token)
+	if p.Token != "" {
+		req.Header.Set("PRIVATE-TOKEN", p.Token)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

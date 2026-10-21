@@ -41,9 +41,9 @@ func NewGitHub(apiURL, token string) (*GitHubProvider, error) {
 	if _, err := url.Parse(apiURL); err != nil {
 		return nil, fmt.Errorf("GitHub API URL: %w", err)
 	}
-	if strings.TrimSpace(token) == "" {
-		return nil, fmt.Errorf("GitHub token is empty")
-	}
+	// An empty token means an anonymous access: enough to read a public
+	// repository of a forge the platform has no token for.
+	_ = strings.TrimSpace(token)
 	web := strings.TrimSuffix(apiURL, "/api/v3")
 	if web == apiURL {
 		web = "https://github.com"
@@ -215,6 +215,19 @@ func (p *GitHubProvider) WebURL() string {
 	return p.WebURLBase
 }
 
+func (p *GitHubProvider) CurrentUser(ctx context.Context) (string, error) {
+	var raw struct {
+		Login string `json:"login"`
+	}
+	if err := p.doJSON(ctx, http.MethodGet, "/user", nil, &raw); err != nil {
+		return "", err
+	}
+	if raw.Login == "" {
+		return "", fmt.Errorf("github: the token has no user")
+	}
+	return raw.Login, nil
+}
+
 // VerifyWebhook checks the X-Hub-Signature-256 header of a delivery.
 func (p *GitHubProvider) VerifyWebhook(secret string, header http.Header, body []byte) bool {
 	signature := strings.TrimSpace(header.Get("X-Hub-Signature-256"))
@@ -249,7 +262,9 @@ func (p *GitHubProvider) doJSON(ctx context.Context, method, path string, body a
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+p.Token)
+	if p.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+p.Token)
+	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	if body != nil {

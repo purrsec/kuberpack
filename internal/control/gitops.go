@@ -143,7 +143,7 @@ func (s *Server) handleGitOpsPush(ctx context.Context, payload pushPayload) erro
 		Platform:     s.cfg.Platform,
 	})
 	if err != nil {
-		s.publishStatus(ctx, owner, repo, payload.After, git.StatusFailure,
+		s.publishStatus(ctx, s.cfg.Provider, owner, repo, payload.After, git.StatusFailure,
 			"manifest: "+err.Error(), git.ProductionContext, "")
 		return err
 	}
@@ -152,14 +152,14 @@ func (s *Server) handleGitOpsPush(ctx context.Context, payload pushPayload) erro
 	// manifest decides which apps exist, which webhooks and which builds.
 	for _, project := range result.Projects {
 		if err := s.reconcileApps(ctx, project.Project, project.Apps); err != nil {
-			s.publishStatus(ctx, owner, repo, payload.After, git.StatusFailure,
+			s.publishStatus(ctx, s.cfg.Provider, owner, repo, payload.After, git.StatusFailure,
 				"reconcile: "+err.Error(), git.ProductionContext, "")
 			return err
 		}
 	}
 	for _, project := range result.Removed {
 		if err := s.reconcileApps(ctx, project, nil); err != nil {
-			s.publishStatus(ctx, owner, repo, payload.After, git.StatusFailure,
+			s.publishStatus(ctx, s.cfg.Provider, owner, repo, payload.After, git.StatusFailure,
 				"reconcile: "+err.Error(), git.ProductionContext, "")
 			return err
 		}
@@ -169,7 +169,7 @@ func (s *Server) handleGitOpsPush(ctx context.Context, payload pushPayload) erro
 	if len(result.Removed) > 0 {
 		description = fmt.Sprintf("%s, %d removed", description, len(result.Removed))
 	}
-	s.publishStatus(ctx, owner, repo, payload.After, git.StatusSuccess, description, git.ProductionContext, "")
+	s.publishStatus(ctx, s.cfg.Provider, owner, repo, payload.After, git.StatusSuccess, description, git.ProductionContext, "")
 	return nil
 }
 
@@ -217,6 +217,30 @@ func (s *Server) waitForGitOpsHook(ctx context.Context) {
 		case <-time.After(5 * time.Second):
 		}
 	}
+}
+
+// resolveRegistry finds where the images are published.
+//
+// The registry belongs to the platform, never to the application: the code of
+// a third party application comes from another forge, its image is still
+// published in the registry of the platform.
+func (s *Server) resolveRegistry(ctx context.Context) {
+	if s.cfg.Provider == nil {
+		return
+	}
+	if strings.TrimSpace(s.cfg.RegistryURL) == "" {
+		s.cfg.RegistryURL = s.cfg.Provider.WebURL()
+	}
+	if strings.TrimSpace(s.cfg.RegistryUser) != "" {
+		return
+	}
+	user, err := s.cfg.Provider.CurrentUser(ctx)
+	if err != nil {
+		log.Printf("kuberpack registry user: %v", err)
+		return
+	}
+	s.cfg.RegistryUser = user
+	log.Printf("kuberpack registry: %s, namespace %s", s.cfg.RegistryURL, user)
 }
 
 // ensureChart writes the chart of the control plane in the GitOps repository.

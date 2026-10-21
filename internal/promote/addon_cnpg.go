@@ -79,13 +79,20 @@ func (cnpgEngine) Render(dir string, spec AddonSpec, platform Platform) (AddonRe
 		return AddonResult{}, err
 	}
 
+	// The applications that expect the usual variables of a PostgreSQL
+	// find them here, with the same secret: no credential is ever written
+	// in the repository.
+	secret := name + "-app"
 	return AddonResult{
 		Kind: "postgres",
 		Port: 5432,
-		Env: []AddonEnv{{
-			Name:       "DATABASE_URL",
-			SecretName: name + "-app",
-			SecretKey:  "uri",
-		}},
+		Env: []AddonEnv{
+			{Name: "DATABASE_URL", SecretName: secret, SecretKey: "uri"},
+			{Name: "POSTGRES_USER", SecretName: secret, SecretKey: "user"},
+			{Name: "POSTGRES_PASSWORD", SecretName: secret, SecretKey: "password"},
+			{Name: "POSTGRES_DB", SecretName: secret, SecretKey: "dbname"},
+			{Name: "POSTGRES_HOST", SecretName: secret, SecretKey: "host"},
+			{Name: "POSTGRES_PORT", SecretName: secret, SecretKey: "port"},
+		},
 	}, nil
 }

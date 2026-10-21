@@ -11,8 +11,26 @@ import (
 // Checkout clones cloneURL and verifies HEAD is exactly commitSHA.
 // Kuberpack only uses HTTPS clones (control plane and builder); there is no
 // SSH deploy-key path.
+//
+// The token of the platform is not necessarily valid on the forge of the
+// application: a third party repository lives on somebody else's forge. When
+// the token is refused, the clone is retried anonymously, which is enough
+// for a public repository.
 func Checkout(ctx context.Context, cloneURL, commitSHA, dest string, extraGitArgs []string) error {
-	return checkout(ctx, cloneURL, commitSHA, dest, extraGitArgs)
+	err := checkout(ctx, cloneURL, commitSHA, dest, extraGitArgs)
+	if err == nil || len(extraGitArgs) == 0 {
+		return err
+	}
+	// The first attempt left a partial clone behind: the retry needs a
+	// clean directory.
+	if removeErr := os.RemoveAll(dest); removeErr != nil {
+		return err
+	}
+	retryErr := checkout(ctx, cloneURL, commitSHA, dest, nil)
+	if retryErr == nil {
+		return nil
+	}
+	return fmt.Errorf("%w (anonymous clone: %v)", err, retryErr)
 }
 
 func checkout(ctx context.Context, cloneURL, commitSHA, dest string, extraGitArgs []string) error {

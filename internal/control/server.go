@@ -48,7 +48,12 @@ type Config struct {
 	// RegistryURL is the OCI registry the images are pushed to. It is
 	// independent of the forge: GitHub pushes to ghcr.io, GitLab to its own
 	// registry, a Forgejo to its own port.
-	RegistryURL  string
+	RegistryURL string
+	// RegistryUser is the namespace the images are published in. It is the
+	// account of the platform, not the owner of the application
+	// repository: the code of a third party application is built and
+	// published in the namespace of the platform.
+	RegistryUser string
 	Token        string
 	APIToken     string
 	WebhookURL   string
@@ -101,6 +106,8 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) Start(ctx context.Context) {
+	// The registry of the platform is resolved first: every build needs it.
+	s.resolveRegistry(ctx)
 	s.kick()
 	go s.worker(ctx)
 	// The chart of the control plane must be the one that is applied: the
@@ -313,7 +320,7 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 		_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", err.Error())
 		return
 	}
-	owner, name, err := git.SplitOwnerName(app.ForgejoRepository)
+	provider, owner, name, err := s.appForge(app)
 	if err != nil {
 		_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", err.Error())
 		return
@@ -329,7 +336,7 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 		_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", err.Error())
 		return
 	}
-	s.publishStatus(ctx, owner, name, d.CommitSHA, git.StatusPending, "Building", git.ProductionContext, appTargetURL(app))
+	s.publishStatus(ctx, provider, owner, name, d.CommitSHA, git.StatusPending, "Building", git.ProductionContext, appTargetURL(app))
 
 	track := s.trackFor(ctx, app)
 	skipPromote := !track.FollowsMain() && !track.MatchesCommit(d.CommitSHA)
@@ -338,8 +345,10 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 		Builder:       s.cfg.Builder,
 		BuildID:       buildID,
 		DeliveryID:    d.ID,
-		Provider:      s.cfg.Provider,
+		Provider:      provider,
 		RegistryURL:   s.cfg.RegistryURL,
+		RegistryUser:  s.cfg.RegistryUser,
+		ImageName:     app.Name,
 		Token:         s.cfg.Token,
 		Owner:         owner,
 		Name:          name,
@@ -375,7 +384,7 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 		if target == "" {
 			target = commitURL(s.cfg.Provider.WebURL(), owner, name, d.CommitSHA)
 		}
-		s.publishStatus(ctx, owner, name, d.CommitSHA, git.StatusFailure, runErr.Error(), git.ProductionContext, target)
+		s.publishStatus(ctx, provider, owner, name, d.CommitSHA, git.StatusFailure, runErr.Error(), git.ProductionContext, target)
 		log.Printf("kuberpack build %s %s: %v", app.Name, d.CommitSHA, runErr)
 		return
 	}
@@ -392,29 +401,29 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 		target = appTargetURL(app)
 	}
 	if skipPromote {
-		s.publishStatus(ctx, owner, name, d.CommitSHA, git.StatusWarning, "Built, frozen at "+track.Short(), git.ProductionContext, appTargetURL(app))
+		s.publishStatus(ctx, provider, owner, name, d.CommitSHA, git.StatusWarning, "Built, frozen at "+track.Short(), git.ProductionContext, appTargetURL(app))
 	} else {
-		s.publishStatus(ctx, owner, name, d.CommitSHA, git.StatusSuccess, "Deployed", git.ProductionContext, target)
+		s.publishStatus(ctx, provider, owner, name, d.CommitSHA, git.StatusSuccess, "Deployed", git.ProductionContext, target)
 	}
 	s.alignTrack(ctx, app)
 }
 
-func (s *Server) publishCommitStatus(ctx context.Context, owner, repo, sha, state, description string, app store.App, failed bool) {
+func (s *Server) publishCommitStatus(ctx context.Context, provider git.Provider, owner, repo, sha, state, description string, app store.App, failed bool) {
 	target := appTargetURL(app)
-	if failed {
-		target = commitURL(s.cfg.Provider.WebURL(), owner, repo, sha)
+	if failed && provider != nil {
+		target = commitURL(provider.WebURL(), owner, repo, sha)
 	}
-	s.publishStatus(ctx, owner, repo, sha, state, description, git.ProductionContext, target)
+	s.publishStatus(ctx, provider, owner, repo, sha, state, description, git.ProductionContext, target)
 }
 
-func (s *Server) publishStatus(ctx context.Context, owner, repo, sha, state, description, contextName, target string) {
-	if s.cfg.Provider == nil {
+func (s *Server) publishStatus(ctx context.Context, provider git.Provider, owner, repo, sha, state, description, contextName, target string) {
+	if provider == nil {
 		return
 	}
 	if contextName == "" {
 		contextName = git.ProductionContext
 	}
-	err := s.cfg.Provider.CommitStatus(ctx, owner, repo, sha, git.Status{
+	err := provider.CommitStatus(ctx, owner, repo, sha, git.Status{
 		State:       state,
 		Context:     contextName,
 		Description: description,

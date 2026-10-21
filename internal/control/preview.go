@@ -39,7 +39,7 @@ func (s *Server) processPreview(ctx context.Context, d store.Delivery) {
 		_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", err.Error())
 		return
 	}
-	owner, name, err := git.SplitOwnerName(app.ForgejoRepository)
+	provider, owner, name, err := s.appForge(app)
 	if err != nil {
 		_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", err.Error())
 		return
@@ -50,7 +50,7 @@ func (s *Server) processPreview(ctx context.Context, d store.Delivery) {
 		s.prunePreview(ctx, app, d.PullRequest, releaseName, host)
 		_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "succeeded", "")
 		if d.CommitSHA != "" {
-			s.publishStatus(ctx, owner, name, d.CommitSHA, git.StatusSuccess, "Preview removed", git.PreviewContext, "")
+			s.publishStatus(ctx, provider, owner, name, d.CommitSHA, git.StatusSuccess, "Preview removed", git.PreviewContext, "")
 		}
 		return
 	}
@@ -79,7 +79,7 @@ func (s *Server) processPreview(ctx context.Context, d store.Delivery) {
 		AppID: app.ID, PullRequest: d.PullRequest, HeadSHA: d.CommitSHA,
 		BuildID: buildID, Hostname: host, Status: "building",
 	})
-	s.publishStatus(ctx, owner, name, d.CommitSHA, git.StatusPending, "Building preview", git.PreviewContext, "https://"+host)
+	s.publishStatus(ctx, provider, owner, name, d.CommitSHA, git.StatusPending, "Building preview", git.PreviewContext, "https://"+host)
 	previewPlatform := s.cfg.Platform.ForPreview()
 	result, runErr := s.cfg.Run(ctx, release.Request{
 		Builder:           s.cfg.Builder,
@@ -119,7 +119,7 @@ func (s *Server) processPreview(ctx context.Context, d store.Delivery) {
 		_ = s.cfg.Store.FinishBuild(ctx, buildID, finished)
 		_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", runErr.Error())
 		_ = s.cfg.Store.UpsertPreview(ctx, store.Preview{AppID: app.ID, PullRequest: d.PullRequest, HeadSHA: d.CommitSHA, BuildID: buildID, Hostname: host, Status: "failed"})
-		s.publishStatus(ctx, owner, name, d.CommitSHA, git.StatusFailure, runErr.Error(), git.PreviewContext, finished.ArchiveURL)
+		s.publishStatus(ctx, provider, owner, name, d.CommitSHA, git.StatusFailure, runErr.Error(), git.PreviewContext, finished.ArchiveURL)
 		return
 	}
 	finished.ImageRepository = result.Image.Repository
@@ -129,7 +129,7 @@ func (s *Server) processPreview(ctx context.Context, d store.Delivery) {
 	_ = s.cfg.Store.FinishBuild(ctx, buildID, finished)
 	_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "succeeded", "")
 	_ = s.cfg.Store.UpsertPreview(ctx, store.Preview{AppID: app.ID, PullRequest: d.PullRequest, HeadSHA: d.CommitSHA, BuildID: buildID, Hostname: host, Status: "ready"})
-	s.publishStatus(ctx, owner, name, d.CommitSHA, git.StatusSuccess, "Preview ready", git.PreviewContext, "https://"+host)
+	s.publishStatus(ctx, provider, owner, name, d.CommitSHA, git.StatusSuccess, "Preview ready", git.PreviewContext, "https://"+host)
 }
 
 func (s *Server) prunePreview(ctx context.Context, app store.App, pr int, releaseName, host string) {

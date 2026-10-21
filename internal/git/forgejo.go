@@ -83,6 +83,10 @@ func (p *ForgejoProvider) WebURL() string {
 	return p.Client.BaseURL
 }
 
+func (p *ForgejoProvider) CurrentUser(ctx context.Context) (string, error) {
+	return p.Client.CurrentUser(ctx)
+}
+
 func (p *ForgejoProvider) VerifyWebhook(secret string, header http.Header, body []byte) bool {
 	return hmacsig.Valid(secret, hmacsig.Header(header), body)
 }

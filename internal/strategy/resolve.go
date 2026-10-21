@@ -17,6 +17,11 @@ const (
 
 type Plan struct {
 	Kind Kind
+	// GenerateLock tells the builder to resolve the Python dependencies
+	// when the repository has no lock file. A third party application
+	// cannot be asked for one: the build resolves it, the deployment stays
+	// pinned by the digest of the image.
+	GenerateLock bool
 }
 
 func ParseKind(s string) (Kind, error) {
@@ -43,14 +48,15 @@ func Resolve(root string, requested Kind) (Plan, error) {
 	switch requested {
 	case UV:
 		if !hasUV {
-			return Plan{}, fmt.Errorf("strategy uv requires pyproject.toml and uv.lock: run `uv lock` in the repository")
+			return Plan{}, fmt.Errorf("strategy uv requires a pyproject.toml")
 		}
-		return Plan{Kind: UV}, nil
+		return Plan{Kind: UV, GenerateLock: needsLock(root)}, nil
 	case Railpack:
 		return Plan{Kind: Railpack}, nil
 	case Auto:
 		if hasUV {
-			return Plan{Kind: UV}, nil
+			// The repository has a lock: it is used as it is.
+			return Plan{Kind: UV, GenerateLock: needsLock(root)}, nil
 		}
 		return Plan{Kind: Railpack}, nil
 	default:
@@ -86,7 +92,10 @@ func uvSources(root string) (bool, error) {
 	case os.IsNotExist(errPy) && os.IsNotExist(errLock):
 		return false, nil
 	case os.IsNotExist(errLock):
-		return false, fmt.Errorf("python project: pyproject.toml without uv.lock: add a uv.lock (uv lock) or a requirements.txt")
+		// A pyproject.toml without its lock: the build resolves the
+		// dependencies. The lock of the repository is used when there is
+		// one.
+		return true, nil
 	case os.IsNotExist(errPy):
 		return false, fmt.Errorf("python project: uv.lock without pyproject.toml: add the pyproject.toml or remove the lock")
 	default:
@@ -95,6 +104,16 @@ func uvSources(root string) (bool, error) {
 		}
 		return false, errLock
 	}
+}
+
+// needsLock reports whether the build has to resolve the Python
+// dependencies: the project has a pyproject.toml but no lock.
+func needsLock(root string) bool {
+	if _, err := os.Stat(filepath.Join(root, "uv.lock")); err == nil {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(root, "pyproject.toml"))
+	return err == nil
 }
 
 // CheckLock runs `uv lock --check` when uv is on PATH.
