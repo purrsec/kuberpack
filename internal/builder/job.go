@@ -43,13 +43,14 @@ type Request struct {
 	// BuildsGitAuthScheme is how the forge of the builds repository
 	// authenticates a clone. It is not a secret.
 	BuildsGitAuthScheme string
-	StartCmd            string
-	RootDirectory       string
-	BuildCommand        string
-	BuildID             int64
-	BuildsGitURL        string
-	AppName             string
-	Environment         string
+
+	StartCmd      string
+	RootDirectory string
+	BuildCommand  string
+	BuildID       int64
+	BuildsGitURL  string
+	AppName       string
+	Environment   string
 }
 
 type Runner interface {
@@ -71,6 +72,9 @@ type JobRunner struct {
 	BuilderMemory  string
 	BuildkitCPU    string
 	BuildkitMemory string
+	// AcceptedVulnerabilities are the CVE the platform accepts. A finding
+	// of the scan that is not in this list stops the build.
+	AcceptedVulnerabilities []string
 }
 
 // resourceQuantity reads a quantity, with a default.
@@ -283,6 +287,7 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 		{Name: "KUBERPACK_GENERATE_LOCK", Value: strconv.FormatBool(req.GenerateLock)},
 		{Name: "KUBERPACK_GIT_AUTH", Value: req.GitAuthScheme},
 		{Name: "KUBERPACK_BUILDS_GIT_AUTH", Value: req.BuildsGitAuthScheme},
+		{Name: "KUBERPACK_TRIVY_IGNORE", Value: strings.Join(r.AcceptedVulnerabilities, ",")},
 		{Name: "KUBERPACK_START_CMD", Value: req.StartCmd},
 		{Name: "KUBERPACK_ROOT_DIRECTORY", Value: req.RootDirectory},
 		{Name: "KUBERPACK_BUILD_CMD", Value: req.BuildCommand},

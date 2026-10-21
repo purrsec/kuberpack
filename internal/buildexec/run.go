@@ -46,9 +46,12 @@ type Request struct {
 	// authenticates a clone: it is the forge of the platform, not the one
 	// of the application.
 	BuildsGitAuthScheme string
-	BuildsGitURL        string
-	AppName             string
-	Environment         string
+	// AcceptedVulnerabilities are the CVE the platform accepts. A finding
+	// that is not in this list stops the build.
+	AcceptedVulnerabilities []string
+	BuildsGitURL            string
+	AppName                 string
+	Environment             string
 }
 
 // The builder Secret is written by the operator (Infisical or kubectl). Its
@@ -180,11 +183,21 @@ func Run(ctx context.Context, req Request) (digest string, err error) {
 		return "", fail.Stage(fail.Trivy, err)
 	}
 	scanReport := filepath.Join(work, "trivy.json")
-	if err = commandLogged(ctx, &logBuf, "trivy", "image", "--input", scanArchive, "--exit-code", "1", "--severity", "CRITICAL", "--ignore-unfixed", "--pkg-types", "library", "--scanners", "vuln", "--format", "json", "--output", scanReport); err != nil {
-		if summary := summarizeTrivyFile(scanReport); summary != "" {
-			return "", fail.Text(fail.Trivy, summary)
+	scanErr := commandLogged(ctx, &logBuf, "trivy", "image", "--input", scanArchive, "--exit-code", "1", "--severity", "CRITICAL", "--ignore-unfixed", "--pkg-types", "library", "--scanners", "vuln", "--format", "json", "--output", scanReport)
+	// The exit code of the scan is one when it found something. The report
+	// says what: the findings the platform accepts do not stop the build.
+	verdict, verdictErr := trivyVerdictOfFile(scanReport, req.AcceptedVulnerabilities)
+	if verdictErr != nil {
+		if scanErr != nil {
+			return "", fail.Stage(fail.Trivy, scanErr)
 		}
-		return "", fail.Stage(fail.Trivy, err)
+		return "", fail.Stage(fail.Trivy, verdictErr)
+	}
+	if len(verdict.Blocked) > 0 {
+		return "", fail.Text(fail.Trivy, verdict.SummarizeBlocks())
+	}
+	if accepted := verdict.AcceptedIDs(); len(accepted) > 0 {
+		fmt.Printf("accepted vulnerabilities: %s\n", strings.Join(accepted, ", "))
 	}
 	if err := validateScanReport(scanReport); err != nil {
 		return "", fail.Stage(fail.Trivy, err)
