@@ -28,6 +28,8 @@ Le CLI, le chart et le contrat sont ici. Ce qui est réellement implémenté : [
 | [Erreurs](docs/errors.md) | Comportement en échec |
 | [Git Forgejo](docs/git.md) | Contrat API repris de l’écosystème Gitea |
 | [Feuille de route](docs/roadmap.md) | MVP et phases |
+| [Manifeste kuberpack.yaml](docs/manifest.md) | Format du manifeste compact projet |
+| [Projets](docs/projects.md) | Architecture compilateur de projets |
 | [Déploiement](docs/deployment.md) | Instance actuelle (homelab) |
 
 ## Install
