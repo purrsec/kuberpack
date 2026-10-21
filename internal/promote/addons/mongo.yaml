@@ -1,0 +1,34 @@
+# The document database. It is the add-on that the applications which need
+# a flexible schema use, and the one that a bootstrap Job is needed for:
+# the password is born in the cluster.
+type: mongo
+engine: mongo
+kind: nosql
+port: 27017
+image: docker.io/library/mongo@sha256:4a4ab5d4834207389e0d7270fac988e21ffedccecba77991a552f755df229907
+# The credentials are born in the cluster: the Job writes the secret, and
+# the password never passes through Kuberpack.
+bootstrap:
+  image: docker.io/curlimages/curl@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69
+  secret: "{{name}}-app"
+  keys:
+    - username
+    - password
+plans:
+  small:
+    instances: 1
+    storage: 2Gi
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: "1", memory: 1Gi }
+  medium:
+    instances: 1
+    storage: 20Gi
+    resources:
+      requests: { cpu: 500m, memory: 1Gi }
+      limits: { cpu: "2", memory: 4Gi }
+# The contract: the application finds the user and the password in the
+# secret, and builds its own URI.
+env:
+  MONGO_USERNAME: username
+  MONGO_PASSWORD: password

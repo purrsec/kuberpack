@@ -78,6 +78,7 @@ var addonEngines = map[string]AddonEngine{
 	"cnpg":   cnpgEngine{},
 	"valkey": valkeyEngine{},
 	"rustfs": rustfsEngine{},
+	"mongo":  mongoEngine{},
 }
 
 // AddonEngineNames lists the available engines.

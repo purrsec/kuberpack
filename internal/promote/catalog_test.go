@@ -228,3 +228,36 @@ func TestTheValuesOfAServiceWithVolumesStayParsable(t *testing.T) {
 		t.Errorf("the network policy is not declared:\n%s", values)
 	}
 }
+
+// The document database: its credentials are born in the cluster, and the
+// application finds them in the secret.
+func TestTheDocumentDatabaseHasItsCredentialsBornInTheCluster(t *testing.T) {
+	bare := setupAppsGitOps(t)
+	m := ProjectManifest{
+		Project: "demo",
+		Addons:  map[string]Addon{"mongo": {Engine: "mongo", Plan: "small"}},
+		Services: map[string]Service{
+			"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "demo.host.bzh"},
+		},
+	}
+	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{NetworkPolicy: true}}
+	res, err := EnsureProject(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree := readRemoteTree(t, bare)
+	job := readFile(t, tree, "kubernetes/vps/projects/demo/addons/mongo/bootstrap-job.yaml")
+	if !strings.Contains(job, "kind: Job") || !strings.Contains(job, "username") {
+		t.Errorf("the bootstrap job is wrong:\n%s", job)
+	}
+	// The secret is never in the repository.
+	values := readFile(t, tree, "kubernetes/vps/projects/demo/app/values.yaml")
+	if strings.Contains(values, "password") {
+		t.Errorf("the credentials are in the values:\n%s", values)
+	}
+	// The service receives the contract of the addon.
+	peers := res.Services
+	if len(peers) != 1 {
+		t.Fatalf("the services are %v", peers)
+	}
+}
