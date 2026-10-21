@@ -494,15 +494,18 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 		GitOpsURL:     s.cfg.GitOpsURL,
 		GitOpsBranch:  s.cfg.GitOpsBranch,
 		ChartPath:     s.cfg.ChartPath,
-		Hostname:      app.Hostname,
-		Port:          app.Port,
-		Healthcheck:   app.Healthcheck,
-		Platform:      s.cfg.Platform,
-		Wait:          s.cfg.Wait,
-		SkipPromote:   skipPromote,
-		BuildsGitURL:  s.cfg.BuildsGitURL,
-		Environment:   "production",
-		Log:           func(format string, args ...any) { log.Printf(format, args...) },
+		// The GitOps directory is keyed by the platform app name, not by the
+		// Forgejo repository name: registration wrote <apps>/<app>/.
+		ValuesPath:   s.cfg.Platform.ValuesPath(app.Name),
+		Hostname:     app.Hostname,
+		Port:         app.Port,
+		Healthcheck:  app.Healthcheck,
+		Platform:     s.cfg.Platform,
+		Wait:         s.cfg.Wait,
+		SkipPromote:  skipPromote,
+		BuildsGitURL: s.cfg.BuildsGitURL,
+		Environment:  "production",
+		Log:          func(format string, args ...any) { log.Printf(format, args...) },
 	})
 	finished := store.Build{Status: "succeeded", ArchiveURL: archiveURL(s.cfg.BuildsGitURL, name, d.CommitSHA)}
 	if runErr != nil {
