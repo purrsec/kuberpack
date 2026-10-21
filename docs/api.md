@@ -2,89 +2,80 @@
 
 HTTP d’abord. CLI (`kuberpack`) ou UI ensuite. Pas d’exposition publique sans authentification.
 
-## Créer une application
+## Déclarer une application
+
+Une application se déclare par un **manifeste** : c’est la seule source de vérité.
+Il n’y a plus d’API d’enregistrement : `POST /api/v1/projects` compile le
+manifeste, arme le pipeline de build et écrit le GitOps.
 
 ```http
-POST /api/v1/apps
+POST /api/v1/projects
 ```
 
 ```json
 {
-  "name": "web",
-  "repository": "org/web",
-  "branch": "main",
-  "strategy": "auto",
-  "autodeploy": true,
-  "autodeploy_pr": true,
-  "hostname": "web.example.org",
-  "port": 8080,
-  "healthcheck": "/",
-  "internet": true,
-  "peers": []
+  "project": "demo",
+  "manifest": "project: demo\nservices:\n  web:\n    repository: org/web\n    hostname: web.example.org\n"
 }
 ```
+
+Le format du manifeste est spécifié dans [manifest.md](manifest.md). Le
+compilateur est strict : un champ inconnu ou une valeur non supportée est
+une erreur explicite, jamais un no-op silencieux.
 
 | Champ | Rôle |
 | --- | --- |
-| `name` | Identifiant plateforme et préfixe des releases |
-| `repository` | `owner/name` Forgejo |
-| `branch` | Branche dont les pushes deviennent la production |
-| `strategy` | `auto`, `railpack` ou `uv` ; `auto` inspecte le commit avant le build |
-| `autodeploy` | Push → build → promotion GitOps |
-| `autodeploy_pr` | Previews |
-| `hostname` | Ingress de production |
-| `port` | Port réellement écouté par le processus |
-| `healthcheck` | Chemin HTTP des probes et du Helm test |
-| `internet` | Egress public 80/443 (défaut `true`). `false` : DNS + `peers` seulement |
-| `peers` | Allowlist cluster : autres apps (`billing`) ou addons (`postgres:web`) |
-| `secrets` | Clés Infisical à injecter dans `app-<name>` (même nom que la clé) |
-| `secret_env` | Environment slug Infisical (défaut `prod`) |
+| `project` | Nom du projet. Doit correspondre à `project:` du manifeste |
+| `manifest` | Le `kuberpack.yaml` complet, en YAML |
 
-`secrets` déclare les clés Infisical ; Kuberpack génère l’`InfisicalStaticSecret` (`kubernetes/vps/infisical/app-<name>.yaml`) qui les synchronise dans le Secret `app-<name>`. Aucune valeur ne transite par l’API, Git ou SQLite. Sans `secrets`, aucun CR n’est écrit.
+Réponse : le projet compilé (`project`, `services`, `addons`, `infra_commit`,
+`changed`).
 
-`inherit_secret_from` (`prod` | `dev`, défaut `dev`) : secret qu’une **preview** hérite, en plus de son secret exact `app-<app>-pr-<n>` (optional).
-- `dev` : le Secret partagé `dev` (synchronisé depuis l’environnement Infisical `dev`). Valeur par défaut : jamais de secret de prod en preview.
-- `prod` : le Secret de production `app-<app>`. À n’utiliser que sciemment.
+## Ce que fait la compilation
 
-Les previews n’héritent jamais des `peers` de production.
+Pour chaque service qui déclare un `repository`, Kuberpack :
 
-`preview_database` (`bool`, défaut `false`) : provisionne pour chaque preview une **base CloudNativePG vide et isolée** (`<app>-pr-<n>-db`), jamais une copie de la prod. Kuberpack écrit le `Cluster` dans la branche `previews` ; CNPG génère lui-même les identifiants (Secret `<name>-app`), et la preview reçoit `DATABASE_URL` depuis ce Secret (prioritaire sur un héritage). La NetworkPolicy de la preview ne pointe que vers **sa** base. Le schéma est créé par les migrations de l’app, sans data.
+1. écrit les artefacts GitOps du service (`values.yaml`, `helmrelease.yaml`,
+   `kustomization.yaml`, `secret.yaml`) ;
+2. crée l’entrée SQLite de l’app (`<projet>-<service>`), sa clé HMAC et son
+   webhook Forgejo ;
+3. enfile le premier build.
 
-Le port se configure, il ne se suppose pas. L’image peut écouter `80` ou `8080`. Une probe sur le mauvais port fait échouer la release.
+La compilation est idempotente : la recompiler ne duplique ni webhook, ni
+secret, ni build. Un service qui quitte le manifeste perd son app, son webhook
+et son secret.
 
-Si `KUBERPACK_WEBHOOK_URL` n’est pas configuré, Kuberpack ne crée pas le webhook Forgejo : la réponse contient alors `webhook_secret` (le secret HMAC) pour une installation manuelle. Avec une URL configurée, le secret n’est jamais renvoyé et le webhook est (re)configuré avec le secret courant.
-
-## Overrides de build
-
-La stratégie détecte langage et commandes. Les exceptions vivent dans Kuberpack :
-
-```json
-{
-  "root_directory": "frontend",
-  "build_command": "npm run build",
-  "start_command": "npm run start"
-}
-```
-
-`root_directory` choisit le sous-dossier analysé et construit (monorepo). `build_command` est transmis à Railpack (`--build-cmd`). Ces champs se posent à l’enregistrement ou via `PATCH`.
-
-Un `Procfile` est optionnel. Aucun fichier de plateforme n’est exigé dans le dépôt applicatif.
-
-À l’enregistrement, Kuberpack matérialise ce JSON en YAML GitOps (`kubernetes/vps/apps/<name>/`). Ingress, pull secret, TLS et DNS viennent des défauts plateforme (`KUBERPACK_DNS_TARGET`, …), pas du dépôt app. `KUBERPACK_DNS_TARGET` ne doit contenir que des IPv6 : Kuberpack ignore les IPv4 pour ne publier que des AAAA. Le `values.yaml` de production pose `envFrom.secretRef.name: app-<name>` ; les clés du Secret ne passent jamais par l’API. Flux ne voit l’app qu’après le premier pin `image`. Les apps déjà enregistrées gardent leur YAML : ajouter le `envFrom` à la main si besoin.
-
-Le YAML GitOps est le contrat runtime. `track: main` (défaut, ou vide / `latest`) suit la branche de production. `track: <sha>` gèle la prod sur ce commit : les nouveaux pushes peuvent encore construire, mais ne changent plus `image`. Kuberpack repose alors le digest déjà publié (`sha-<commit>@sha256:…`), sans rebuild. `image:` reste un digest ; ce n’est pas un tag mutable.
+Le `values.yaml` est régénéré depuis le manifeste à chaque compilation : le
+manifeste est la source de vérité du runtime. Seuls l’`image` et le `track`
+épinglés par le control plane sont conservés.
 
 ## Suite HTTP
 
-`PATCH /api/v1/apps/{name}` — champs optionnels : `branch`, `strategy`, `autodeploy`, `autodeploy_pr`, `hostname`, `port`, `healthcheck`, `start_command`, `root_directory`, `build_command`, `internet`, `peers`, `secrets`, `secret_env`, `inherit_secret_from`, `preview_database`. Un changement `internet`/`peers` réécrit `networkPolicy` dans GitOps, sans toucher `image`. `"peers": []` vide l’allowlist. Un échec GitOps annule la mise à jour SQLite (retour à l’état précédent).
+`GET /api/v1/projects` — liste des projets.
 
-`DELETE /api/v1/apps/{name}` — retire le webhook, la clé HMAC, l’entrée SQLite, et enlève l’app du kustomization parent (Flux prune).
+`GET /api/v1/projects/{name}` — un projet et ses services.
 
-`GET /api/v1/apps/{name}/builds` — historique SQLite (`status` : `running`, `succeeded`, `failed`, `rolled_back`).
+`DELETE /api/v1/projects/{name}` — supprime le projet du GitOps, les apps, les
+webhooks et les secrets associés.
 
-`POST /api/v1/apps/{name}/redeploy` — enfile un build du HEAD courant. Chaque appel crée une livraison distincte : un redeploy du même commit relance bien un build au lieu d’être ignoré comme doublon.
+`GET /api/v1/apps` — les apps, avec leur projet, leur chemin de valeurs et
+leur webhook.
 
-`POST /hooks/flux` — notification HelmRelease en erreur → `rolled_back` + statut Forgejo `warning`. Secret `KUBERPACK_FLUX_WEBHOOK_SECRET` (HMAC ou `Authorization: Bearer`). Kuberpack n’a pas le kubeconfig du VPS ; le rollback Helm reste celui du HelmRelease.
+`GET /api/v1/apps/{name}` — une app.
+
+`GET /api/v1/apps/{name}/builds` — historique SQLite (`status` : `running`,
+`succeeded`, `failed`, `rolled_back`).
+
+`POST /api/v1/apps/{name}/redeploy` — enfile un build du HEAD courant. Chaque
+appel crée une livraison distincte : un redeploy du même commit relance bien
+un build au lieu d’être ignoré comme doublon.
+
+`POST /hooks/forgejo` — push (`push`, `pull_request`) signé en HMAC.
+
+`POST /hooks/flux` — notification HelmRelease en erreur → `rolled_back` + statut
+Forgejo `warning`. Secret `KUBERPACK_FLUX_WEBHOOK_SECRET` (HMAC ou
+`Authorization: Bearer`). Kuberpack n’a pas le kubeconfig du VPS ; le rollback
+Helm reste celui du HelmRelease.
 
 Previews : URL `https://pr-<n>.<app>.<KUBERPACK_PREVIEW_DOMAIN>`.
 

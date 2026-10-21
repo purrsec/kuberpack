@@ -278,6 +278,23 @@ spec:
   sourceRef:
     kind: GitRepository
     name: infra-homelab
+---
+# The projects are a second tree: the manifest of a project and the artifacts
+# compiled from it live in kubernetes/vps/projects. Flux needs one
+# Kustomization per tree, otherwise a compiled project is never applied.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infra-homelab-projects
+  namespace: flux-system
+spec:
+  interval: 1m
+  path: ./kubernetes/vps/projects
+  prune: true
+  wait: false
+  sourceRef:
+    kind: GitRepository
+    name: infra-homelab
 EOF
 echo "flux installed"
 
@@ -288,16 +305,38 @@ log "kuberpack control plane"
 # ------------------------------------------------------------------- app
 log "test application"
 ./scripts/push-app.sh "app: hello-kuberpack FastAPI service with uv lockfile" || true
+# The manifest is the only way to declare an application: the control plane
+# compiles it, arms the build and lets Flux apply the result.
 if ! curl -sS --max-time 20 -H "Authorization: Bearer ${FORGEJO_CONTROL_TOKEN}" \
-        "http://${K3S_IP}:${NODE_PORT}/api/v1/apps" | grep -q hello-kuberpack; then
-    curl -sS --max-time 60 -X POST "http://${K3S_IP}:${NODE_PORT}/api/v1/apps" \
+        "http://${K3S_IP}:${NODE_PORT}/api/v1/apps" | grep -q "demo-hello-kuberpack"; then
+    cat > /tmp/kuberpack-demo-manifest.yaml <<'MANIFEST'
+project: demo
+namespace: demo
+
+services:
+  hello-kuberpack:
+    type: stateless
+    repository: kuberpack/hello-kuberpack
+    branch: main
+    strategy: auto
+    port: 8080
+    hostname: hello-kuberpack.kuberpack.test
+    healthcheck: /healthz
+    build:
+      start_command: uvicorn main:app --host 0.0.0.0 --port $PORT
+
+policies:
+  defaultDeny: true
+  internet: true
+MANIFEST
+    python3 -c "
+import json, sys
+manifest = open('/tmp/kuberpack-demo-manifest.yaml').read()
+print(json.dumps({'project': 'demo', 'manifest': manifest}))
+" | curl -sS --max-time 60 -X POST "http://${K3S_IP}:${NODE_PORT}/api/v1/projects" \
         -H "Authorization: Bearer ${FORGEJO_CONTROL_TOKEN}" -H "Content-Type: application/json" \
-        -d '{"name":"hello-kuberpack","repository":"kuberpack/hello-kuberpack","branch":"main",
-             "strategy":"auto","autodeploy":true,"hostname":"hello-kuberpack.kuberpack.test",
-             "port":8080,"healthcheck":"/healthz",
-             "start_command":"uvicorn main:app --host 0.0.0.0 --port $PORT",
-             "internet":true,"peers":[]}' >/dev/null
-    echo "application registered"
+        -d @- >/dev/null
+    echo "application declared by the manifest"
 fi
 
 log "done"

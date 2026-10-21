@@ -65,11 +65,11 @@ make build
 export FORGEJO_TOKEN=<pat write:repository>
 export KUBERPACK_API_TOKEN=$FORGEJO_TOKEN
 ./bin/kuberpack serve --addr :8080 --data data
-# POST /api/v1/apps  Authorization: Bearer …
+# POST /api/v1/projects  Authorization: Bearer …
 # POST /hooks/forgejo  HMAC X-Gitea-Signature
 ```
 
-`POST /api/v1/apps` écrit le YAML GitOps (hostname, port, healthcheck). Un `git push` sur la branche configurée construit, pin le digest et active Flux. Rien n’est commité dans le dépôt applicatif.
+`POST /api/v1/projects` compile le manifeste `kuberpack.yaml` : il écrit le YAML GitOps (hostname, port, healthcheck), inscrit l’app, pose le webhook Forgejo et lance le premier build. Un `git push` sur la branche configurée construit, pin le digest et active Flux. Rien n’est commité dans le dépôt applicatif. Le [manifeste](docs/manifest.md) est la seule source de vérité.
 
 `serve` est déployé sur le mini-pc (`https://kuberpack.host.bzh/`), hors du Flux `wait: true`.
 

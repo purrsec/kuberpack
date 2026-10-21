@@ -1,14 +1,16 @@
 # Flux
 
-## Enregistrement
+## Déclaration
 
 ```http
-POST /api/v1/apps
+POST /api/v1/projects
 ```
 
-Champs : [API](api.md).
+Le corps porte le manifeste `kuberpack.yaml` ([manifest](manifest.md), [API](api.md)).
 
-Kuberpack vérifie le dépôt, l’inscrit, crée le secret HMAC (hors SQLite), pose le webhook Forgejo (`push`, `pull_request`), écrit le contrat GitOps (`values.yaml` avec `envFrom` vers `app-<name>`, HelmRelease, kustomization) **sans l’activer dans Flux**, puis lance le premier build. Le premier digest piné ajoute l’app au kustomization parent. Ensuite Kuberpack ne change plus que le champ `image`. Rien n’est écrit dans le dépôt applicatif. L’administrateur crée `app-<name>` (Infisical ou kubectl) avant ou après ; le `secretRef` est optional, donc une app sans secret démarre quand même.
+Kuberpack compile le manifeste : il écrit le contrat GitOps du service (`values.yaml` avec `envFrom` vers `app-<service>`, HelmRelease, kustomization) **sans l’activer dans Flux**, inscrit l’app, crée le secret HMAC (hors SQLite), pose le webhook Forgejo (`push`, `pull_request`) puis lance le premier build. Le premier digest piné ajoute le service au kustomization du projet. Ensuite, un push ne change plus que le champ `image` ; un changement du manifeste régénère le `values.yaml` en conservant l’image épinglée. Rien n’est écrit dans le dépôt applicatif. L’administrateur crée `app-<service>` (Infisical ou kubectl) avant ou après ; le `secretRef` est optional, donc une app sans secret démarre quand même.
+
+Les projets sont un second arbre GitOps : ils exigent leur propre `Kustomization` Flux (`path: ./kubernetes/vps/projects`).
 
 ## Production
 

@@ -9,7 +9,7 @@ le travail tombe, et ce qui vaut dire « fait ».
 | 1 | [Logs de build](#1-logs-de-build) | à faire |
 | 2 | [Dimensionnement CPU/RAM](#2-dimensionnement-cpuram) | à faire |
 | 3 | [CLI de pilotage](#3-cli-de-pilotage) | à faire |
-| 4 | [Le manifeste pilote le déploiement](#4-le-manifeste-pilote-le-déploiement) | en cours |
+| 4 | [Le manifeste pilote le déploiement](#4-le-manifeste-pilote-le-déploiement) | fait |
 
 La phase 5 de la [feuille de route](docs/roadmap.md) couvre le point 3.
 
@@ -229,43 +229,72 @@ Les champs qui ne servaient à rien servent maintenant :
 | `addons.*.backup.retention` | rendu en `retentionPolicy` CNPG |
 | `namespace` | le namespace du projet, réel : `HelmRelease`, `Cluster` CNPG, Secret applicatif et objet `Namespace` |
 
-### Étape 2 — le manifeste arme le pipeline (à faire)
+### Étape 2 — le manifeste arme le pipeline (fait)
 
-C’est le cœur : aujourd’hui `services.*.repository` est **inerte** — le
-manifeste compile du GitOps, mais le build ne part que si l’app a aussi été
-enregistrée via `POST /api/v1/apps`.
+C’est le cœur : avant, `services.*.repository` était **inerte** — le
+manifeste compilait du GitOps, mais le build ne partait que si l’app avait
+aussi été enregistrée via `POST /api/v1/apps`.
 
-Le compilateur doit produire, en plus des fichiers GitOps, la **description
-des apps** (repository, branche, stratégie, overrides de build). Le control
-plane les réconcilie alors dans SQLite et pose les webhooks Forgejo.
+Le compilateur produit maintenant, en plus des fichiers GitOps, la
+**description des apps** (repository, branche, stratégie, overrides de build,
+chemin des valeurs). Le control plane les réconcilie dans SQLite et pose les
+webhooks Forgejo.
 
 | Élément | Emplacement |
 | --- | --- |
-| Sortie du compilateur | `internal/promote/project.go` (le résultat porte les apps) |
-| Réconciliation | `internal/control/projects.go` (store + client Forgejo) |
-| App record | `internal/store` (l’app devient une projection du manifeste) |
-| Webhook | `internal/forgejo` (idem qu’à l’enregistrement actuel) |
+| Sortie du compilateur | `internal/promote/project.go` (`ProjectResult.Apps`) |
+| Réconciliation | `internal/control/reconcile.go` (store + client Forgejo) |
+| App record | `internal/store` (`project`, `values_path` ; l’app est une projection du manifeste) |
+| Webhook | `internal/forgejo` (`EnsureHook`, idempotent) |
 
-### Étape 3 — l’API d’enregistrement disparaît (à faire)
+Le nom d’une app est global : `<projet>-<service>`. Deux projets peuvent
+déclarer un service du même nom sans se marcher dessus.
 
-`POST/PATCH/DELETE /api/v1/apps` font doublon avec le manifeste : deux
-écrivains pour la même chose, donc deux sources de vérité. Les supprimer, ou
-les garder comme **éditeurs de manifeste** (ils écrivent le `kuberpack.yaml`
-puis le compilent) — c’est le même arbitrage, à trancher.
+### Étape 3 — l’API d’enregistrement disparaît (fait)
 
-`GET /api/v1/apps/{name}/builds` reste : c’est de l’état opérationnel.
+`POST/PATCH/DELETE /api/v1/apps` faisaient doublon avec le manifeste : deux
+écrivains pour la même chose, donc deux sources de vérité. Ils sont
+**supprimés** (breaking change assumé) : le manifeste est la seule déclaration
+possible.
 
-### Étape 4 — le chemin Flux des projets (à faire)
+Le code correspondant (`EnsureApp`, `SyncRuntime`, `DisableApp`) a été
+supprimé avec eux : il ne reste qu’un chemin d’écriture.
+
+`GET /api/v1/apps` et `GET /api/v1/apps/{name}/builds` restent : c’est de l’état
+opérationnel. `POST /api/v1/apps/{name}/redeploy` reste : c’est une action, pas
+une déclaration.
+
+### Étape 4 — le chemin Flux des projets (fait)
 
 Le `Kustomization` Flux watche `./kubernetes/vps/apps`, alors que les projets
-vivent dans `./kubernetes/vps/projects` : **les projets compilés ne sont
-jamais réconciliés**. Il faut un second `Kustomization` Flux, ou un chemin
-qui couvre les deux.
+vivent dans `./kubernetes/vps/projects` : **les projets compilés n’étaient
+jamais réconciliés**. Il faut un second `Kustomization` Flux, un par arbre.
+
+```yaml
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infra-homelab-projects
+  namespace: flux-system
+spec:
+  interval: 1m
+  path: ./kubernetes/vps/projects
+  prune: true
+  sourceRef: {kind: GitRepository, name: infra-homelab}
+```
+
+C’est le seul réglage côté opérateur : sans lui, un manifeste compilé reste
+inerte.
 
 ### Pièges
 
 - **La compilation doit rester idempotente.** Un projet recompilé ne doit
-  jamais toucher un `values.yaml` déjà épinglé (règle d’or n°2).
+  jamais toucher un `values.yaml` déjà épinglé (règle d’or n°2). Le
+  `values.yaml` est régénéré depuis le manifeste, mais l’`image` et le
+  `track` épinglés sont conservés.
+- **Un service ne doit pas entrer en collision avec un ancien app
+  autonome.** Le compilateur refuse explicitement (`apps/<service>` existe
+  encore) plutôt que de laisser les deux revendiquer le même hôte.
 - **Le `values.yaml` reste la seule porte de sortie des artefacts.** Le
   manifeste décrit l’intention, le digest est écrit par le control plane.
 - **Une app peut être déclarée sans `repository`.** Elle reste dans le

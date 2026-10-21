@@ -178,6 +178,43 @@ kuberpack.yaml (humain)
 4. **`NetworkPolicy` :** Traduit `policies.peers` et `policies.internet` en règles d'isolation Pod réseau natives. `policies.defaultDeny: false` désactive la NetworkPolicy du service.
 5. **`InfisicalStaticSecret` :** Branche la synchronisation des secrets depuis l'instance Infisical du homelab vers un Kubernetes Secret `app-<service>` (sans que les valeurs en clair ne transitent par Kuberpack). L'objet généré est nommé `app-<projet>-<service>` pour que deux projets puissent déclarer un service du même nom.
 
+### Ce que fait la compilation
+
+Pour chaque service qui déclare un `repository`, la compilation :
+
+1. écrit les artefacts GitOps du service ;
+2. inscrit l'app (`<projet>-<service>`), sa clé HMAC et son webhook Forgejo ;
+3. enfile le premier build.
+
+Le `values.yaml` est **régénéré** à chaque compilation : le manifeste est la
+source de vérité du runtime. Seuls l'`image` et le `track` épinglés par le
+control plane sont conservés — un changement de hostname, de `replicas` ou
+d'`env` dans le manifeste se répercute donc sur le déploiement, sans rebuild.
+
+Un service qui quitte le manifeste perd son app, son webhook et son secret.
+
+### Flux : un `Kustomization` par arbre
+
+Les projets vivent dans `kubernetes/vps/projects`, les apps historiques dans
+`kubernetes/vps/apps`. Flux a besoin d**un `Kustomization` par arbre** : sans
+un second `Kustomization` sur `./kubernetes/vps/projects`, un projet compilé
+n'est jamais appliqué.
+
+```yaml
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infra-homelab-projects
+  namespace: flux-system
+spec:
+  interval: 1m
+  path: ./kubernetes/vps/projects
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: infra-homelab
+```
+
 ### Le compilateur refuse ce qu'il ne sait pas faire
 
 Un manifeste est parsé **strictement** : un champ inconnu est une erreur, pas un
