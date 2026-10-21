@@ -57,6 +57,9 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "gitops is not configured", http.StatusForbidden)
 		return
 	}
+	// A project that holds a database is not removed silently: the caller
+	// asks for it explicitly.
+	force := r.URL.Query().Get("force") == "true" || r.URL.Query().Get("force") == "1"
 	res, err := promote.DeleteProject(r.Context(), promote.ProjectRequest{
 		GitOpsURL:    s.cfg.GitOpsURL,
 		GitOpsBranch: s.cfg.GitOpsBranch,
@@ -64,6 +67,7 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 		AuthArgs:     s.cfg.Provider.CloneAuth(s.cfg.Token),
 		Manifest:     promote.ProjectManifest{Project: name},
 		Platform:     s.cfg.Platform,
+		Force:        force,
 	})
 	if err != nil {
 		http.Error(w, "delete failed: "+err.Error(), http.StatusBadGateway)

@@ -127,6 +127,7 @@ func runProjectCreate(args []string) error {
 func runProjectDelete(args []string) error {
 	fs := flag.NewFlagSet("project delete", flag.ContinueOnError)
 	project := fs.String("project", "", "project name")
+	force := fs.Bool("force", false, "remove the project even when it still holds a database")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -140,7 +141,11 @@ func runProjectDelete(args []string) error {
 	if apiToken() == "" {
 		return fmt.Errorf("KUBERPACK_API_TOKEN is required")
 	}
-	req, err := http.NewRequest(http.MethodDelete, apiBase()+"/api/v1/projects/"+name, nil)
+	url := apiBase() + "/api/v1/projects/" + name
+	if *force {
+		url += "?force=true"
+	}
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
 	if err != nil {
 		return err
 	}

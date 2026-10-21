@@ -16,6 +16,10 @@ import (
 type AddonPeer struct {
 	// Kind is the kind of the addon (postgres, valkey).
 	Kind string
+	// Name is the name of the addon in the manifest. Without it, two
+	// databases of the same project are indistinguishable, and a service
+	// that declares one reaches the other.
+	Name string
 	// For is the project the addon belongs to.
 	For string
 	// Port is the port the addon listens on.
@@ -321,6 +325,9 @@ func valuesYAML(spec AppSpec, p Platform) string {
 		b.WriteString("  addonPeers:\n")
 		for _, peer := range spec.AddonPeers {
 			b.WriteString("    - kind: " + peer.Kind + "\n")
+			if peer.Name != "" {
+				b.WriteString("      name: " + peer.Name + "\n")
+			}
 			b.WriteString("      for: " + peer.For + "\n")
 			b.WriteString("      port: " + strconv.Itoa(peer.Port) + "\n")
 		}

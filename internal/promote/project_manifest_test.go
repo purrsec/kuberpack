@@ -261,7 +261,7 @@ func TestProjectNamespaceIsTheNamespaceOfItsResources(t *testing.T) {
 	if !strings.Contains(release, "namespace: demo-ns") {
 		t.Fatalf("helmrelease:\n%s", release)
 	}
-	db := readFile(t, clone, "kubernetes/vps/projects/demo/postgres/database.yaml")
+	db := readFile(t, clone, "kubernetes/vps/projects/demo/addons/postgres/database.yaml")
 	if !strings.Contains(db, "namespace: demo-ns") {
 		t.Fatalf("database:\n%s", db)
 	}
@@ -283,7 +283,7 @@ func TestProjectAddonBackupRetention(t *testing.T) {
 		t.Fatal(err)
 	}
 	clone := readRemoteTree(t, bare)
-	db := readFile(t, clone, "kubernetes/vps/projects/demo/postgres/database.yaml")
+	db := readFile(t, clone, "kubernetes/vps/projects/demo/addons/postgres/database.yaml")
 	if !strings.Contains(db, "retentionPolicy: 30d") {
 		t.Fatalf("database:\n%s", db)
 	}

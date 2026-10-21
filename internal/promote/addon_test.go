@@ -107,14 +107,14 @@ func TestValkeyAddonRendersItsOwnObjects(t *testing.T) {
 		t.Fatal(err)
 	}
 	clone := readRemoteTree(t, bare)
-	stateful := readFile(t, clone, "kubernetes/vps/projects/demo/cache/valkey.yaml")
+	stateful := readFile(t, clone, "kubernetes/vps/projects/demo/addons/cache/valkey.yaml")
 	if !strings.Contains(stateful, "kind: StatefulSet") {
 		t.Fatalf("valkey:\n%s", stateful)
 	}
 	if !strings.Contains(stateful, "kuberpack.io/addon: valkey") {
 		t.Fatalf("the addon must be labelled:\n%s", stateful)
 	}
-	service := readFile(t, clone, "kubernetes/vps/projects/demo/cache/service.yaml")
+	service := readFile(t, clone, "kubernetes/vps/projects/demo/addons/cache/service.yaml")
 	if !strings.Contains(service, "kind: Service") || !strings.Contains(service, "port: 6379") {
 		t.Fatalf("service:\n%s", service)
 	}
@@ -176,5 +176,37 @@ func TestAddonEnginesAreRegistered(t *testing.T) {
 	}
 	if _, ok := AddonEngineFor("nope"); ok {
 		t.Fatal("an unknown engine must not be available")
+	}
+}
+
+// Two databases of the same project must not be indistinguishable: a service
+// that declares one reaches the other.
+func TestTheNetworkPeerCarriesTheNameOfTheAddon(t *testing.T) {
+	peers := []AddonPeer{
+		{Kind: "postgres", Name: "reporting", For: "boutique", Port: 5432},
+		{Kind: "postgres", Name: "orders", For: "boutique", Port: 5432},
+	}
+	values := valuesYAML(AppSpec{
+		Name:        "orders-api",
+		Hostname:    "orders.151.115.39.23.nip.io",
+		Port:        8080,
+		Healthcheck: "/healthz",
+		AddonPeers:  peers,
+	}, Platform{})
+	for _, want := range []string{"kind: postgres", "name: reporting", "name: orders", "for: boutique", "port: 5432"} {
+		if !strings.Contains(values, want) {
+			t.Errorf("the values do not carry %q:\n%s", want, values)
+		}
+	}
+}
+
+// The peers of the same kind are not merged when they are not the same addon.
+func TestThePeersOfTwoDatabasesAreNotMerged(t *testing.T) {
+	merged := mergeAddonPeers(
+		[]AddonPeer{{Kind: "postgres", Name: "reporting", For: "boutique", Port: 5432}},
+		[]AddonPeer{{Kind: "postgres", Name: "orders", For: "boutique", Port: 5432}},
+	)
+	if len(merged) != 2 {
+		t.Fatalf("merged %d peers, want 2", len(merged))
 	}
 }

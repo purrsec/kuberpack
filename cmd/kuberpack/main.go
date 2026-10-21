@@ -120,7 +120,7 @@ trigger (FORGEJO_TOKEN, write:repository):
 project (KUBERPACK_API_TOKEN, KUBERPACK_API_URL):
   create  --project name [--namespace ns] [--service name] [--repository owner/name]
           [--port 8080] [--hostname host] [--dry-run]
-  delete  --project name
+  delete  --project name [--force]
 
   Compiles a project manifest into GitOps primitives.
 

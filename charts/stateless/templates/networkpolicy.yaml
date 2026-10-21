@@ -78,6 +78,9 @@ spec:
         - podSelector:
             matchLabels:
               kuberpack.io/addon: {{ .kind }}
+              {{- with .name }}
+              kuberpack.io/addon-name: {{ . | quote }}
+              {{- end }}
               kuberpack.io/for: {{ .for | quote }}
       ports:
         - { protocol: TCP, port: {{ .port }} }

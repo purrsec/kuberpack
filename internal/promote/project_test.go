@@ -57,7 +57,7 @@ func TestEnsureProjectCompilesServicesAddonsPolicies(t *testing.T) {
 	}
 
 	// Addon compiled to a CNPG cluster with the expected labels.
-	db := readFile(t, clone, "kubernetes/vps/projects/mitame/postgres/database.yaml")
+	db := readFile(t, clone, "kubernetes/vps/projects/mitame/addons/postgres/database.yaml")
 	if !strings.Contains(db, "kind: Cluster") || !strings.Contains(db, "database: umami") {
 		t.Fatalf("addon db:\n%s", db)
 	}
@@ -75,7 +75,9 @@ func TestEnsureProjectCompilesServicesAddonsPolicies(t *testing.T) {
 	if listedInKustomization([]byte(parent), "site") {
 		t.Fatalf("an unpinned service must not be activated:\n%s", parent)
 	}
-	if !listedInKustomization([]byte(parent), "postgres") {
+	// The addons have their own directory: a service named like an addon
+	// can no longer write over it.
+	if !listedInKustomization([]byte(parent), "addons/postgres") {
 		t.Fatalf("parent resources:\n%s", parent)
 	}
 
@@ -160,5 +162,45 @@ func TestEnsureProjectPreservesPinnedImage(t *testing.T) {
 	parent := readFile(t, tree, "kubernetes/vps/projects/demo/kustomization.yaml")
 	if !listedInKustomization([]byte(parent), "app") {
 		t.Fatalf("a pinned service must be activated:\n%s", parent)
+	}
+}
+
+// A project that holds a database is not removed silently: the data leaves
+// the cluster first.
+func TestDeleteProjectRefusesToDropADatabase(t *testing.T) {
+	bare := setupAppsGitOps(t)
+	m := ProjectManifest{
+		Project: "demo",
+		Addons: map[string]Addon{
+			"postgres": {Engine: "cnpg", Database: "demo", Owner: "demo"},
+		},
+		Services: map[string]Service{"app": {Type: "stateless", Port: 8080, Hostname: "demo.host.bzh"}},
+	}
+	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{NetworkPolicy: true}}
+	if _, err := EnsureProject(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := DeleteProject(context.Background(), req)
+	if err == nil {
+		t.Fatal("the removal of a project that holds a database must be refused")
+	}
+	if !strings.Contains(err.Error(), "postgres") {
+		t.Errorf("the error does not name the addon: %v", err)
+	}
+
+	// The dump of the database is in the repository: the data can leave the
+	// cluster before the project does.
+	tree := readRemoteTree(t, bare)
+	dump := readFile(t, tree, "kubernetes/vps/projects/demo/addons/postgres/dump.yaml")
+	if !strings.Contains(dump, "pg_dump") {
+		t.Errorf("the dump job is missing:\n%s", dump)
+	}
+
+	// The removal can be forced: the data goes with it.
+	forced := req
+	forced.Force = true
+	if _, err := DeleteProject(context.Background(), forced); err != nil {
+		t.Fatalf("the forced removal must work: %v", err)
 	}
 }

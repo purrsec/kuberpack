@@ -1,6 +1,7 @@
 package promote
 
 import (
+	"fmt"
 	"net"
 	"path/filepath"
 	"strconv"
@@ -41,6 +42,9 @@ type Platform struct {
 	InfisicalPath      string
 	InfisicalDir       string
 	InfisicalNamespace string
+	// PostgresImage is the image of the PostgreSQL databases of the
+	// projects. It is a digest: an addon is pinned like an application.
+	PostgresImage string
 	// PreviewDatabase* configure the per-preview CloudNativePG database
 	// (empty, isolated). Used only when an app opts in.
 	PreviewDatabaseImage   string
@@ -50,6 +54,12 @@ type Platform struct {
 	ProjectsDir string
 	// AddonImages holds the image of each addon engine, by engine name.
 	AddonImages map[string]string
+	// PostgresStorage is the size of the volume of the PostgreSQL
+	// databases of the projects.
+	PostgresStorage string
+	// PostgresStorageClass is the storage class of the volumes of the
+	// PostgreSQL databases of the projects.
+	PostgresStorageClass string
 	// AddonStorage holds the volume size of each addon engine.
 	AddonStorage map[string]string
 	// AddonStorageClass is the storage class of the addon volumes.
@@ -115,8 +125,17 @@ func (p Platform) withDefaults() Platform {
 	if p.InfisicalNamespace == "" {
 		p.InfisicalNamespace = "infisical"
 	}
+	if p.PostgresImage == "" {
+		p.PostgresImage = "ghcr.io/cloudnative-pg/postgresql:16.10-minimal-trixie@sha256:294fd7631f8d66fa54bf6ffa2948af685a20fb695fe748a6bafa71c42f1233b7"
+	}
 	if p.PreviewDatabaseImage == "" {
 		p.PreviewDatabaseImage = "ghcr.io/cloudnative-pg/postgresql:16.10-minimal-trixie@sha256:294fd7631f8d66fa54bf6ffa2948af685a20fb695fe748a6bafa71c42f1233b7"
+	}
+	if p.PostgresStorage == "" {
+		p.PostgresStorage = "1Gi"
+	}
+	if p.PostgresStorageClass == "" {
+		p.PostgresStorageClass = "local-path"
 	}
 	if p.PreviewDatabaseStorage == "" {
 		p.PreviewDatabaseStorage = "1Gi"
@@ -131,7 +150,7 @@ func (p Platform) withDefaults() Platform {
 		p.AddonImages = map[string]string{}
 	}
 	if _, ok := p.AddonImages["valkey"]; !ok {
-		p.AddonImages["valkey"] = "docker.io/valkey/valkey:8.1-alpine"
+		p.AddonImages["valkey"] = "docker.io/valkey/valkey@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507"
 	}
 	if p.AddonStorage == nil {
 		p.AddonStorage = map[string]string{}
@@ -210,4 +229,17 @@ func IPv6DNSTargets(raw string) string {
 		out = append(out, part)
 	}
 	return strings.Join(out, ",")
+}
+
+// PinnedImage checks that an image is identified by its digest. A tag can be
+// moved: the addon would then run something else than what was reviewed.
+func (p Platform) PinnedImage(image string) (string, error) {
+	image = strings.TrimSpace(image)
+	if image == "" {
+		return "", fmt.Errorf("the image of the addon is empty")
+	}
+	if !strings.Contains(image, "@sha256:") {
+		return "", fmt.Errorf("the image %q of the addon is not pinned: use a digest", image)
+	}
+	return image, nil
 }

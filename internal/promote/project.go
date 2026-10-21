@@ -176,6 +176,9 @@ type ProjectRequest struct {
 	MaxAttempts int
 	Manifest    ProjectManifest
 	Platform    Platform
+	// Force removes the project even when it still holds a database. The
+	// data goes with it.
+	Force bool
 	// Raw is the caller's exact manifest text; written verbatim so comments
 	// and ordering survive. Falls back to a re-marshal when empty.
 	Raw string
@@ -265,9 +268,16 @@ func (p Platform) ProjectsParentPath() string {
 	return filepath.ToSlash(filepath.Join(p.ProjectsDirPath(), "kustomization.yaml"))
 }
 
-// serviceDir returns the directory of a service inside the project.
+// projectServiceDir returns the directory of a service inside the project.
 func (p Platform) projectServiceDir(project, service string) string {
 	return filepath.ToSlash(filepath.Join(p.ProjectDir(project), sanitizeName(service)))
+}
+
+// projectAddonDir returns the directory of an addon inside the project. The
+// addons have their own directory: a service named like an addon would
+// otherwise write over it.
+func (p Platform) projectAddonDir(project, addon string) string {
+	return filepath.ToSlash(filepath.Join(p.ProjectDir(project), "addons", sanitizeName(addon)))
 }
 
 // ProjectServiceValuesPath is where the digest of a service of a project is
@@ -674,7 +684,7 @@ func compileAddons(work string, m ProjectManifest, project string, namespace str
 				name, addon.Engine, strings.Join(AddonEngineNames(), ", "))
 		}
 		aname := sanitizeName(name)
-		dir := filepath.Join(work, filepath.FromSlash(p.projectServiceDir(project, aname)))
+		dir := filepath.Join(work, filepath.FromSlash(p.projectAddonDir(project, aname)))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, nil, err
 		}
@@ -690,7 +700,9 @@ func compileAddons(work string, m ProjectManifest, project string, namespace str
 			return nil, nil, fmt.Errorf("addon %q: %w", name, err)
 		}
 		results[aname] = result
-		names = append(names, aname)
+		// The parent kustomization lists the addons by their path in the
+		// project, not by their name.
+		names = append(names, "addons/"+aname)
 	}
 	sort.Strings(names)
 	return names, results, nil
@@ -728,6 +740,7 @@ func serviceAddons(svc Service, project string, results map[string]AddonResult) 
 		if result.Kind != "" {
 			out.peers = append(out.peers, AddonPeer{
 				Kind: result.Kind,
+				Name: aname,
 				For:  sanitizeName(project),
 				Port: result.Port,
 			})
@@ -743,7 +756,7 @@ func mergeAddonPeers(lists ...[]AddonPeer) []AddonPeer {
 	var out []AddonPeer
 	for _, list := range lists {
 		for _, peer := range list {
-			key := peer.Kind + "/" + peer.For
+			key := peer.Kind + "/" + peer.Name + "/" + peer.For
 			if seen[key] {
 				continue
 			}
@@ -768,13 +781,41 @@ func projectPeers(m ProjectManifest, results map[string]AddonResult) ([]string, 
 		}
 		if result, ok := results[sanitizeName(peer)]; ok {
 			if result.Kind != "" {
-				addons = append(addons, AddonPeer{Kind: result.Kind, For: project, Port: result.Port})
+				addons = append(addons, AddonPeer{
+					Kind: result.Kind,
+					Name: sanitizeName(peer),
+					For:  project,
+					Port: result.Port,
+				})
 			}
 			continue
 		}
 		services = append(services, sanitizeName(peer))
 	}
 	return services, addons
+}
+
+// projectAddonsOf lists the addons a project declares, read from its
+// manifest in the repository.
+func projectAddonsOf(work string, p Platform, project string) ([]string, error) {
+	path := filepath.Join(work, filepath.FromSlash(p.ProjectManifestPath(project)))
+	raw, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	manifest, err := ParseProjectManifest(raw)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(manifest.Addons))
+	for name := range manifest.Addons {
+		out = append(out, sanitizeName(name))
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // writeFile writes a generated file. The platform owns these files: they
@@ -900,6 +941,15 @@ func DeleteProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 		return ProjectResult{}, err
 	}
 	rel := req.Platform.ProjectDir(project)
+	// A project that holds a database is not removed silently: the data
+	// leaves the cluster first, with the Job the engine wrote.
+	if !req.Force {
+		if addons, err := projectAddonsOf(work, req.Platform, project); err == nil && len(addons) > 0 {
+			return ProjectResult{}, fmt.Errorf(
+				"the project %q declares the addons %s: dump their data (the Job is in the repository) before removing it, or ask for the removal to be forced",
+				project, strings.Join(addons, ", "))
+		}
+	}
 	parentRel := req.Platform.ProjectsParentPath()
 	parentPath := filepath.Join(work, filepath.FromSlash(parentRel))
 	add := []string{}
