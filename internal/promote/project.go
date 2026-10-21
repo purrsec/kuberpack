@@ -62,6 +62,10 @@ type Service struct {
 	// RunAsRoot lets the service run as root. A published image with an
 	// init system sometimes expects it.
 	RunAsRoot bool `yaml:"run_as_root,omitempty" json:"run_as_root,omitempty"`
+	// Capabilities are the capabilities the service needs. The platform
+	// drops them all; an image with an init system needs to change the
+	// owner of its files and to drop its privileges itself.
+	Capabilities []string `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
 }
 
 // Volume is a volume of a service.
@@ -515,6 +519,7 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string,
 		spec.Volumes = svc.Volumes
 		spec.WritableRoot = svc.WritableRoot
 		spec.RunAsRoot = svc.RunAsRoot
+		spec.Capabilities = svc.Capabilities
 		dir := filepath.Join(work, filepath.FromSlash(p.projectServiceDir(project, sname)))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, nil, nil, err

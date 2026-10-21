@@ -85,6 +85,8 @@ type AppSpec struct {
 	WritableRoot bool
 	// RunAsRoot lets the application run as root.
 	RunAsRoot bool
+	// Capabilities are the capabilities the application needs.
+	Capabilities []string
 }
 
 // PreviewSecretSource values for AppSpec.InheritSecretFrom.
@@ -330,6 +332,12 @@ func valuesYAML(spec AppSpec, p Platform) string {
 	}
 	if spec.RunAsRoot {
 		b.WriteString("runAsRoot: true\n")
+	}
+	if len(spec.Capabilities) > 0 {
+		b.WriteString("capabilities:\n")
+		for _, capability := range spec.Capabilities {
+			b.WriteString("  - " + capability + "\n")
+		}
 	}
 	b.WriteString("networkPolicy:\n")
 	if networkPolicyEnabled(spec, p) {

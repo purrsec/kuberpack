@@ -81,6 +81,10 @@ spec:
             capabilities:
               drop:
                 - ALL
+              {{- with .Values.capabilities }}
+              add:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp

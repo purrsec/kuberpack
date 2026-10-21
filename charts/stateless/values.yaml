@@ -36,6 +36,10 @@ volumes: []
 # be root: the manifest says so when it is the case.
 writableRoot: false
 runAsRoot: false
+# The capabilities a published image needs. The chart drops them all; an
+# image with an init system needs to change the owner of its files and to
+# drop its privileges itself.
+capabilities: []
 # Railpack images often have USER root. A numeric UID is required for runAsNonRoot.
 podSecurityContext:
   runAsUser: 65534
