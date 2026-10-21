@@ -16,6 +16,9 @@ gitopsApps: kubernetes/apps
 gitopsProjects: kubernetes/vps/projects
 gitopsChart: ./charts/stateless
 gitopsSource: gitops
+# The namespace of the source: the applications reference it to find
+# the GitOps repository they are applied from.
+gitopsSourceNamespace: flux-system
 previewDomain: preview.example.com
 host: kuberpack.example.com
 

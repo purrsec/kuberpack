@@ -68,6 +68,8 @@ spec:
               value: {{ .Values.gitopsChart | quote }}
             - name: KUBERPACK_GITOPS_SOURCE
               value: {{ .Values.gitopsSource | quote }}
+            - name: KUBERPACK_GITOPS_SOURCE_NAMESPACE
+              value: {{ .Values.gitopsSourceNamespace | quote }}
             - name: KUBERPACK_PREVIEW_DOMAIN
               value: {{ .Values.previewDomain | quote }}
             - name: KUBERPACK_WEBHOOK_URL

@@ -465,10 +465,10 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string,
 		if err := writeServiceValues(filepath.Join(dir, "values.yaml"), spec, p); err != nil {
 			return nil, nil, nil, err
 		}
-		if err := writeIfMissing(filepath.Join(dir, "helmrelease.yaml"), RenderHelmRelease(spec, p)); err != nil {
+		if err := writeFile(filepath.Join(dir, "helmrelease.yaml"), RenderHelmRelease(spec, p)); err != nil {
 			return nil, nil, nil, err
 		}
-		if err := writeIfMissing(filepath.Join(dir, "kustomization.yaml"), RenderAppKustomization(spec, p)); err != nil {
+		if err := writeFile(filepath.Join(dir, "kustomization.yaml"), RenderAppKustomization(spec, p)); err != nil {
 			return nil, nil, nil, err
 		}
 		if len(svc.Secrets) > 0 && p.InfisicalEnabled() {
@@ -764,6 +764,13 @@ func projectPeers(m ProjectManifest, results map[string]AddonResult) ([]string, 
 		services = append(services, sanitizeName(peer))
 	}
 	return services, addons
+}
+
+// writeFile writes a generated file. The platform owns these files: they
+// are rewritten when the platform changes, so that a change of the platform
+// reaches the applications that were compiled before it.
+func writeFile(path, content string) error {
+	return os.WriteFile(path, []byte(content), 0o644)
 }
 
 func writeIfMissing(path, content string) error {
