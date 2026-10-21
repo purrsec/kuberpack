@@ -123,11 +123,19 @@ plan qui n'existe pas est refusé.
 Les images des add-ons sont épinglées par digest, comme les images des
 applications : une image qui n'est pas épinglée est une erreur de compilation.
 
-`backup.s3` n'est pas encore supporté (le profil de stockage est une décision
-d'infrastructure) : il est refusé explicitement. `backup.retention` est rendu
-dans le `Cluster` CNPG. Un projet qui détient une base n'est pas supprimé en
-silence : le moteur écrit le Job qui vide la base (`dump.yaml`), la suppression
-est refusée, et `kuberpack project delete --force` passe outre.
+`backup.s3` nomme l'add-on de stockage objet du projet (par exemple
+`rustfs`) : la base est sauvegardée vers ce stockage, avec les identifiants
+référencés et jamais écrits. Un `backup.s3` qui ne nomme aucun add-on du
+projet, ou un add-on qui ne parle pas S3, est refusé.
+
+Les identifiants d'un add-on qui en a besoin naissent **dans le cluster** : un
+Job écrit le secret, le Role qui l'y autorise est dans le dépôt, le secret
+jamais. Le Job est idempotent : le mot de passe ne change pas sous les pieds
+des applications.
+
+Un projet qui détient une base n'est pas supprimé en silence : le moteur écrit
+le Job qui vide la base (`dump.yaml`), la suppression est refusée, et
+`kuberpack project delete --force` passe outre.
 
 ---
 

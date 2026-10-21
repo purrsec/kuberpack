@@ -108,3 +108,61 @@ func TestTheAddonPodsAreIsolated(t *testing.T) {
 		}
 	}
 }
+
+// The object storage of the platform: its credentials are born in the
+// cluster, by a Job, and never in the repository.
+func TestTheObjectStorageHasItsCredentialsBornInTheCluster(t *testing.T) {
+	bare := setupAppsGitOps(t)
+	m := ProjectManifest{
+		Project: "demo",
+		Addons: map[string]Addon{
+			"rustfs":   {Engine: "rustfs", Plan: "small"},
+			"postgres": {Engine: "cnpg", Database: "demo", Backup: &Backup{S3: "rustfs", Retention: "30d"}},
+		},
+		Services: map[string]Service{"app": {Type: "stateless", Port: 8080, Hostname: "demo.host.bzh"}},
+	}
+	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{AddonOperators: []string{"cnpg"}}}
+	if _, err := EnsureProject(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	tree := readRemoteTree(t, bare)
+
+	// The Job that creates the credentials is in the repository, the
+	// credentials are not.
+	job := readFile(t, tree, "kubernetes/vps/projects/demo/addons/rustfs/bootstrap-job.yaml")
+	for _, want := range []string{"kind: Job", "stringData", "accessKeyId", "secretAccessKey"} {
+		if !strings.Contains(job, want) {
+			t.Errorf("the bootstrap job does not carry %q:\n%s", want, job)
+		}
+	}
+	// The Role that lets it write the secret is in the repository too.
+	rbac := readFile(t, tree, "kubernetes/vps/projects/demo/addons/rustfs/rbac.yaml")
+	if !strings.Contains(rbac, "kind: Role") || !strings.Contains(rbac, "resourceNames: [demo-rustfs-app]") {
+		t.Errorf("the role of the bootstrap is wrong:\n%s", rbac)
+	}
+
+	// The database is backed up to the storage, with references.
+	db := readFile(t, tree, "kubernetes/vps/projects/demo/addons/postgres/database.yaml")
+	for _, want := range []string{"barmanObjectStore", "demo-rustfs-app", "retentionPolicy: 30d"} {
+		if !strings.Contains(db, want) {
+			t.Errorf("the backup does not carry %q:\n%s", want, db)
+		}
+	}
+}
+
+// A backup that goes nowhere is refused: the project must declare the
+// storage it uses.
+func TestABackupWithoutStorageIsRefused(t *testing.T) {
+	bare := setupAppsGitOps(t)
+	m := ProjectManifest{
+		Project: "demo",
+		Addons: map[string]Addon{
+			"postgres": {Engine: "cnpg", Database: "demo", Backup: &Backup{S3: "nowhere"}},
+		},
+		Services: map[string]Service{"app": {Type: "stateless", Port: 8080, Hostname: "demo.host.bzh"}},
+	}
+	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{AddonOperators: []string{"cnpg"}}}
+	if _, err := EnsureProject(context.Background(), req); err == nil {
+		t.Fatal("a backup that goes nowhere must be refused")
+	}
+}

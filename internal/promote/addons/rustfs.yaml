@@ -1,0 +1,34 @@
+# The object storage of the platform. It is S3 compatible, and it holds the
+# backups of the databases: without it, a backup is a snapshot of a disk of
+# a node, and it dies with the node.
+type: rustfs
+engine: rustfs
+kind: s3
+port: 9000
+image: docker.io/rustfs/rustfs@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b
+# The credentials are born in the cluster: the Job writes the secret, and
+# the password never passes through Kuberpack.
+bootstrap:
+  image: docker.io/curlimages/curl@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69
+  secret: "{{name}}-app"
+  keys:
+    - accessKeyId
+    - secretAccessKey
+plans:
+  small:
+    instances: 1
+    storage: 5Gi
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { cpu: "1", memory: 1Gi }
+  medium:
+    instances: 1
+    storage: 50Gi
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: "2", memory: 2Gi }
+# The contract: the applications that use the storage find the endpoint
+# here, and the credentials in the secret.
+env:
+  S3_ACCESS_KEY_ID: accessKeyId
+  S3_SECRET_ACCESS_KEY: secretAccessKey

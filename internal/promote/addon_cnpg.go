@@ -87,10 +87,36 @@ func (cnpgEngine) Render(dir string, spec AddonSpec, platform Platform) (AddonRe
 	b.WriteString("    limits: { cpu: \"" + plan.Resources.Limits.CPU + "\", memory: \"" + plan.Resources.Limits.Memory + "\" }\n")
 	b.WriteString("  monitoring:\n")
 	b.WriteString("    enablePodMonitor: false\n")
-	// The retention of the backups is the only part of the backup contract
-	// the compiler renders: the S3 profile is a platform decision.
+	// The backups go to the object storage of the project. The
+	// credentials are references: they never pass through Kuberpack.
 	if spec.Backup != nil {
-		if retention := strings.TrimSpace(spec.Backup.Retention); retention != "" {
+		storage := strings.TrimSpace(spec.Backup.S3)
+		if storage != "" {
+			kind := spec.Siblings[sanitizeName(storage)]
+			if kind != "s3" {
+				return AddonResult{}, fmt.Errorf("the addon %q cannot be backed up to %q: it does not speak S3",
+					sanitizeName(spec.Name), storage)
+			}
+			secret := sanitizeName(spec.Project) + "-" + sanitizeName(storage) + "-app"
+			endpoint := "http://" + sanitizeName(spec.Project) + "-" + sanitizeName(storage) + "." + namespace + ".svc.cluster.local:9000"
+			b.WriteString("  backup:\n")
+			b.WriteString("    barmanObjectStore:\n")
+			b.WriteString("      destinationPath: s3://" + sanitizeName(spec.Name) + "/\n")
+			b.WriteString("      endpointURL: " + endpoint + "\n")
+			b.WriteString("      s3Credentials:\n")
+			b.WriteString("        accessKeyId:\n")
+			b.WriteString("          name: " + secret + "\n")
+			b.WriteString("          key: accessKeyId\n")
+			b.WriteString("        secretAccessKey:\n")
+			b.WriteString("          name: " + secret + "\n")
+			b.WriteString("          key: secretAccessKey\n")
+			b.WriteString("      wal:\n")
+			b.WriteString("        compression: gzip\n")
+			b.WriteString("        maxParallel: 2\n")
+			if retention := strings.TrimSpace(spec.Backup.Retention); retention != "" {
+				b.WriteString("      retentionPolicy: " + retention + "\n")
+			}
+		} else if retention := strings.TrimSpace(spec.Backup.Retention); retention != "" {
 			b.WriteString("  backup:\n")
 			b.WriteString("    retentionPolicy: " + retention + "\n")
 		}

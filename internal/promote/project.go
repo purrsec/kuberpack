@@ -149,7 +149,18 @@ func validateManifest(m ProjectManifest) error {
 				name, addon.Engine, strings.Join(AddonEngineNames(), ", "))
 		}
 		if addon.Backup != nil && strings.TrimSpace(addon.Backup.S3) != "" {
-			return fmt.Errorf("addon %q: backup.s3 is not supported yet", name)
+			// The backup goes to an object storage: the project must
+			// declare one, and it must be of a kind that speaks S3.
+			storage, ok := m.Addons[strings.TrimSpace(addon.Backup.S3)]
+			if !ok {
+				return fmt.Errorf("addon %q: the backup goes to %q, which the project does not declare",
+					name, addon.Backup.S3)
+			}
+			entry, known := AddonCatalogEntryForEngine(storage.Engine)
+			if !known || entry.Kind != "s3" {
+				return fmt.Errorf("addon %q: the backup goes to %q, which does not speak S3",
+					name, addon.Backup.S3)
+			}
 		}
 	}
 	for _, peer := range m.Policies.Peers {
@@ -701,6 +712,17 @@ func compileAddons(work string, m ProjectManifest, project string, namespace str
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, nil, err
 		}
+		siblings := map[string]string{}
+		for other, declared := range m.Addons {
+			if other == name {
+				continue
+			}
+			entry, known := AddonCatalogEntryForEngine(declared.Engine)
+			if !known {
+				continue
+			}
+			siblings[sanitizeName(other)] = entry.Kind
+		}
 		result, err := engine.Render(dir, AddonSpec{
 			Name:      aname,
 			Project:   project,
@@ -710,6 +732,7 @@ func compileAddons(work string, m ProjectManifest, project string, namespace str
 			Backup:    addon.Backup,
 			Plan:      addon.Plan,
 			Params:    addon.Params,
+			Siblings:  siblings,
 		}, p)
 		if err != nil {
 			return nil, nil, fmt.Errorf("addon %q: %w", name, err)

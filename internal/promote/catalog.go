@@ -65,6 +65,19 @@ type AddonEntry struct {
 	// Engine is the engine that renders this type. The manifest may name
 	// the type or the engine.
 	Engine string `yaml:"engine"`
+	// Bootstrap describes the Job that creates the credentials of the
+	// type, in the cluster.
+	Bootstrap AddonBootstrap `yaml:"bootstrap"`
+}
+
+// AddonBootstrap describes how the credentials of a type are born.
+type AddonBootstrap struct {
+	// Image is the image of the Job: it talks to the API of the cluster.
+	Image string `yaml:"image"`
+	// Secret is the name of the secret the Job creates.
+	Secret string `yaml:"secret"`
+	// Keys are the keys of the secret.
+	Keys []string `yaml:"keys"`
 }
 
 // AddonCatalog is the catalogue of the addons of the platform.
