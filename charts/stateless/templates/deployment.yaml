@@ -56,8 +56,8 @@ spec:
             httpGet:
               path: {{ required "healthcheck is required" .Values.healthcheck | quote }}
               port: http
-            periodSeconds: 2
-            failureThreshold: 30
+            periodSeconds: {{ .Values.startupProbe.periodSeconds }}
+            failureThreshold: {{ .Values.startupProbe.failureThreshold }}
           readinessProbe:
             httpGet:
               path: {{ .Values.healthcheck | quote }}

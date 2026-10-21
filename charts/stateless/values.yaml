@@ -40,6 +40,11 @@ runAsRoot: false
 # image with an init system needs to change the owner of its files and to
 # drop its privileges itself.
 capabilities: []
+# The budget of the startup: an application that takes a minute to start
+# must not be killed while it starts. It is periodSeconds x failureThreshold.
+startupProbe:
+  periodSeconds: 2
+  failureThreshold: 90
 # Railpack images often have USER root. A numeric UID is required for runAsNonRoot.
 podSecurityContext:
   runAsUser: 65534
