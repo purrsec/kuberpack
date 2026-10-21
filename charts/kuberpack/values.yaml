@@ -11,6 +11,9 @@ registryUser: ""
 forgejoURL: ""
 gitopsURL: https://git.example.com/you/gitops.git
 gitopsApps: kubernetes/apps
+# The directory of the projects: their manifests and what is
+# compiled from them. It is not the directory of the standalone apps.
+gitopsProjects: kubernetes/vps/projects
 gitopsChart: ./charts/stateless
 gitopsSource: gitops
 previewDomain: preview.example.com

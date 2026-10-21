@@ -144,8 +144,8 @@ func (s *Server) handleGitOpsPush(ctx context.Context, payload pushPayload) erro
 		Platform:     s.cfg.Platform,
 	})
 	if err != nil {
-		s.publishStatus(ctx, s.cfg.Provider, owner, repo, payload.After, git.StatusFailure,
-			"manifest: "+err.Error(), git.ProductionContext, "")
+		s.publishStatusOnCommit(ctx, owner, repo, payload.After, git.StatusFailure,
+			"manifest: "+err.Error())
 		return err
 	}
 
@@ -153,15 +153,15 @@ func (s *Server) handleGitOpsPush(ctx context.Context, payload pushPayload) erro
 	// manifest decides which apps exist, which webhooks and which builds.
 	for _, project := range result.Projects {
 		if err := s.reconcileApps(ctx, project.Project, project.Apps); err != nil {
-			s.publishStatus(ctx, s.cfg.Provider, owner, repo, payload.After, git.StatusFailure,
-				"reconcile: "+err.Error(), git.ProductionContext, "")
+			s.publishStatusOnCommit(ctx, owner, repo, payload.After, git.StatusFailure,
+				"reconcile: "+err.Error())
 			return err
 		}
 	}
 	for _, project := range result.Removed {
 		if err := s.reconcileApps(ctx, project, nil); err != nil {
-			s.publishStatus(ctx, s.cfg.Provider, owner, repo, payload.After, git.StatusFailure,
-				"reconcile: "+err.Error(), git.ProductionContext, "")
+			s.publishStatusOnCommit(ctx, owner, repo, payload.After, git.StatusFailure,
+				"reconcile: "+err.Error())
 			return err
 		}
 	}
@@ -170,8 +170,18 @@ func (s *Server) handleGitOpsPush(ctx context.Context, payload pushPayload) erro
 	if len(result.Removed) > 0 {
 		description = fmt.Sprintf("%s, %d removed", description, len(result.Removed))
 	}
-	s.publishStatus(ctx, s.cfg.Provider, owner, repo, payload.After, git.StatusSuccess, description, git.ProductionContext, "")
+	s.publishStatusOnCommit(ctx, owner, repo, payload.After, git.StatusSuccess, description)
 	return nil
+}
+
+// publishStatusOnCommit publishes the state of the compilation on the commit
+// that caused it. A reconciliation that nobody asked for has no commit: the
+// error is in the log of the control plane.
+func (s *Server) publishStatusOnCommit(ctx context.Context, owner, repo, sha, status, description string) {
+	if strings.TrimSpace(sha) == "" {
+		return
+	}
+	s.publishStatus(ctx, s.cfg.Provider, owner, repo, sha, status, description, git.ProductionContext, "")
 }
 
 // gitOpsProjects lists the projects touched by a push. An empty list means

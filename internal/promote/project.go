@@ -440,18 +440,23 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string,
 		}
 		spec.Env = append(used.env, serviceEnv(svc)...)
 		spec.AddonPeers = mergeAddonPeers(policyAddonPeers, used.peers)
+		// A service of a project must not collide with a legacy standalone
+		// app: both would claim the same hostname, and Flux would keep
+		// deploying the old one. The directory of the project itself is not
+		// a standalone app: a platform that keeps the two directories
+		// together would otherwise refuse its own projects.
+		legacyDir := filepath.Join(work, filepath.FromSlash(p.AppDir(sname)))
+		projectDir := filepath.Join(work, filepath.FromSlash(p.ProjectDir(project)))
+		if legacyDir != projectDir {
+			if _, err := os.Stat(legacyDir); err == nil {
+				return nil, nil, nil, fmt.Errorf(
+					"service %q: the standalone app %q still exists in the GitOps: remove it before declaring the service in a project",
+					name, sname)
+			}
+		}
 		dir := filepath.Join(work, filepath.FromSlash(p.projectServiceDir(project, sname)))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, nil, nil, err
-		}
-		// A service of a project must not collide with a legacy standalone
-		// app: both would claim the same hostname, and Flux would keep
-		// deploying the old one.
-		legacyDir := filepath.Join(work, filepath.FromSlash(p.AppDir(sname)))
-		if _, err := os.Stat(legacyDir); err == nil {
-			return nil, nil, nil, fmt.Errorf(
-				"service %q: the standalone app %q still exists in the GitOps: remove it before declaring the service in a project",
-				name, sname)
 		}
 		// The files of a service are generated from the manifest: the
 		// manifest is the source of truth of the runtime. The values file

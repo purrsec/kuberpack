@@ -62,6 +62,8 @@ spec:
               value: {{ required "gitopsURL is required" .Values.gitopsURL | quote }}
             - name: KUBERPACK_GITOPS_APPS
               value: {{ .Values.gitopsApps | quote }}
+            - name: KUBERPACK_PROJECTS_DIR
+              value: {{ .Values.gitopsProjects | quote }}
             - name: KUBERPACK_GITOPS_CHART
               value: {{ .Values.gitopsChart | quote }}
             - name: KUBERPACK_GITOPS_SOURCE

@@ -63,10 +63,15 @@ type Config struct {
 	Platform     promote.Platform
 	Wait         time.Duration
 	PreviewTTL   time.Duration
-	BuildsGitURL string
-	FluxSecret   string
-	Run          func(context.Context, release.Request) (release.Result, error)
-	GitOpsFile   func(context.Context, store.App) ([]byte, error)
+	// ReconcileInterval is how often the manifests of the GitOps repository
+	// are read again. A webhook can be lost: a forge that drops a delivery,
+	// a control plane that restarts at the wrong moment. The repository is
+	// the truth, so the state is reconciled from it.
+	ReconcileInterval time.Duration
+	BuildsGitURL      string
+	FluxSecret        string
+	Run               func(context.Context, release.Request) (release.Result, error)
+	GitOpsFile        func(context.Context, store.App) ([]byte, error)
 }
 
 type Server struct {
@@ -83,6 +88,9 @@ func New(cfg Config) *Server {
 	}
 	if cfg.PreviewTTL <= 0 {
 		cfg.PreviewTTL = 72 * time.Hour
+	}
+	if cfg.ReconcileInterval <= 0 {
+		cfg.ReconcileInterval = 5 * time.Minute
 	}
 	return &Server{cfg: cfg, wake: make(chan struct{}, 1)}
 }
@@ -122,6 +130,36 @@ func (s *Server) Start(ctx context.Context) {
 	// The manifest lives in the GitOps repository: the webhook on that
 	// repository is what makes it drive the deployment.
 	go s.waitForGitOpsHook(ctx)
+	// The webhook is the fast path, not the only one: the manifests are
+	// read again at startup and then regularly, so a delivery that never
+	// arrived does not leave the platform behind.
+	go s.reconcileLoop(ctx)
+}
+
+// reconcileLoop applies the manifests of the GitOps repository, at startup
+// and then at every interval. The reconciliation is idempotent: an
+// application that did not change is not built again.
+func (s *Server) reconcileLoop(ctx context.Context) {
+	for {
+		s.reconcileManifests(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(s.cfg.ReconcileInterval):
+		}
+	}
+}
+
+// reconcileManifests reads the manifests of every project and applies them.
+func (s *Server) reconcileManifests(ctx context.Context) {
+	if strings.TrimSpace(s.cfg.GitOpsURL) == "" {
+		return
+	}
+	if err := s.handleGitOpsPush(ctx, pushPayload{}); err != nil {
+		log.Printf("kuberpack reconcile: %v", err)
+		return
+	}
+	log.Printf("kuberpack reconcile: the manifests are applied")
 }
 
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
