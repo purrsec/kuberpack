@@ -66,6 +66,15 @@ type Service struct {
 	// drops them all; an image with an init system needs to change the
 	// owner of its files and to drop its privileges itself.
 	Capabilities []string `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
+	// Resources are the cpu and the memory of the service. Without them,
+	// the platform's defaults apply.
+	Resources *ServiceResources `yaml:"resources,omitempty" json:"resources,omitempty"`
+}
+
+// ServiceResources are the cpu and the memory of a service.
+type ServiceResources struct {
+	Requests ResourceList `yaml:"requests,omitempty" json:"requests,omitempty"`
+	Limits   ResourceList `yaml:"limits,omitempty" json:"limits,omitempty"`
 }
 
 // Volume is a volume of a service.
@@ -520,6 +529,7 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string,
 		spec.WritableRoot = svc.WritableRoot
 		spec.RunAsRoot = svc.RunAsRoot
 		spec.Capabilities = svc.Capabilities
+		spec.Resources = svc.Resources
 		dir := filepath.Join(work, filepath.FromSlash(p.projectServiceDir(project, sname)))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, nil, nil, err

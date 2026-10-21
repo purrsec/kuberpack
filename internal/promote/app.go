@@ -87,6 +87,8 @@ type AppSpec struct {
 	RunAsRoot bool
 	// Capabilities are the capabilities the application needs.
 	Capabilities []string
+	// Resources are the cpu and the memory of the application.
+	Resources *ServiceResources
 }
 
 // PreviewSecretSource values for AppSpec.InheritSecretFrom.
@@ -371,7 +373,30 @@ func valuesYAML(spec AppSpec, p Platform) string {
 			b.WriteString("      port: " + strconv.Itoa(peer.Port) + "\n")
 		}
 	}
-	if spec.Preview {
+	// The size of the service: the manifest decides, the platform's
+	// defaults apply when it does not say.
+	if spec.Resources != nil {
+		b.WriteString("resources:\n")
+		if spec.Resources.Requests.CPU != "" || spec.Resources.Requests.Memory != "" {
+			b.WriteString("  requests:\n")
+			if spec.Resources.Requests.CPU != "" {
+				b.WriteString("    cpu: " + spec.Resources.Requests.CPU + "\n")
+			}
+			if spec.Resources.Requests.Memory != "" {
+				b.WriteString("    memory: " + spec.Resources.Requests.Memory + "\n")
+			}
+		}
+		if spec.Resources.Limits.CPU != "" || spec.Resources.Limits.Memory != "" {
+			b.WriteString("  limits:\n")
+			if spec.Resources.Limits.CPU != "" {
+				b.WriteString("    cpu: \"" + spec.Resources.Limits.CPU + "\"\n")
+			}
+			if spec.Resources.Limits.Memory != "" {
+				b.WriteString("    memory: \"" + spec.Resources.Limits.Memory + "\"\n")
+			}
+		}
+	}
+	if spec.Preview && spec.Resources == nil {
 		b.WriteString("resources:\n")
 		b.WriteString("  requests:\n")
 		b.WriteString("    cpu: 25m\n")
