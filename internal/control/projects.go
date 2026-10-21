@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"git.host.bzh/pepe/kuberpack/internal/promote"
-	"gopkg.in/yaml.v3"
 )
 
 type projectBody struct {
@@ -124,8 +123,11 @@ func parseProjectManifest(body projectBody) (promote.ProjectManifest, error) {
 		m.Project = strings.TrimSpace(body.Project)
 		return m, nil
 	}
-	if err := yaml.Unmarshal([]byte(text), &m); err != nil {
-		return m, errors.New("invalid manifest yaml")
+	// The manifest is parsed strictly: an unknown field is an error, so the
+	// specification and the compiler cannot drift apart silently.
+	m, err := promote.ParseProjectManifest([]byte(text))
+	if err != nil {
+		return m, err
 	}
 	if strings.TrimSpace(body.Project) != "" {
 		m.Project = strings.TrimSpace(body.Project)

@@ -44,18 +44,13 @@ addons:
     engine: cnpg
     database: umami
     backup:
-      s3: garage
       retention: 30d
-  valkey:
-    backup:
-      s3: garage
 
 policies:
   defaultDeny: true
   internet: true
   peers:
     - postgres
-    - valkey
 ```
 
 ---
@@ -80,23 +75,26 @@ services:
   <nom-du-service>:
     type: stateless          # type de workload (stateless par défaut)
     repository: <owner/repo> # dépôt Git Forgejo/GitHub source
+    branch: main             # branche dont les pushes deviennent la production
+    strategy: auto           # auto | uv | railpack
     port: 8080               # port d'écoute HTTP du conteneur (défaut : 8080)
     hostname: <fqdn>         # nom d'hôte public configuré sur l'Ingress
     healthcheck: /healthz    # chemin HTTP utilisé pour la liveness/readiness probe (défaut : /)
     replicas: 1              # nombre d'instances (défaut : 1)
     secrets:                 # liste des clés de secrets Infisical à synchroniser
       - API_KEY
+    secret_env: prod         # environnement Infisical des secrets (défaut : prod)
     env:                     # variables d'environnement statiques (optionnel)
       NODE_ENV: production
     build:                   # options spécifiques de build Railpack (optionnel)
       root_directory: ""     # sous-dossier en cas de monorepo
       build_command: ""      # commande personnalisée de build front/asset
-      publish_directory: ""  # dossier de sortie statique (dist, out, etc.)
+      start_command: ""      # commande de démarrage (défaut : détectée par Railpack)
 ```
 
 #### Types de services supportés :
 - `stateless` (par défaut) : Workload HTTP long (API, site SSR, SPA servie par Caddy via Railpack). Déployé via le chart Helm `stateless` Kuberpack.
-- `worker` (futur) : Tâche de fond non exposée publiquement (consommateur de files, cron/daemon).
+- `worker` (futur) : Tâche de fond non exposée publiquement (consommateur de files, cron/daemon). **Pas encore supporté** : le compilateur refuse un manifeste qui le déclare.
 
 ---
 
@@ -110,13 +108,13 @@ addons:
     engine: cnpg             # moteur PostgreSQL (CloudNativePG)
     database: umami          # nom de la base de données créée
     backup:
-      s3: garage             # profil de stockage S3/Garage configuré sur la plateforme
-      retention: 30d         # durée de rétention des sauvegardes WAL et dumps
-  valkey:
-    engine: statefulset      # cache / mémoire in-memory compatible Redis
-    backup:
-      s3: garage
+      retention: 30d         # durée de rétention des sauvegardes (CNPG retentionPolicy)
 ```
+
+Seul `engine: cnpg` est supporté : le compilateur refuse tout autre moteur.
+`backup.s3` n'est pas encore supporté (le profil de stockage est une décision
+d'infrastructure) : il est refusé explicitement. `backup.retention` est rendu
+dans le `Cluster` CNPG.
 
 ---
 
@@ -126,16 +124,15 @@ Déclare les contraintes de sécurité et de filtrage réseau via Kubernetes `Ne
 
 ```yaml
 policies:
-  defaultDeny: true          # active le blocage strict ingress/egress par défaut
+  defaultDeny: true          # isole les services du projet (défaut : true)
   internet: true             # autorise (true) ou bloque (false) l'accès sortant vers le web
   peers:                     # liste des services ou addons locaux joignables
     - postgres
-    - valkey
 ```
 
-- **`defaultDeny`** : Empêche toute communication réseau non explicitement autorisée.
+- **`defaultDeny`** : isole les services du projet. `true` (défaut) rend la `NetworkPolicy` du chart, `false` la désactive : le service n'est plus cloisonné.
 - **`internet`** : Permet aux services d'effectuer des appels externes (APIs tierces, webhooks, passerelles de paiement).
-- **`peers`** : Configure les règles ingress/egress des `NetworkPolicy` pour autoriser le trafic inter-services et vers les addons déclarés.
+- **`peers`** : Configure les règles ingress/egress des `NetworkPolicy` pour autoriser le trafic inter-services et vers les addons déclarés. Chaque peer doit être **un service ou un addon du projet** : le compilateur refuse un nom inconnu.
 
 ---
 
@@ -166,18 +163,35 @@ kuberpack.yaml (humain)
        ▼
 [ Compilateur Kuberpack ]
        │
+       ├──▶ projects/<p>/namespace.yaml              (Namespace du projet)
        ├──▶ projects/<p>/<service>/helmrelease.yaml   (référence chart stateless)
-       ├──▶ projects/<p>/<service>/values.yaml        (port, host, probes, peers, secrets ref)
+       ├──▶ projects/<p>/<service>/values.yaml        (port, host, probes, replicas, env, peers, secrets ref)
        ├──▶ projects/<p>/<service>/kustomization.yaml (ressources du service)
-       ├──▶ projects/<p>/postgres/cluster.yaml        (CR Cluster CloudNativePG)
-       ├──▶ projects/<p>/infisical/app-<service>.yaml (CR InfisicalStaticSecret)
+       ├──▶ projects/<p>/<service>/secret.yaml        (CR InfisicalStaticSecret, si le service déclare des secrets)
+       ├──▶ projects/<p>/postgres/database.yaml        (CR Cluster CloudNativePG)
        └──▶ projects/<p>/kustomization.yaml           (kustomization parent activant les services pinnés)
 ```
 
-1. **`HelmRelease` + `values.yaml` :** Utilise le chart Helm `stateless` officiel de Kuberpack avec Ingress Traefik, annotations ExternalDNS IPv6, probes, et `envFrom` raccordé au Secret généré.
-2. **Ressource `Cluster` CNPG :** Instancie la base PostgreSQL avec son pooler, ses credentials automatiques et sa rétention S3.
-3. **`NetworkPolicy` :** Traduit `policies.peers` et `policies.internet` en règles d'isolation Pod réseau natives.
-4. **`InfisicalStaticSecret` :** Branche la synchronisation des secrets depuis l'instance Infisical du homelab vers un Kubernetes Secret `app-<service>` (sans que les valeurs en clair ne transitent par Kuberpack).
+1. **`HelmRelease` + `values.yaml` :** Utilise le chart Helm `stateless` officiel de Kuberpack avec Ingress Traefik, annotations ExternalDNS IPv6, probes, `replicas`, `env`, et `envFrom` raccordé au Secret généré.
+2. **Namespace :** le projet crée son namespace (`namespace` du manifeste, ou le nom du projet) et toutes ses ressources y vivent : `HelmRelease`, `Cluster` CNPG, Secret applicatif.
+3. **Ressource `Cluster` CNPG :** Instancie la base PostgreSQL avec son pooler, ses credentials automatiques et la rétention déclarée.
+4. **`NetworkPolicy` :** Traduit `policies.peers` et `policies.internet` en règles d'isolation Pod réseau natives. `policies.defaultDeny: false` désactive la NetworkPolicy du service.
+5. **`InfisicalStaticSecret` :** Branche la synchronisation des secrets depuis l'instance Infisical du homelab vers un Kubernetes Secret `app-<service>` (sans que les valeurs en clair ne transitent par Kuberpack). L'objet généré est nommé `app-<projet>-<service>` pour que deux projets puissent déclarer un service du même nom.
+
+### Le compilateur refuse ce qu'il ne sait pas faire
+
+Un manifeste est parsé **strictement** : un champ inconnu est une erreur, pas un
+no-op silencieux. Le compilateur refuse explicitement :
+
+| Refus | Raison |
+|---|---|
+| champ inconnu (`publish_directory`, …) | il n'existe pas de implémentation ; le champ serait ignoré en silence |
+| `type` autre que `stateless` | le type `worker` n'existe pas encore |
+| `engine` d'addon autre que `cnpg` | seul CloudNativePG est supporté |
+| `backup.s3` | le profil de stockage S3 n'est pas décrit |
+| `peers` qui ne désigne ni un service ni un addon du projet | la règle n'aurait aucun effet |
+| `strategy` hors `auto`/`uv`/`railpack` | stratégie inconnue |
+| `repository` qui n'est pas `owner/name` | le dépôt serait introuvable |
 
 ---
 

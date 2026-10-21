@@ -87,7 +87,7 @@ func runProjectCreate(args []string) error {
 		Services: map[string]promote.Service{
 			sanitizeCLI(*service): {Type: "stateless", Repository: repo, Port: *port, Hostname: host},
 		},
-		Policies: promote.Policy{DefaultDeny: true},
+		Policies: promote.Policy{DefaultDeny: promote.BoolPtr(true)},
 	}
 	raw, err := yaml.Marshal(manifest)
 	if err != nil {

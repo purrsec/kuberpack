@@ -20,7 +20,7 @@ func TestEnsureProjectCompilesServicesAddonsPolicies(t *testing.T) {
 		Addons: map[string]Addon{
 			"postgres": {Engine: "cnpg", Database: "umami", Owner: "umami"},
 		},
-		Policies: Policy{DefaultDeny: true, Internet: &net, Peers: []string{"postgres"}},
+		Policies: Policy{DefaultDeny: BoolPtr(true), Internet: &net, Peers: []string{"postgres"}},
 	}
 	res, err := EnsureProject(context.Background(), ProjectRequest{
 		GitOpsURL: bare, GitOpsBranch: "main", Manifest: m,

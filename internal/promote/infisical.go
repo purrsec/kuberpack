@@ -16,7 +16,7 @@ func ensureSecretCR(work string, spec AppSpec, p Platform) ([]string, bool, erro
 	if !p.InfisicalEnabled() || len(spec.Secrets) == 0 {
 		return nil, false, nil
 	}
-	crRel := p.InfisicalCRPath(spec.Name)
+	crRel := p.InfisicalCRPath(infisicalObjectName(spec))
 	parentRel := p.InfisicalParentPath()
 	crPath := filepath.Join(work, filepath.FromSlash(crRel))
 	if err := os.MkdirAll(filepath.Dir(crPath), 0o755); err != nil {
@@ -56,7 +56,7 @@ func removeSecretCR(work string, spec AppSpec, p Platform) ([]string, bool, erro
 	if !p.InfisicalEnabled() {
 		return nil, false, nil
 	}
-	crRel := p.InfisicalCRPath(spec.Name)
+	crRel := p.InfisicalCRPath(infisicalObjectName(spec))
 	parentRel := p.InfisicalParentPath()
 	crPath := filepath.Join(work, filepath.FromSlash(crRel))
 	var paths []string
@@ -90,6 +90,16 @@ func removeSecretCR(work string, spec AppSpec, p Platform) ([]string, bool, erro
 	return paths, changed, nil
 }
 
+// infisicalObjectName is the name of the generated InfisicalStaticSecret.
+// A service of a project is scoped by its project: two projects may declare
+// a service with the same name.
+func infisicalObjectName(spec AppSpec) string {
+	if project := strings.TrimSpace(spec.Project); project != "" {
+		return AppRuntimeSecretName(sanitizeName(project) + "-" + spec.Name)
+	}
+	return AppRuntimeSecretName(spec.Name)
+}
+
 func infisicalCRContent(spec AppSpec, p Platform) string {
 	p = p.withDefaults()
 	var b strings.Builder
@@ -97,7 +107,7 @@ func infisicalCRContent(spec AppSpec, p Platform) string {
 	b.WriteString("apiVersion: secrets.infisical.com/v1beta1\n")
 	b.WriteString("kind: InfisicalStaticSecret\n")
 	b.WriteString("metadata:\n")
-	b.WriteString("  name: " + AppRuntimeSecretName(spec.Name) + "\n")
+	b.WriteString("  name: " + infisicalObjectName(spec) + "\n")
 	b.WriteString("  namespace: " + p.InfisicalNamespace + "\n")
 	b.WriteString("spec:\n")
 	b.WriteString("  infisicalAuthRef:\n")
@@ -112,7 +122,7 @@ func infisicalCRContent(spec AppSpec, p Platform) string {
 	b.WriteString("  targets:\n")
 	b.WriteString("    - kind: Secret\n")
 	b.WriteString("      name: " + AppRuntimeSecretName(spec.Name) + "\n")
-	b.WriteString("      namespace: " + p.ReleaseNamespace + "\n")
+	b.WriteString("      namespace: " + releaseNamespace(spec, p) + "\n")
 	b.WriteString("      creationPolicy: Orphan\n")
 	b.WriteString("      template:\n")
 	b.WriteString("        engineVersion: v1\n")

@@ -9,6 +9,7 @@ le travail tombe, et ce qui vaut dire « fait ».
 | 1 | [Logs de build](#1-logs-de-build) | à faire |
 | 2 | [Dimensionnement CPU/RAM](#2-dimensionnement-cpuram) | à faire |
 | 3 | [CLI de pilotage](#3-cli-de-pilotage) | à faire |
+| 4 | [Le manifeste pilote le déploiement](#4-le-manifeste-pilote-le-déploiement) | en cours |
 
 La phase 5 de la [feuille de route](docs/roadmap.md) couvre le point 3.
 
@@ -198,6 +199,79 @@ fonctionner depuis un poste, sans kubeconfig.
 - **`redeploy` est asynchrone.** La commande doit le dire et proposer de
   suivre le build (`--watch`), sinon elle donne l’impression d’avoir
   échoué.
+
+---
+
+## 4. Le manifeste pilote le déploiement
+
+`kuberpack.yaml` devient la source de vérité unique : il décrit ce qui est
+déployé, le control plane en déduit les apps et leurs builds. Le format est
+spécifié dans [docs/manifest.md](docs/manifest.md).
+
+Les breaking changes sont autorisés : il n’y a aucun utilisateur.
+
+### Étape 1 — le manifeste est honnête (fait)
+
+Un manifeste ne peut plus déclarer un champ que le compilateur ignore : le
+parsing est **strict** (un champ inconnu est une erreur) et le compilateur
+refuse explicitement ce qu’il ne sait pas faire (`type: worker`, un addon
+autre que `cnpg`, `backup.s3`, un `peer` inconnu, une stratégie invalide).
+
+Les champs qui ne servaient à rien servent maintenant :
+
+| Champ | Effet |
+| --- | --- |
+| `services.*.replicas` | rendu dans le `values.yaml` (défaut 1, jamais 0) |
+| `services.*.env` | rendu en liste `env` triée (le compilateur est déterministe) |
+| `services.*.build.*` | acceptés, validés (alimentent l’app record, étape 2) |
+| `services.*.branch`, `strategy` | acceptés, validés (idem) |
+| `policies.defaultDeny` | pilote la `NetworkPolicy` du chart |
+| `addons.*.backup.retention` | rendu en `retentionPolicy` CNPG |
+| `namespace` | le namespace du projet, réel : `HelmRelease`, `Cluster` CNPG, Secret applicatif et objet `Namespace` |
+
+### Étape 2 — le manifeste arme le pipeline (à faire)
+
+C’est le cœur : aujourd’hui `services.*.repository` est **inerte** — le
+manifeste compile du GitOps, mais le build ne part que si l’app a aussi été
+enregistrée via `POST /api/v1/apps`.
+
+Le compilateur doit produire, en plus des fichiers GitOps, la **description
+des apps** (repository, branche, stratégie, overrides de build). Le control
+plane les réconcilie alors dans SQLite et pose les webhooks Forgejo.
+
+| Élément | Emplacement |
+| --- | --- |
+| Sortie du compilateur | `internal/promote/project.go` (le résultat porte les apps) |
+| Réconciliation | `internal/control/projects.go` (store + client Forgejo) |
+| App record | `internal/store` (l’app devient une projection du manifeste) |
+| Webhook | `internal/forgejo` (idem qu’à l’enregistrement actuel) |
+
+### Étape 3 — l’API d’enregistrement disparaît (à faire)
+
+`POST/PATCH/DELETE /api/v1/apps` font doublon avec le manifeste : deux
+écrivains pour la même chose, donc deux sources de vérité. Les supprimer, ou
+les garder comme **éditeurs de manifeste** (ils écrivent le `kuberpack.yaml`
+puis le compilent) — c’est le même arbitrage, à trancher.
+
+`GET /api/v1/apps/{name}/builds` reste : c’est de l’état opérationnel.
+
+### Étape 4 — le chemin Flux des projets (à faire)
+
+Le `Kustomization` Flux watche `./kubernetes/vps/apps`, alors que les projets
+vivent dans `./kubernetes/vps/projects` : **les projets compilés ne sont
+jamais réconciliés**. Il faut un second `Kustomization` Flux, ou un chemin
+qui couvre les deux.
+
+### Pièges
+
+- **La compilation doit rester idempotente.** Un projet recompilé ne doit
+  jamais toucher un `values.yaml` déjà épinglé (règle d’or n°2).
+- **Le `values.yaml` reste la seule porte de sortie des artefacts.** Le
+  manifeste décrit l’intention, le digest est écrit par le control plane.
+- **Une app peut être déclarée sans `repository`.** Elle reste dans le
+  GitOps, jamais construite, et n’est activée qu’après le premier pin.
+- **Le webhook Forgejo du dépôt applicatif** doit être créé et retiré en même
+  temps que l’app dérivée du manifeste, sinon il reste orphelin.
 
 ---
 

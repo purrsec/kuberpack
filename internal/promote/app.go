@@ -11,6 +11,12 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/fetch"
 )
 
+// EnvVar is a literal environment variable of the application.
+type EnvVar struct {
+	Name  string `yaml:"name" json:"name"`
+	Value string `yaml:"value" json:"value"`
+}
+
 // AppSpec is what you describe. Kuberpack expands it to Helm + Kustomize.
 type AppSpec struct {
 	Name        string
@@ -21,6 +27,19 @@ type AppSpec struct {
 	Preview     bool
 	Internet    *bool
 	Peers       []string
+	// Env are the literal environment variables of the application.
+	Env []EnvVar
+	// NetworkPolicy overrides the platform default for the NetworkPolicy of
+	// the service. A manifest with defaultDeny: false declares an app that
+	// is not isolated.
+	NetworkPolicy *bool
+	// Project is the manifest project the service belongs to (empty outside
+	// a project). It scopes the generated Infisical object so two projects
+	// can declare a service with the same name.
+	Project string
+	// Namespace overrides the platform release namespace. A project with its
+	// own namespace keeps its services, its addons and its secrets there.
+	Namespace string
 	// Secrets are Infisical key names to inject into the app Secret as env
 	// vars of the same name. SecretEnv is the Infisical environment slug.
 	Secrets   []string
@@ -372,7 +391,7 @@ func valuesYAML(spec AppSpec, p Platform) string {
 	b.WriteString("port: " + strconv.Itoa(spec.Port) + "\n")
 	b.WriteString("healthcheck: " + spec.Healthcheck + "\n")
 	b.WriteString("hostname: " + spec.Hostname + "\n")
-	b.WriteString("replicas: " + strconv.Itoa(spec.Replicas) + "\n")
+	b.WriteString("replicas: " + strconv.Itoa(replicaCount(spec)) + "\n")
 	b.WriteString("ingressClassName: " + p.IngressClassName + "\n")
 	if p.ImagePullSecret != "" {
 		b.WriteString("imagePullSecrets:\n")
@@ -402,7 +421,7 @@ func valuesYAML(spec AppSpec, p Platform) string {
 		b.WriteString("    traefik.ingress.kubernetes.io/router.tls.certresolver: " + p.TraefikCertResolver + "\n")
 	}
 	b.WriteString("networkPolicy:\n")
-	if p.NetworkPolicy {
+	if networkPolicyEnabled(spec, p) {
 		b.WriteString("  enabled: true\n")
 	} else {
 		b.WriteString("  enabled: false\n")
@@ -428,16 +447,17 @@ func valuesYAML(spec AppSpec, p Platform) string {
 		b.WriteString("  limits:\n")
 		b.WriteString("    cpu: 200m\n")
 		b.WriteString("    memory: 128Mi\n")
-		// The preview's own database URL (highest priority) is a literal env,
-		// pulled from the CNPG-generated Secret; it beats any inherited value.
-		// Its peer (this preview's own database only) is set on spec.Peers by
-		// normalizeSpec and rendered by the networkPolicy block above.
-		if spec.PreviewDatabase {
-			b.WriteString("env:\n")
-			for _, line := range strings.Split(strings.TrimRight(previewDatabaseEnvYAML(spec), "\n"), "\n") {
-				b.WriteString("  " + line + "\n")
-			}
+	}
+	// The environment of the service: its literal variables, then the URL of
+	// the preview's own database (highest priority, pulled from the
+	// CNPG-generated Secret).
+	if env := envYAML(spec); env != "" {
+		b.WriteString("env:\n")
+		for _, line := range strings.Split(strings.TrimRight(env, "\n"), "\n") {
+			b.WriteString("  " + line + "\n")
 		}
+	}
+	if spec.Preview {
 		// A preview reads its own exact Secret (app-<app>-pr-<n>) and, in
 		// addition, inherits one source chosen by inherit_secret_from:
 		// "prod" -> the production Secret, "dev" (default) -> the shared `dev`
@@ -479,6 +499,52 @@ func internetEnabled(spec AppSpec) bool {
 	return *spec.Internet
 }
 
+// networkPolicyEnabled reports whether the service is isolated. The platform
+// decides by default; a manifest can opt a service out with defaultDeny:
+// false.
+func networkPolicyEnabled(spec AppSpec, p Platform) bool {
+	if spec.NetworkPolicy != nil {
+		return *spec.NetworkPolicy
+	}
+	return p.NetworkPolicy
+}
+
+// envYAML renders the `env` list of the values, without the indentation of
+// the block itself.
+func envYAML(spec AppSpec) string {
+	var b strings.Builder
+	// The preview's own database URL comes first: it is the value the
+	// developer expects to win over an inherited one.
+	if spec.Preview && spec.PreviewDatabase {
+		b.WriteString(previewDatabaseEnvYAML(spec))
+	}
+	for _, e := range spec.Env {
+		if strings.TrimSpace(e.Name) == "" {
+			continue
+		}
+		b.WriteString("- name: " + e.Name + "\n")
+		b.WriteString("  value: " + strconv.Quote(e.Value) + "\n")
+	}
+	return b.String()
+}
+
+// releaseNamespace is the namespace the resources of a service land in.
+func releaseNamespace(spec AppSpec, p Platform) string {
+	if ns := strings.TrimSpace(spec.Namespace); ns != "" {
+		return ns
+	}
+	return p.ReleaseNamespace
+}
+
+// replicaCount is the number of instances of a service. A service without a
+// declared count runs one instance, never zero.
+func replicaCount(spec AppSpec) int {
+	if spec.Replicas > 0 {
+		return spec.Replicas
+	}
+	return 1
+}
+
 func helmReleaseYAML(spec AppSpec, p Platform) string {
 	p = p.withDefaults()
 	return fmt.Sprintf(`apiVersion: helm.toolkit.fluxcd.io/v2
@@ -513,7 +579,7 @@ spec:
       remediateLastFailure: true
   test:
     enable: true
-`, spec.Name, p.ReleaseNamespace, p.ChartRef, p.ChartSourceKind, p.SourceName, p.SourceNamespace, spec.Name)
+`, spec.Name, releaseNamespace(spec, p), p.ChartRef, p.ChartSourceKind, p.SourceName, p.SourceNamespace, spec.Name)
 }
 
 func appKustomizationYAML(spec AppSpec, p Platform) string {
@@ -535,5 +601,5 @@ generatorOptions:
   disableNameSuffixHash: true
   labels:
     reconcile.fluxcd.io/watch: Enabled
-`, p.ReleaseNamespace, spec.Name)
+`, releaseNamespace(spec, p), spec.Name)
 }
