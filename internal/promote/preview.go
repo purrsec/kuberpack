@@ -20,13 +20,24 @@ type PreviewRequest struct {
 	GitOpsURL    string
 	GitOpsBranch string
 	HTTPToken    string
-	MaxAttempts  int
-	App          AppSpec
-	Platform     Platform
+	// AuthArgs are the git arguments that authenticate the clone of the
+	// GitOps repository. Every forge has its own way.
+	AuthArgs    []string
+	MaxAttempts int
+	App         AppSpec
+	Platform    Platform
+}
+
+// authArgs is how the clone of the GitOps repository is authenticated.
+func (req PreviewRequest) authArgs() []string {
+	if req.AuthArgs != nil {
+		return req.AuthArgs
+	}
+	return fetch.TokenHeaderArgs(req.HTTPToken)
 }
 
 func (req PreviewRequest) remoteGit(ctx context.Context, dir string, args ...string) (string, error) {
-	return runGit(ctx, dir, append(fetch.TokenHeaderArgs(req.HTTPToken), args...)...)
+	return runGit(ctx, dir, append(req.authArgs(), args...)...)
 }
 
 // EnsurePreviewBranch clones the previews branch, creating it if Forgejo has none yet.

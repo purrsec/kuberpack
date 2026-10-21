@@ -139,6 +139,7 @@ func (s *Server) handleGitOpsPush(ctx context.Context, payload pushPayload) erro
 		GitOpsURL:    s.cfg.GitOpsURL,
 		GitOpsBranch: s.cfg.GitOpsBranch,
 		HTTPToken:    s.cfg.Token,
+		AuthArgs:     s.cfg.Provider.CloneAuth(s.cfg.Token),
 		Projects:     projects,
 		Platform:     s.cfg.Platform,
 	})
@@ -252,6 +253,7 @@ func (s *Server) ensureChart(ctx context.Context) error {
 		GitOpsURL:    s.cfg.GitOpsURL,
 		GitOpsBranch: s.cfg.GitOpsBranch,
 		HTTPToken:    s.cfg.Token,
+		AuthArgs:     s.cfg.Provider.CloneAuth(s.cfg.Token),
 		ChartPath:    s.cfg.ChartPath,
 		ChartRef:     s.cfg.Platform.ChartRef,
 		Platform:     s.cfg.Platform,

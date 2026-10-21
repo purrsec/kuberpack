@@ -107,16 +107,44 @@ func (r *Registry) Tags(ctx context.Context, repository string) ([]string, error
 }
 
 func (r *Registry) do(ctx context.Context, method, path, accept string) (*http.Response, []byte, error) {
+	res, raw, err := r.request(ctx, method, path, accept, r.basicAuth())
+	if err != nil {
+		return nil, nil, err
+	}
+	if res.StatusCode != http.StatusUnauthorized {
+		return res, raw, nil
+	}
+	// A hosted registry (GHCR, ECR, GAR) refuses the credentials and asks
+	// for a token. The exchange is the standard flow of the registry API.
+	challenge, err := parseChallenge(res.Header.Get("Www-Authenticate"))
+	if err != nil {
+		return res, raw, nil
+	}
+	token, err := r.exchange(ctx, challenge)
+	if err != nil {
+		return res, raw, nil
+	}
+	return r.request(ctx, method, path, accept, "Bearer "+token)
+}
+
+// basicAuth is the header of a registry that accepts the credentials of the
+// platform directly.
+func (r *Registry) basicAuth() string {
+	user := r.User
+	if user == "" {
+		user = "token"
+	}
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+r.Token))
+}
+
+// request does one call to the registry with the given authorization.
+func (r *Registry) request(ctx context.Context, method, path, accept, authorization string) (*http.Response, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, method, r.BaseURL+path, nil)
 	if err != nil {
 		return nil, nil, err
 	}
 	req.Header.Set("Accept", accept)
-	user := r.User
-	if user == "" {
-		user = "token"
-	}
-	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(user+":"+r.Token)))
+	req.Header.Set("Authorization", authorization)
 
 	httpClient := r.HTTPClient
 	if httpClient == nil {

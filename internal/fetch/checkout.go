@@ -2,6 +2,7 @@ package fetch
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
@@ -67,6 +68,20 @@ func TokenHeaderArgs(token string) []string {
 		return nil
 	}
 	return []string{"-c", "http.extraHeader=Authorization: token " + token}
+}
+
+// BasicAuthArgs authenticates the clone with the basic scheme: the token is
+// the password, the user is a convention ("x-access-token" on GitHub,
+// "oauth2" on GitLab).
+func BasicAuthArgs(user, token string) []string {
+	if token == "" {
+		return nil
+	}
+	if user == "" {
+		user = "x-access-token"
+	}
+	encoded := base64.StdEncoding.EncodeToString([]byte(user + ":" + token))
+	return []string{"-c", "http.extraHeader=Authorization: Basic " + encoded}
 }
 
 func runGit(ctx context.Context, dir string, extra []string, args ...string) (string, error) {

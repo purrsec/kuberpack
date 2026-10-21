@@ -17,13 +17,24 @@ type ChartRequest struct {
 	GitOpsURL    string
 	GitOpsBranch string
 	HTTPToken    string
-	MaxAttempts  int
+	// AuthArgs are the git arguments that authenticate the clone of the
+	// GitOps repository. Every forge has its own way.
+	AuthArgs    []string
+	MaxAttempts int
 	// ChartPath is the chart on the disk of the control plane.
 	ChartPath string
 	// ChartRef is where the chart lives in the GitOps repository, the way
 	// the HelmRelease references it.
 	ChartRef string
 	Platform Platform
+}
+
+// authArgs is how the clone of the GitOps repository is authenticated.
+func (req ChartRequest) authArgs() []string {
+	if req.AuthArgs != nil {
+		return req.AuthArgs
+	}
+	return fetch.TokenHeaderArgs(req.HTTPToken)
 }
 
 // ChartResult is the outcome of a chart sync.
@@ -78,7 +89,7 @@ func EnsureChart(ctx context.Context, req ChartRequest) (ChartResult, error) {
 		if err := os.RemoveAll(work); err != nil {
 			return result, err
 		}
-		if _, err := runGit(ctx, "", append(fetch.TokenHeaderArgs(req.HTTPToken),
+		if _, err := runGit(ctx, "", append(req.authArgs(),
 			"clone", "--branch", req.GitOpsBranch, "--single-branch", req.GitOpsURL, work)...); err != nil {
 			return result, err
 		}
@@ -110,7 +121,7 @@ func EnsureChart(ctx context.Context, req ChartRequest) (ChartResult, error) {
 		if _, err := runGit(ctx, work, gitConfig("commit", "-m", "chart: update the stateless chart")...); err != nil {
 			return result, err
 		}
-		if _, err := runGit(ctx, work, append(fetch.TokenHeaderArgs(req.HTTPToken),
+		if _, err := runGit(ctx, work, append(req.authArgs(),
 			"push", "origin", "HEAD:"+req.GitOpsBranch)...); err != nil {
 			lastErr = err
 			if _, fetchErr := runGit(ctx, work, "fetch", "origin", req.GitOpsBranch); fetchErr != nil {

@@ -19,11 +19,14 @@ type Request struct {
 	ValuesPath   string
 	ChartPath    string
 	HTTPToken    string
-	Image        image.Ref
-	MaxAttempts  int
-	Hostname     string
-	Port         int
-	Healthcheck  string
+	// AuthArgs are the git arguments that authenticate the clone of the
+	// GitOps repository. Every forge has its own way.
+	AuthArgs    []string
+	Image       image.Ref
+	MaxAttempts int
+	Hostname    string
+	Port        int
+	Healthcheck string
 	// InheritSecretFrom is carried for a preview's inherited secret ("prod" or
 	// "dev"). Ignored outside preview.
 	InheritSecretFrom string

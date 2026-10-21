@@ -51,6 +51,7 @@ func main() {
 			AppName:         os.Getenv("KUBERPACK_APP_NAME"),
 			Environment:     os.Getenv("KUBERPACK_ENVIRONMENT"),
 			GenerateLock:    os.Getenv("KUBERPACK_GENERATE_LOCK") == "1" || os.Getenv("KUBERPACK_GENERATE_LOCK") == "true",
+			GitAuthScheme:   os.Getenv("KUBERPACK_GIT_AUTH"),
 		}); err != nil {
 			buildexec.WriteTermination(err.Error())
 			fmt.Fprintf(os.Stderr, "kuberpack builder: %v\n", err)

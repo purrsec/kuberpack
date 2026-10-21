@@ -17,6 +17,7 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/buildsarchive"
 	"git.host.bzh/pepe/kuberpack/internal/fail"
 	"git.host.bzh/pepe/kuberpack/internal/fetch"
+	"git.host.bzh/pepe/kuberpack/internal/git"
 	"git.host.bzh/pepe/kuberpack/internal/oci"
 	"git.host.bzh/pepe/kuberpack/internal/railpack"
 )
@@ -38,9 +39,12 @@ type Request struct {
 	// GenerateLock tells the builder to resolve the Python dependencies when
 	// the repository has no lock file.
 	GenerateLock bool
-	BuildsGitURL string
-	AppName      string
-	Environment  string
+	// GitAuthScheme is how the forge of the application authenticates a
+	// clone: "token" or "basic".
+	GitAuthScheme string
+	BuildsGitURL  string
+	AppName       string
+	Environment   string
 }
 
 // The builder Secret is written by the operator (Infisical or kubectl). Its
@@ -104,7 +108,11 @@ func Run(ctx context.Context, req Request) (digest string, err error) {
 		return "", fail.Stage(fail.Auth, err)
 	}
 	source := filepath.Join(work, "src")
-	if err := fetch.Checkout(ctx, req.CloneURL, req.CommitSHA, source, fetch.TokenHeaderArgs(gitToken)); err != nil {
+	// The forge of the application has its own way to authenticate a clone:
+	// a token in a header for a Gitea, the basic scheme for GitHub and
+	// GitLab.
+	authArgs := git.CloneAuthArgs(req.GitAuthScheme, gitToken)
+	if err := fetch.Checkout(ctx, req.CloneURL, req.CommitSHA, source, authArgs); err != nil {
 		return "", fail.Stage(fail.Clone, err)
 	}
 	fmt.Printf("checked out %s\n", req.CommitSHA)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"git.host.bzh/pepe/kuberpack/internal/fetch"
 	"git.host.bzh/pepe/kuberpack/internal/forgejo"
 	"git.host.bzh/pepe/kuberpack/internal/hmacsig"
 )
@@ -81,6 +82,10 @@ func (p *ForgejoProvider) WebURL() string {
 		return ""
 	}
 	return p.Client.BaseURL
+}
+
+func (p *ForgejoProvider) CloneAuth(token string) []string {
+	return fetch.TokenHeaderArgs(token)
 }
 
 func (p *ForgejoProvider) CurrentUser(ctx context.Context) (string, error) {

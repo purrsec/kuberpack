@@ -46,8 +46,20 @@ func sanitizeGitArgs(args []string) []string {
 	return out
 }
 
+// authArgs is how the clone of the GitOps repository is authenticated.
+func (req Request) authArgs() []string {
+	if req.AuthArgs != nil {
+		return req.AuthArgs
+	}
+	return fetch.TokenHeaderArgs(req.HTTPToken)
+}
+
 func (req Request) remoteGit(ctx context.Context, dir string, args ...string) (string, error) {
-	return runGit(ctx, dir, append(fetch.TokenHeaderArgs(req.HTTPToken), args...)...)
+	auth := req.AuthArgs
+	if auth == nil {
+		auth = fetch.TokenHeaderArgs(req.HTTPToken)
+	}
+	return runGit(ctx, dir, append(auth, args...)...)
 }
 
 func gitConfig(args ...string) []string {

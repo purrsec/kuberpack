@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"git.host.bzh/pepe/kuberpack/internal/fetch"
 )
 
 // GitLabProvider talks to the GitLab API v4.
@@ -192,6 +194,10 @@ func (p *GitLabProvider) ResolveCommit(ctx context.Context, owner, name, ref str
 
 func (p *GitLabProvider) WebURL() string {
 	return strings.TrimSuffix(p.APIURL, "/api/v4")
+}
+
+func (p *GitLabProvider) CloneAuth(token string) []string {
+	return fetch.BasicAuthArgs("oauth2", token)
 }
 
 func (p *GitLabProvider) CurrentUser(ctx context.Context) (string, error) {

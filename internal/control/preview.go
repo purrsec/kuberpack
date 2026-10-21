@@ -138,6 +138,7 @@ func (s *Server) prunePreview(ctx context.Context, app store.App, pr int, releas
 			GitOpsURL:    s.cfg.GitOpsURL,
 			GitOpsBranch: previewBranch(s.cfg.Platform),
 			HTTPToken:    s.cfg.Token,
+			AuthArgs:     s.cfg.Provider.CloneAuth(s.cfg.Token),
 			App: promote.AppSpec{
 				Name:              releaseName,
 				Hostname:          host,

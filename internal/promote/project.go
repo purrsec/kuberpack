@@ -169,12 +169,23 @@ type ProjectRequest struct {
 	GitOpsURL    string
 	GitOpsBranch string
 	HTTPToken    string
-	MaxAttempts  int
-	Manifest     ProjectManifest
-	Platform     Platform
+	// AuthArgs are the git arguments that authenticate the clone of the
+	// GitOps repository. Every forge has its own way.
+	AuthArgs    []string
+	MaxAttempts int
+	Manifest    ProjectManifest
+	Platform    Platform
 	// Raw is the caller's exact manifest text; written verbatim so comments
 	// and ordering survive. Falls back to a re-marshal when empty.
 	Raw string
+}
+
+// authArgs is how the clone of the GitOps repository is authenticated.
+func (req ProjectRequest) authArgs() []string {
+	if req.AuthArgs != nil {
+		return req.AuthArgs
+	}
+	return fetch.TokenHeaderArgs(req.HTTPToken)
 }
 
 // ProjectApp is the operational description of a service of a project: what

@@ -36,7 +36,10 @@ type Request struct {
 	RegistryUser    string
 	// GenerateLock tells the builder to resolve the Python dependencies when
 	// the repository has no lock file.
-	GenerateLock  bool
+	GenerateLock bool
+	// GitAuthScheme is how the forge of the application authenticates a
+	// clone: "token" or "basic". It is not a secret.
+	GitAuthScheme string
 	StartCmd      string
 	RootDirectory string
 	BuildCommand  string
@@ -256,6 +259,7 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 		{Name: "KUBERPACK_IMAGE_REPOSITORY", Value: req.ImageRepository},
 		{Name: "KUBERPACK_REGISTRY_USER", Value: req.RegistryUser},
 		{Name: "KUBERPACK_GENERATE_LOCK", Value: strconv.FormatBool(req.GenerateLock)},
+		{Name: "KUBERPACK_GIT_AUTH", Value: req.GitAuthScheme},
 		{Name: "KUBERPACK_START_CMD", Value: req.StartCmd},
 		{Name: "KUBERPACK_ROOT_DIRECTORY", Value: req.RootDirectory},
 		{Name: "KUBERPACK_BUILD_CMD", Value: req.BuildCommand},

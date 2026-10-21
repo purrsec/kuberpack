@@ -3,6 +3,8 @@ package git
 import (
 	"fmt"
 	"strings"
+
+	"git.host.bzh/pepe/kuberpack/internal/fetch"
 )
 
 // The kinds of forge Kuberpack knows.
@@ -29,6 +31,32 @@ type Config struct {
 // Kinds lists the supported forges.
 func Kinds() []string {
 	return []string{KindForgejo, KindGitHub, KindGitLab}
+}
+
+// The authentication schemes of a clone.
+const (
+	// AuthToken sends the token in a header, the way a Gitea expects it.
+	AuthToken = "token"
+	// AuthBasic sends the token as the password of a basic authentication.
+	AuthBasic = "basic"
+)
+
+// AuthScheme is the way a forge authenticates a clone.
+func AuthScheme(provider string) string {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case KindGitHub, KindGitLab:
+		return AuthBasic
+	default:
+		return AuthToken
+	}
+}
+
+// CloneAuthArgs builds the git arguments of a clone for a scheme.
+func CloneAuthArgs(scheme, token string) []string {
+	if scheme == AuthBasic {
+		return fetch.BasicAuthArgs("x-access-token", token)
+	}
+	return fetch.TokenHeaderArgs(token)
 }
 
 // New builds the provider of a forge.

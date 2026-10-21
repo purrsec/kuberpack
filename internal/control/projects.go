@@ -32,6 +32,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		GitOpsURL:    s.cfg.GitOpsURL,
 		GitOpsBranch: s.cfg.GitOpsBranch,
 		HTTPToken:    s.cfg.Token,
+		AuthArgs:     s.cfg.Provider.CloneAuth(s.cfg.Token),
 		Manifest:     m,
 		Raw:          body.Manifest,
 		Platform:     s.cfg.Platform,
@@ -60,6 +61,7 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 		GitOpsURL:    s.cfg.GitOpsURL,
 		GitOpsBranch: s.cfg.GitOpsBranch,
 		HTTPToken:    s.cfg.Token,
+		AuthArgs:     s.cfg.Provider.CloneAuth(s.cfg.Token),
 		Manifest:     promote.ProjectManifest{Project: name},
 		Platform:     s.cfg.Platform,
 	})
@@ -84,6 +86,7 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 		GitOpsURL:    s.cfg.GitOpsURL,
 		GitOpsBranch: s.cfg.GitOpsBranch,
 		HTTPToken:    s.cfg.Token,
+		AuthArgs:     s.cfg.Provider.CloneAuth(s.cfg.Token),
 		Platform:     s.cfg.Platform,
 	})
 	if err != nil {
@@ -110,6 +113,7 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 		GitOpsURL:    s.cfg.GitOpsURL,
 		GitOpsBranch: s.cfg.GitOpsBranch,
 		HTTPToken:    s.cfg.Token,
+		AuthArgs:     s.cfg.Provider.CloneAuth(s.cfg.Token),
 		Manifest:     promote.ProjectManifest{Project: name},
 		Platform:     s.cfg.Platform,
 	})

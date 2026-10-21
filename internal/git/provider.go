@@ -108,6 +108,10 @@ type Provider interface {
 	// WebURL is the base URL of the forge, the one a human opens in a
 	// browser. The links of the commit statuses lead there.
 	WebURL() string
+	// CloneAuth is the git arguments that authenticate a clone of one of
+	// its repositories. Every forge has its own way: a token in a header
+	// for a Gitea, the basic scheme for GitHub and GitLab.
+	CloneAuth(token string) []string
 	// CurrentUser is the account the token belongs to. The images are
 	// published under that namespace: the code may live in the repository
 	// of somebody else.

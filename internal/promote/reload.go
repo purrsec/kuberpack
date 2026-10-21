@@ -16,7 +16,10 @@ type ReloadRequest struct {
 	GitOpsURL    string
 	GitOpsBranch string
 	HTTPToken    string
-	MaxAttempts  int
+	// AuthArgs are the git arguments that authenticate the clone of the
+	// GitOps repository. Every forge has its own way.
+	AuthArgs    []string
+	MaxAttempts int
 	// Projects are the names of the projects to reload. Empty means every
 	// project of the repository.
 	Projects []string
@@ -227,15 +230,23 @@ func removeProjectFiles(work string, project string, platform Platform) error {
 	return os.WriteFile(parentPath, removeKustomizationResource(raw, project), 0o644)
 }
 
+// authArgs is how the clone of the GitOps repository is authenticated.
+func (req ReloadRequest) authArgs() []string {
+	if req.AuthArgs != nil {
+		return req.AuthArgs
+	}
+	return fetch.TokenHeaderArgs(req.HTTPToken)
+}
+
 // cloneGitOps clones the GitOps repository.
 func cloneGitOps(ctx context.Context, req ReloadRequest, work string) (string, error) {
-	return runGit(ctx, "", append(fetch.TokenHeaderArgs(req.HTTPToken),
+	return runGit(ctx, "", append(req.authArgs(),
 		"clone", "--branch", req.GitOpsBranch, "--single-branch", req.GitOpsURL, work)...)
 }
 
 // pushGitOps pushes the work tree to the GitOps repository.
 func pushGitOps(ctx context.Context, req ReloadRequest, work string) (string, error) {
-	return runGit(ctx, work, append(fetch.TokenHeaderArgs(req.HTTPToken),
+	return runGit(ctx, work, append(req.authArgs(),
 		"push", "origin", "HEAD:"+req.GitOpsBranch)...)
 }
 

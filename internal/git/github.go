@@ -14,6 +14,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"git.host.bzh/pepe/kuberpack/internal/fetch"
 )
 
 // GitHubProvider talks to the GitHub REST API.
@@ -213,6 +215,10 @@ func (p *GitHubProvider) ResolveCommit(ctx context.Context, owner, name, ref str
 
 func (p *GitHubProvider) WebURL() string {
 	return p.WebURLBase
+}
+
+func (p *GitHubProvider) CloneAuth(token string) []string {
+	return fetch.BasicAuthArgs("x-access-token", token)
 }
 
 func (p *GitHubProvider) CurrentUser(ctx context.Context) (string, error) {

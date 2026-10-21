@@ -64,6 +64,7 @@ func PinExisting(ctx context.Context, req Request) (Result, error) {
 		ValuesPath:   values,
 		ChartPath:    req.ChartPath,
 		HTTPToken:    req.Token,
+		AuthArgs:     req.Provider.CloneAuth(req.Token),
 		Image:        ref,
 		Hostname:     req.Hostname,
 		Port:         req.Port,
