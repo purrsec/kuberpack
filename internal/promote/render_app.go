@@ -28,6 +28,22 @@ func RenderParentKustomization(namespace string, resources []string) string {
 	return string(b)
 }
 
+// RenderCertificate renders the certificate of an application. The platform
+// issues the certificates of the applications with cert-manager: the
+// application is reached in HTTPS without asking Traefik for a resolver it
+// may not know.
+func RenderCertificate(spec AppSpec, p Platform) string {
+	p = p.withDefaults()
+	if spec.TLSSecretName == "" || spec.Hostname == "" {
+		return ""
+	}
+	return "apiVersion: cert-manager.io/v1\nkind: Certificate\nmetadata:\n  name: " + spec.TLSSecretName +
+		"\nspec:\n  secretName: " + spec.TLSSecretName +
+		"\n  dnsNames:\n    - " + spec.Hostname +
+		"\n  issuerRef:\n    name: " + p.Issuer +
+		"\n    kind: ClusterIssuer\n"
+}
+
 // RenderSecretCR renders an InfisicalStaticSecret for a service. Kept here so
 // the compiler stays free of Infisical internals.
 func RenderSecretCR(spec AppSpec, p Platform) string { return infisicalCRContent(spec, p) }

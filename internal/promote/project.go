@@ -454,6 +454,7 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string,
 					name, sname)
 			}
 		}
+		spec.TLSSecretName = sname + "-tls"
 		dir := filepath.Join(work, filepath.FromSlash(p.projectServiceDir(project, sname)))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, nil, nil, err
@@ -470,6 +471,11 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string,
 		}
 		if err := writeFile(filepath.Join(dir, "kustomization.yaml"), RenderAppKustomization(spec, p)); err != nil {
 			return nil, nil, nil, err
+		}
+		if certificate := RenderCertificate(spec, p); certificate != "" {
+			if err := writeFile(filepath.Join(dir, "certificate.yaml"), certificate); err != nil {
+				return nil, nil, nil, err
+			}
 		}
 		if len(svc.Secrets) > 0 && p.InfisicalEnabled() {
 			if err := writeIfMissing(filepath.Join(dir, "secret.yaml"), RenderSecretCR(spec, p)); err != nil {

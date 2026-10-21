@@ -1,6 +1,8 @@
 package main
 
 import (
+	"log"
+
 	"context"
 	"flag"
 	"fmt"
@@ -15,6 +17,7 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/git"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
 	"git.host.bzh/pepe/kuberpack/internal/store"
+	"k8s.io/client-go/kubernetes"
 )
 
 func runServe(args []string) error {
@@ -80,7 +83,15 @@ func runServe(args []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// The platform writes in the cluster the secret that pulls the images of
+	// its registry: a credential never goes to a Git repository.
+	kubeClient, err := clusterClient()
+	if err != nil {
+		log.Printf("kuberpack: the cluster is not reachable: %v", err)
+	}
+
 	srv := control.New(control.Config{
+		Kube:         kubeClient,
 		Builder:      jobBuilder,
 		Store:        db,
 		Secrets:      store.SecretsDir(filepath.Join(*dataDir, "secrets")),
@@ -107,6 +118,15 @@ func runServe(args []string) error {
 	}
 	fmt.Printf("kuberpack listening on %s\n", *addr)
 	return httpSrv.ListenAndServe()
+}
+
+// clusterClient builds the client of the cluster the control plane runs in.
+func clusterClient() (kubernetes.Interface, error) {
+	config, err := kubeConfig()
+	if err != nil {
+		return nil, err
+	}
+	return kubernetes.NewForConfig(config)
 }
 
 func platformFromEnv() promote.Platform {

@@ -25,6 +25,31 @@ rules:
     verbs: [get, list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kuberpack-app-secrets
+rules:
+  # The platform writes the secret that pulls the images of its registry, in
+  # the namespace of every application. A credential never goes to a Git
+  # repository, so it is written in the cluster.
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, create, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kuberpack-app-secrets
+subjects:
+  - kind: ServiceAccount
+    name: kuberpack
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kuberpack-app-secrets
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: kuberpack-build-dispatch

@@ -69,6 +69,9 @@ type AppSpec struct {
 	// PreviewDatabase provisions an empty, isolated CloudNativePG database for
 	// the preview and points DATABASE_URL at it (opt-in).
 	PreviewDatabase bool
+	// TLSSecretName is the secret that holds the certificate of the
+	// application. It is empty when the platform has no issuer.
+	TLSSecretName string
 }
 
 // PreviewSecretSource values for AppSpec.InheritSecretFrom.
@@ -267,6 +270,9 @@ func valuesYAML(spec AppSpec, p Platform) string {
 	b.WriteString("ingress:\n")
 	if p.IngressTLS {
 		b.WriteString("  tls: true\n")
+		if spec.TLSSecretName != "" {
+			b.WriteString("  tlsSecretName: " + spec.TLSSecretName + "\n")
+		}
 	} else {
 		b.WriteString("  tls: false\n")
 	}
@@ -284,7 +290,10 @@ func valuesYAML(spec AppSpec, p Platform) string {
 	// The certificate resolver belongs to the TLS configuration: Traefik
 	// refuses to create a router that points to a resolver it does not know,
 	// and an ingress without TLS has no certificate to resolve.
-	if p.IngressTLS && p.TraefikCertResolver != "" {
+	// The resolver of Traefik is only used when the platform does not issue
+	// the certificates itself: a router that names a resolver that does
+	// not exist is refused.
+	if p.IngressTLS && p.TraefikCertResolver != "" && spec.TLSSecretName == "" {
 		b.WriteString("    traefik.ingress.kubernetes.io/router.tls.certresolver: " + p.TraefikCertResolver + "\n")
 	}
 	b.WriteString("networkPolicy:\n")
@@ -479,13 +488,17 @@ spec:
 
 func appKustomizationYAML(spec AppSpec, p Platform) string {
 	p = p.withDefaults()
+	resources := "  - helmrelease.yaml"
+	if spec.TLSSecretName != "" {
+		resources += "\n  - certificate.yaml"
+	}
 	return fmt.Sprintf(`apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 namespace: %s
 
 resources:
-  - helmrelease.yaml
+%s
 
 configMapGenerator:
   - name: %s-values
@@ -496,5 +509,5 @@ generatorOptions:
   disableNameSuffixHash: true
   labels:
     reconcile.fluxcd.io/watch: Enabled
-`, releaseNamespace(spec, p), spec.Name)
+`, releaseNamespace(spec, p), resources, spec.Name)
 }

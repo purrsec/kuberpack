@@ -26,7 +26,10 @@ type Platform struct {
 	ExternalDNSTTL      string
 	TraefikEntrypoint   string
 	TraefikCertResolver string
-	NetworkPolicy       bool
+	// Issuer is the cert-manager issuer that signs the certificates of the
+	// applications. Empty means the platform has no issuer.
+	Issuer        string
+	NetworkPolicy bool
 	// Infisical: where app secrets are synced from. Empty ProjectID disables
 	// the generated InfisicalStaticSecret.
 	InfisicalAuthRef   string
@@ -89,6 +92,9 @@ func (p Platform) withDefaults() Platform {
 	}
 	if p.TraefikCertResolver == "" {
 		p.TraefikCertResolver = "letsencrypt"
+	}
+	if p.Issuer == "" {
+		p.Issuer = "letsencrypt"
 	}
 	if p.InfisicalAuthRef == "" {
 		p.InfisicalAuthRef = "contabo-vps"

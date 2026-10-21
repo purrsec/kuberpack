@@ -2,6 +2,8 @@ package control
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -10,7 +12,11 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/git"
 	"git.host.bzh/pepe/kuberpack/internal/hmacsig"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
+	"git.host.bzh/pepe/kuberpack/internal/release"
 	"git.host.bzh/pepe/kuberpack/internal/store"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // reconcileApps makes the operational state of a project match its manifest.
@@ -72,6 +78,13 @@ func (s *Server) reconcileApp(ctx context.Context, project string, desc promote.
 		}
 	}
 
+	// The application pulls the image of the platform's registry: the secret
+	// that holds the credentials lives in the cluster, in the namespace of
+	// the application. It is never written in the GitOps repository.
+	if err := s.ensurePullSecret(ctx, desc.Namespace); err != nil {
+		log.Printf("kuberpack app %s: the secret of the registry: %v", desc.Name, err)
+	}
+
 	if s.cfg.WebhookURL != "" {
 		provider, owner, repo, err := s.appForge(app)
 		if err != nil {
@@ -100,6 +113,50 @@ func (s *Server) reconcileApp(ctx context.Context, project string, desc promote.
 		}
 	}
 	return nil
+}
+
+// ensurePullSecret makes sure the application can pull the images of the
+// platform's registry. The secret is written in the cluster: a credential
+// does not belong in a Git repository.
+func (s *Server) ensurePullSecret(ctx context.Context, namespace string) error {
+	if s.cfg.Kube == nil {
+		return nil
+	}
+	name := strings.TrimSpace(s.cfg.Platform.ImagePullSecret)
+	host := release.RegistryHost(s.cfg.RegistryURL)
+	if name == "" || host == "" || namespace == "" {
+		return nil
+	}
+	user := strings.TrimSpace(s.cfg.RegistryUser)
+	if user == "" {
+		user = "token"
+	}
+	auth := base64.StdEncoding.EncodeToString([]byte(user + ":" + s.cfg.Token))
+	payload, err := json.Marshal(map[string]any{
+		"auths": map[string]any{
+			host: map[string]string{
+				"username": user,
+				"password": s.cfg.Token,
+				"auth":     auth,
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Type:       corev1.SecretTypeDockerConfigJson,
+		Data:       map[string][]byte{corev1.DockerConfigJsonKey: payload},
+	}
+	secrets := s.cfg.Kube.CoreV1().Secrets(namespace)
+	if _, err := secrets.Create(ctx, secret, metav1.CreateOptions{}); err == nil {
+		return nil
+	} else if !apierrors.IsAlreadyExists(err) {
+		return err
+	}
+	_, err = secrets.Update(ctx, secret, metav1.UpdateOptions{})
+	return err
 }
 
 // removeApp drops everything an app owns: the webhook, the secret and the

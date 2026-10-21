@@ -22,6 +22,7 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/promote"
 	"git.host.bzh/pepe/kuberpack/internal/release"
 	"git.host.bzh/pepe/kuberpack/internal/store"
+	"k8s.io/client-go/kubernetes"
 )
 
 // deliveryNonce returns a short random suffix for a delivery id. An explicit
@@ -72,6 +73,10 @@ type Config struct {
 	FluxSecret        string
 	Run               func(context.Context, release.Request) (release.Result, error)
 	GitOpsFile        func(context.Context, store.App) ([]byte, error)
+	// Kube is the cluster the applications live in. The platform writes
+	// there what must not be written in the GitOps repository: the secret
+	// that pulls the images of the registry.
+	Kube kubernetes.Interface
 }
 
 type Server struct {
