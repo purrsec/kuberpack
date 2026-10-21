@@ -1,5 +1,7 @@
 package promote
 
+import "strings"
+
 // Exported renderers so the project compiler can reuse the stateless chart
 // contract instead of duplicating it.
 
@@ -26,6 +28,32 @@ func RenderParentKustomization(namespace string, resources []string) string {
 		b = append(b, ("  - " + r + "\n")...)
 	}
 	return string(b)
+}
+
+// RenderRegistryRBAC renders the right the platform has to write the
+// secret that pulls the images of the registry, in the namespace of the
+// application.
+//
+// The right lives in the GitOps repository: it is not a secret, and the
+// repository is the truth of the cluster. The credential it allows to
+// write stays in the cluster. The platform never reads a secret of the
+// cluster, and it never writes one outside of the namespace of its own
+// applications.
+func RenderRegistryRBAC(spec AppSpec, p Platform) string {
+	p = p.withDefaults()
+	name := strings.TrimSpace(p.ImagePullSecret)
+	if name == "" || spec.Namespace == "" {
+		return ""
+	}
+	return "apiVersion: rbac.authorization.k8s.io/v1\nkind: Role\nmetadata:\n  name: " + name +
+		"\n  namespace: " + spec.Namespace +
+		"\nrules:\n  - apiGroups: [\"\"]\n    resources: [secrets]\n    verbs: [create]\n" +
+		"  - apiGroups: [\"\"]\n    resources: [secrets]\n    resourceNames: [" + name +
+		"]\n    verbs: [update, patch]\n" +
+		"---\napiVersion: rbac.authorization.k8s.io/v1\nkind: RoleBinding\nmetadata:\n  name: " + name +
+		"\n  namespace: " + spec.Namespace +
+		"\nsubjects:\n  - kind: ServiceAccount\n    name: kuberpack\n    namespace: " + p.ControlPlaneNamespace +
+		"\nroleRef:\n  apiGroup: rbac.authorization.k8s.io\n  kind: Role\n  name: " + name + "\n"
 }
 
 // RenderCertificate renders the certificate of an application. The platform

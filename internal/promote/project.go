@@ -472,6 +472,11 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string,
 		if err := writeFile(filepath.Join(dir, "kustomization.yaml"), RenderAppKustomization(spec, p)); err != nil {
 			return nil, nil, nil, err
 		}
+		if rbac := RenderRegistryRBAC(spec, p); rbac != "" {
+			if err := writeFile(filepath.Join(dir, "rbac.yaml"), rbac); err != nil {
+				return nil, nil, nil, err
+			}
+		}
 		if certificate := RenderCertificate(spec, p); certificate != "" {
 			if err := writeFile(filepath.Join(dir, "certificate.yaml"), certificate); err != nil {
 				return nil, nil, nil, err

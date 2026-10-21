@@ -28,8 +28,12 @@ type Platform struct {
 	TraefikCertResolver string
 	// Issuer is the cert-manager issuer that signs the certificates of the
 	// applications. Empty means the platform has no issuer.
-	Issuer        string
-	NetworkPolicy bool
+	Issuer string
+	// ControlPlaneNamespace is the namespace of the control plane. The
+	// application namespaces grant it the right to write the secret that
+	// pulls the images of the registry.
+	ControlPlaneNamespace string
+	NetworkPolicy         bool
 	// Infisical: where app secrets are synced from. Empty ProjectID disables
 	// the generated InfisicalStaticSecret.
 	InfisicalAuthRef   string
@@ -95,6 +99,9 @@ func (p Platform) withDefaults() Platform {
 	}
 	if p.Issuer == "" {
 		p.Issuer = "letsencrypt"
+	}
+	if p.ControlPlaneNamespace == "" {
+		p.ControlPlaneNamespace = "kuberpack"
 	}
 	if p.InfisicalAuthRef == "" {
 		p.InfisicalAuthRef = "contabo-vps"

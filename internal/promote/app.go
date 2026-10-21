@@ -492,6 +492,9 @@ func appKustomizationYAML(spec AppSpec, p Platform) string {
 	if spec.TLSSecretName != "" {
 		resources += "\n  - certificate.yaml"
 	}
+	if p.ImagePullSecret != "" {
+		resources += "\n  - rbac.yaml"
+	}
 	return fmt.Sprintf(`apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
