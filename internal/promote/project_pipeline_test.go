@@ -111,7 +111,7 @@ func TestProjectManifestChangeUpdatesTheRuntimeAndKeepsTheDigest(t *testing.T) {
 				Repository: "owner/repo",
 				Port:       8080,
 				Hostname:   "site.example.org",
-				Replicas:   1,
+				Replicas:   intPtr(1),
 			},
 		},
 	}
@@ -143,7 +143,7 @@ func TestProjectManifestChangeUpdatesTheRuntimeAndKeepsTheDigest(t *testing.T) {
 		Repository: "owner/repo",
 		Port:       9090,
 		Hostname:   "new.example.org",
-		Replicas:   3,
+		Replicas:   intPtr(3),
 		Env:        map[string]string{"NODE_ENV": "production"},
 	}
 	res, err := EnsureProject(context.Background(), ProjectRequest{

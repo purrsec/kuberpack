@@ -118,7 +118,7 @@ policies:
 		t.Fatal(err)
 	}
 	svc := m.Services["app"]
-	if svc.Replicas != 3 || svc.Env["NODE_ENV"] != "production" {
+	if *svc.Replicas != 3 || svc.Env["NODE_ENV"] != "production" {
 		t.Fatalf("service: %+v", svc)
 	}
 	if svc.Build == nil || svc.Build.RootDirectory != "frontend" {
@@ -144,7 +144,7 @@ func TestProjectCompilesTheRuntimeContract(t *testing.T) {
 				Repository: "owner/repo",
 				Port:       8080,
 				Hostname:   "app.example.org",
-				Replicas:   3,
+				Replicas:   intPtr(3),
 				Env:        map[string]string{"NODE_ENV": "production", "API_URL": "https://x"},
 			},
 		},
@@ -288,3 +288,6 @@ func TestProjectAddonBackupRetention(t *testing.T) {
 		t.Fatalf("database:\n%s", db)
 	}
 }
+
+// intPtr is the number of replicas of a service, when it is declared.
+func intPtr(v int) *int { return &v }

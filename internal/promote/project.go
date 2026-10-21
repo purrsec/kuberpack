@@ -42,7 +42,7 @@ type Service struct {
 	Port        int      `yaml:"port,omitempty" json:"port,omitempty"`
 	Hostname    string   `yaml:"hostname,omitempty" json:"hostname,omitempty"`
 	Healthcheck string   `yaml:"healthcheck,omitempty" json:"healthcheck,omitempty"`
-	Replicas    int      `yaml:"replicas,omitempty" json:"replicas,omitempty"`
+	Replicas    *int     `yaml:"replicas,omitempty" json:"replicas,omitempty"`
 	Secrets     []string `yaml:"secrets,omitempty" json:"secrets,omitempty"`
 	SecretEnv   string   `yaml:"secret_env,omitempty" json:"secret_env,omitempty"`
 	// Env are literal environment variables of the application.

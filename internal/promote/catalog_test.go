@@ -360,3 +360,41 @@ func TestANewProjectThatDoesNotFitIsRefused(t *testing.T) {
 		t.Errorf("a project that is already deployed must not be refused: %v", err)
 	}
 }
+
+// A service that declares zero replicas is declared and not run: it is
+// not the same as a service that says nothing.
+func TestAServiceWithZeroReplicasIsDeclaredAndNotRun(t *testing.T) {
+	bare := setupAppsGitOps(t)
+	zero := 0
+	m := ProjectManifest{
+		Project: "demo",
+		Services: map[string]Service{
+			"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "demo.host.bzh", Replicas: &zero},
+		},
+	}
+	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{NetworkPolicy: true}}
+	if _, err := EnsureProject(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	tree := readRemoteTree(t, bare)
+	values := readFile(t, tree, "kubernetes/vps/projects/demo/app/values.yaml")
+	if !strings.Contains(values, "replicas: 0") {
+		t.Errorf("the service must be declared with zero replicas:\n%s", values)
+	}
+	// A service that says nothing gets one.
+	one := ProjectManifest{
+		Project: "other",
+		Services: map[string]Service{
+			"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "other.host.bzh"},
+		},
+	}
+	if _, err := EnsureProject(context.Background(), ProjectRequest{
+		GitOpsURL: bare, GitOpsBranch: "main", Manifest: one, Platform: Platform{NetworkPolicy: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	values = readFile(t, readRemoteTree(t, bare), "kubernetes/vps/projects/other/app/values.yaml")
+	if !strings.Contains(values, "replicas: 1") {
+		t.Errorf("a service that says nothing must get one replica:\n%s", values)
+	}
+}

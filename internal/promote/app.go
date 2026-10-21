@@ -43,7 +43,7 @@ type AppSpec struct {
 	Hostname    string
 	Port        int
 	Healthcheck string
-	Replicas    int
+	Replicas    *int
 	Preview     bool
 	Internet    *bool
 	Peers       []string
@@ -174,8 +174,9 @@ func normalizeSpec(spec AppSpec) (AppSpec, error) {
 	if !strings.HasPrefix(spec.Healthcheck, "/") {
 		spec.Healthcheck = "/" + spec.Healthcheck
 	}
-	if spec.Replicas <= 0 {
-		spec.Replicas = 1
+	if spec.Replicas == nil {
+		one := 1
+		spec.Replicas = &one
 	}
 	if spec.Preview {
 		spec.Peers = nil
@@ -513,8 +514,10 @@ func releaseNamespace(spec AppSpec, p Platform) string {
 // replicaCount is the number of instances of a service. A service without a
 // declared count runs one instance, never zero.
 func replicaCount(spec AppSpec) int {
-	if spec.Replicas > 0 {
-		return spec.Replicas
+	// A service that declares zero replicas is declared and not run. A
+	// service that declares nothing gets one.
+	if spec.Replicas != nil && *spec.Replicas >= 0 {
+		return *spec.Replicas
 	}
 	return 1
 }
