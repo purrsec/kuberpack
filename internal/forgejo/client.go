@@ -165,11 +165,54 @@ func (c *Client) HookByURL(ctx context.Context, owner, repo, hookURL string) (Ho
 	return Hook{}, false, nil
 }
 
-func (c *Client) EnsureHook(ctx context.Context, owner, repo, hookURL, secret string) (Hook, error) {
-	if existing, ok, err := c.HookByURL(ctx, owner, repo, hookURL); err != nil {
+// UpdateHook rewrites the configuration of an existing webhook. Forgejo keeps
+// the secret server-side: it must be pushed again whenever it is rotated.
+func (c *Client) UpdateHook(ctx context.Context, owner, repo string, id int64, hookURL, secret string) (Hook, error) {
+	if id <= 0 {
+		return Hook{}, fmt.Errorf("hook id is required")
+	}
+	body, err := json.Marshal(map[string]any{
+		"type":   "gitea",
+		"active": true,
+		"events": []string{"push", "pull_request"},
+		"config": map[string]string{
+			"url":          hookURL,
+			"content_type": "json",
+			"secret":       secret,
+			"http_method":  "post",
+		},
+	})
+	if err != nil {
 		return Hook{}, err
-	} else if ok {
-		return existing, nil
+	}
+	var hook Hook
+	path := "/api/v1/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/hooks/" + fmt.Sprint(id)
+	if err := c.doJSON(ctx, http.MethodPatch, path, body, &hook, http.StatusOK, http.StatusCreated); err != nil {
+		return Hook{}, err
+	}
+	return hook, nil
+}
+
+// EnsureHook creates the webhook, or rotates the secret of the existing one.
+// The secret is per application and is regenerated on every registration: an
+// existing hook left untouched would sign with the previous secret and every
+// incoming webhook would be rejected.
+func (c *Client) EnsureHook(ctx context.Context, owner, repo, hookURL, secret string) (Hook, error) {
+	existing, ok, err := c.HookByURL(ctx, owner, repo, hookURL)
+	if err != nil {
+		return Hook{}, err
+	}
+	if !ok {
+		return c.CreateHook(ctx, owner, repo, hookURL, secret)
+	}
+	updated, err := c.UpdateHook(ctx, owner, repo, existing.ID, hookURL, secret)
+	if err == nil {
+		return updated, nil
+	}
+	// Some Forgejo versions refuse to patch the secret in place. Recreate the
+	// hook instead of leaving the application with a stale secret.
+	if delErr := c.DeleteHook(ctx, owner, repo, existing.ID); delErr != nil {
+		return Hook{}, fmt.Errorf("update hook %d: %w (delete failed: %v)", existing.ID, err, delErr)
 	}
 	return c.CreateHook(ctx, owner, repo, hookURL, secret)
 }

@@ -245,3 +245,48 @@ func TestCreateHook(t *testing.T) {
 		t.Fatalf("%+v", hook)
 	}
 }
+
+// The HMAC secret is rotated on every registration: an existing hook must be
+// updated, otherwise Forgejo keeps signing with the previous secret and every
+// incoming webhook is rejected.
+func TestEnsureHookRotatesTheSecretOfAnExistingHook(t *testing.T) {
+	var patchedPath, patchedSecret string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/repos/pepe/hello-world/hooks", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]any{
+			map[string]any{"id": 7, "config": map[string]string{"url": "https://kp/hooks/forgejo"}},
+		})
+	})
+	mux.HandleFunc("/api/v1/repos/pepe/hello-world/hooks/7", func(w http.ResponseWriter, r *http.Request) {
+		patchedPath = r.URL.Path
+		var body struct {
+			Config map[string]string `json:"config"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("hook body: %v", err)
+		}
+		patchedSecret = body.Config["secret"]
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": 7, "config": body.Config})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c, err := New(srv.URL, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.HTTPClient = srv.Client()
+	hook, err := c.EnsureHook(context.Background(), "pepe", "hello-world", "https://kp/hooks/forgejo", "rotated")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hook.ID != 7 {
+		t.Fatalf("%+v", hook)
+	}
+	if patchedPath != "/api/v1/repos/pepe/hello-world/hooks/7" {
+		t.Fatalf("patched %q", patchedPath)
+	}
+	if patchedSecret != "rotated" {
+		t.Fatalf("secret %q was not rotated", patchedSecret)
+	}
+}
