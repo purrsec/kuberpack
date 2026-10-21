@@ -102,7 +102,37 @@ services:
     run_as_root: true        # l'application tourne en root
     capabilities:            # les capabilities que l'application a besoin
       - CHOWN
+    startup_budget: 600      # secondes pour démarrer (défaut : 600)
 ```
+
+#### `startup_budget` : le temps de démarrage
+
+Une application qui met trois minutes à démarrer (une JVM ✗) se fait tuer
+par la sonde de démarrage avant d'avoir fini, redémarre, et tourne en
+boucle. Le manifeste dit combien de temps elle a le droit.
+
+```yaml
+services:
+  stirling:
+    type: stateless
+    image: docker.io/stirlingtools/stirling-pdf@sha256:10164ffe...
+    port: 8080
+    startup_budget: 600
+```
+
+#### La capacité du nœud
+
+Un cluster qui n'a pas assez de mémoire ne tombe pas proprement : le noyau
+commence par tuer le plus gros processus, et ce n'est jamais celui que
+l'utilisateur croit. Le compilateur refuse donc un projet qui ne tient pas
+dans le nœud, en disant combien il faut et combien il y a.
+
+La mémoire du nœud se déclare dans la plateforme
+(`KUBERPACK_NODE_MEMORY=3916Mi`). Le contrôle regarde **tous** les projets
+de la plateforme, pas un à la fois : c'est la somme qui tue un cluster.
+
+Un projet qui est déjà déployé n'est jamais « refusé » — il tourne. Seul un
+nouveau projet peut l'être, et les autres continuent à se déployer.
 
 #### `image` : une application tierce
 
