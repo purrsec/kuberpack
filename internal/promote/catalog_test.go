@@ -1,6 +1,7 @@
 package promote
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -59,5 +60,51 @@ func TestTheCatalogueHoldsTheContract(t *testing.T) {
 	}
 	if len(entry.Env) < 2 {
 		t.Errorf("the contract is too small: %v", entry.Env)
+	}
+}
+
+// A type that writes the resources of an operator is refused when the
+// platform does not declare it: the whole project would fail to apply.
+func TestATypeThatNeedsAnOperatorIsRefusedWithoutIt(t *testing.T) {
+	bare := setupAppsGitOps(t)
+	m := ProjectManifest{
+		Project:  "demo",
+		Addons:   map[string]Addon{"postgres": {Engine: "cnpg", Database: "demo"}},
+		Services: map[string]Service{"app": {Type: "stateless", Port: 8080, Hostname: "demo.host.bzh"}},
+	}
+	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{}}
+	_, err := EnsureProject(context.Background(), req)
+	if err == nil {
+		t.Fatal("a type that needs an operator must be refused when the platform does not declare it")
+	}
+	if !strings.Contains(err.Error(), "cnpg") {
+		t.Errorf("the error does not name the operator: %v", err)
+	}
+	// The platform that declares the operator compiles the project.
+	req.Platform = Platform{AddonOperators: []string{"cnpg"}}
+	if _, err := EnsureProject(context.Background(), req); err != nil {
+		t.Fatalf("the platform that declares the operator must compile the project: %v", err)
+	}
+}
+
+// The pods of an addon are reachable by the applications of their project,
+// and by nothing else.
+func TestTheAddonPodsAreIsolated(t *testing.T) {
+	entry, ok := AddonCatalogEntry("postgres")
+	if !ok {
+		t.Fatal("the type postgres is not in the catalogue")
+	}
+	policy := addonNetworkPolicy("boutique-postgres", "boutique", entry.Kind, "postgres", "boutique",
+		[]int{5432}, "cnpg-system")
+	for _, want := range []string{
+		"kind: NetworkPolicy",
+		"kuberpack.io/addon: postgres",
+		"kuberpack.io/addon-name: postgres",
+		"port: 5432",
+		"kubernetes.io/metadata.name: cnpg-system",
+	} {
+		if !strings.Contains(policy, want) {
+			t.Errorf("the policy does not carry %q:\n%s", want, policy)
+		}
 	}
 }

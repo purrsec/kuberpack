@@ -102,7 +102,17 @@ func (cnpgEngine) Render(dir string, spec AddonSpec, platform Platform) (AddonRe
 	if err := writeAddonFiles(dir, addonFile{name: "dump.yaml", content: databaseDumpJob(name, namespace, database, image)}); err != nil {
 		return AddonResult{}, err
 	}
-	if err := writeAddonFiles(dir, addonFile{name: "kustomization.yaml", content: addonKustomization("database.yaml")}); err != nil {
+	if err := writeAddonFiles(dir, addonFile{
+		name: "networkpolicy.yaml",
+		content: addonNetworkPolicy(name, namespace, entry.Kind, sanitizeName(spec.Name),
+			sanitizeName(spec.Project), []int{5432, 8000, 9090}, "cnpg-system"),
+	}); err != nil {
+		return AddonResult{}, err
+	}
+	if err := writeAddonFiles(dir, addonFile{
+		name:    "kustomization.yaml",
+		content: addonKustomization("database.yaml", "networkpolicy.yaml"),
+	}); err != nil {
 		return AddonResult{}, err
 	}
 

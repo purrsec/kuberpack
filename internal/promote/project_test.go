@@ -24,7 +24,7 @@ func TestEnsureProjectCompilesServicesAddonsPolicies(t *testing.T) {
 	}
 	res, err := EnsureProject(context.Background(), ProjectRequest{
 		GitOpsURL: bare, GitOpsBranch: "main", Manifest: m,
-		Platform: Platform{NetworkPolicy: true, IngressTLS: true},
+		Platform: Platform{NetworkPolicy: true, IngressTLS: true, AddonOperators: []string{"cnpg"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +96,7 @@ func TestDeleteProjectRemovesItFromTheProjectsParent(t *testing.T) {
 		Project:  "demo",
 		Services: map[string]Service{"app": {Type: "stateless", Port: 8080, Hostname: "demo.host.bzh"}},
 	}
-	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{NetworkPolicy: true}}
+	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{NetworkPolicy: true, AddonOperators: []string{"cnpg"}}}
 	if _, err := EnsureProject(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestEnsureProjectPreservesPinnedImage(t *testing.T) {
 		Project:  "demo",
 		Services: map[string]Service{"app": {Type: "stateless", Port: 8080, Hostname: "demo.host.bzh"}},
 	}
-	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{NetworkPolicy: true}}
+	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{NetworkPolicy: true, AddonOperators: []string{"cnpg"}}}
 	if _, err := EnsureProject(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestDeleteProjectRefusesToDropADatabase(t *testing.T) {
 		},
 		Services: map[string]Service{"app": {Type: "stateless", Port: 8080, Hostname: "demo.host.bzh"}},
 	}
-	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{NetworkPolicy: true}}
+	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{NetworkPolicy: true, AddonOperators: []string{"cnpg"}}}
 	if _, err := EnsureProject(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}

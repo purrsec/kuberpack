@@ -28,7 +28,7 @@ func TestServiceUsesTheEnvOfItsAddon(t *testing.T) {
 	}
 	if _, err := EnsureProject(context.Background(), ProjectRequest{
 		GitOpsURL: bare, GitOpsBranch: "main", Manifest: m,
-		Platform: Platform{NetworkPolicy: true},
+		Platform: Platform{NetworkPolicy: true, AddonOperators: []string{"cnpg"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestAddonPeerIsNotDuplicated(t *testing.T) {
 	}
 	if _, err := EnsureProject(context.Background(), ProjectRequest{
 		GitOpsURL: bare, GitOpsBranch: "main", Manifest: m,
-		Platform: Platform{NetworkPolicy: true},
+		Platform: Platform{NetworkPolicy: true, AddonOperators: []string{"cnpg"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestValkeyAddonRendersItsOwnObjects(t *testing.T) {
 	}
 	if _, err := EnsureProject(context.Background(), ProjectRequest{
 		GitOpsURL: bare, GitOpsBranch: "main", Manifest: m,
-		Platform: Platform{NetworkPolicy: true},
+		Platform: Platform{NetworkPolicy: true, AddonOperators: []string{"cnpg"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestTheNetworkPeerCarriesTheNameOfTheAddon(t *testing.T) {
 		Port:        8080,
 		Healthcheck: "/healthz",
 		AddonPeers:  peers,
-	}, Platform{})
+	}, Platform{AddonOperators: []string{"cnpg"}})
 	for _, want := range []string{"kind: postgres", "name: reporting", "name: orders", "for: boutique", "port: 5432"} {
 		if !strings.Contains(values, want) {
 			t.Errorf("the values do not carry %q:\n%s", want, values)

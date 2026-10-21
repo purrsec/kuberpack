@@ -152,7 +152,7 @@ func TestProjectCompilesTheRuntimeContract(t *testing.T) {
 	}
 	if _, err := EnsureProject(context.Background(), ProjectRequest{
 		GitOpsURL: bare, GitOpsBranch: "main", Manifest: m,
-		Platform: Platform{NetworkPolicy: true, IngressTLS: true},
+		Platform: Platform{NetworkPolicy: true, IngressTLS: true, AddonOperators: []string{"cnpg"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestProjectServiceWithoutReplicasRunsOneInstance(t *testing.T) {
 	}
 	if _, err := EnsureProject(context.Background(), ProjectRequest{
 		GitOpsURL: bare, GitOpsBranch: "main", Manifest: m,
-		Platform: Platform{NetworkPolicy: true},
+		Platform: Platform{NetworkPolicy: true, AddonOperators: []string{"cnpg"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func TestProjectWithoutDefaultDenyHasNoNetworkPolicy(t *testing.T) {
 	}
 	if _, err := EnsureProject(context.Background(), ProjectRequest{
 		GitOpsURL: bare, GitOpsBranch: "main", Manifest: m,
-		Platform: Platform{NetworkPolicy: true},
+		Platform: Platform{NetworkPolicy: true, AddonOperators: []string{"cnpg"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func TestProjectNamespaceIsTheNamespaceOfItsResources(t *testing.T) {
 	}
 	if _, err := EnsureProject(context.Background(), ProjectRequest{
 		GitOpsURL: bare, GitOpsBranch: "main", Manifest: m,
-		Platform: Platform{NetworkPolicy: true, ReleaseNamespace: "apps"},
+		Platform: Platform{NetworkPolicy: true, ReleaseNamespace: "apps", AddonOperators: []string{"cnpg"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +278,7 @@ func TestProjectAddonBackupRetention(t *testing.T) {
 	}
 	if _, err := EnsureProject(context.Background(), ProjectRequest{
 		GitOpsURL: bare, GitOpsBranch: "main", Manifest: m,
-		Platform: Platform{NetworkPolicy: true},
+		Platform: Platform{NetworkPolicy: true, AddonOperators: []string{"cnpg"}},
 	}); err != nil {
 		t.Fatal(err)
 	}

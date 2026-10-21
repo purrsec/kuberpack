@@ -1,6 +1,7 @@
 # The cache of the projects. It is a cache: it holds no durable data, and
 # the storage is optional.
 type: valkey
+engine: valkey
 kind: valkey
 port: 6379
 image: docker.io/valkey/valkey@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507

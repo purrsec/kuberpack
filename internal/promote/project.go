@@ -689,6 +689,13 @@ func compileAddons(work string, m ProjectManifest, project string, namespace str
 			return nil, nil, fmt.Errorf("addon %q: engine %q is not available (%s)",
 				name, addon.Engine, strings.Join(AddonEngineNames(), ", "))
 		}
+		// The type writes the resources of an operator: without it, the
+		// whole project fails to apply, not only the database.
+		if operator := addonOperator(addon.Engine); operator != "" && !hasOperator(p, operator) {
+			return nil, nil, fmt.Errorf(
+				"addon %q: the type %q needs the operator %q, which the platform does not declare (it declares: %s)",
+				name, addon.Engine, operator, strings.Join(p.AddonOperators, ", "))
+		}
 		aname := sanitizeName(name)
 		dir := filepath.Join(work, filepath.FromSlash(p.projectAddonDir(project, aname)))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -824,6 +831,25 @@ func projectAddonsOf(work string, p Platform, project string) ([]string, error) 
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// addonOperator returns the operator the type of an engine needs.
+func addonOperator(engine string) string {
+	entry, ok := AddonCatalogEntryForEngine(engine)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(entry.Operator)
+}
+
+// hasOperator reports whether the platform declares an operator.
+func hasOperator(p Platform, operator string) bool {
+	for _, declared := range p.AddonOperators {
+		if strings.EqualFold(strings.TrimSpace(declared), operator) {
+			return true
+		}
+	}
+	return false
 }
 
 // writeFile writes a generated file. The platform owns these files: they

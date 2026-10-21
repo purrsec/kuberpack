@@ -45,6 +45,11 @@ type Platform struct {
 	// PostgresImage is the image of the PostgreSQL databases of the
 	// projects. It is a digest: an addon is pinned like an application.
 	PostgresImage string
+	// AddonOperators are the operators the cluster has. A type of addon
+	// that writes the resources of an operator is refused when the
+	// operator is not declared: the project would fail to apply as a
+	// whole, not only the database.
+	AddonOperators []string
 	// PreviewDatabase* configure the per-preview CloudNativePG database
 	// (empty, isolated). Used only when an app opts in.
 	PreviewDatabaseImage   string

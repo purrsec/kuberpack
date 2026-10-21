@@ -152,6 +152,7 @@ func platformFromEnv() promote.Platform {
 		InfisicalDir:           getenv("KUBERPACK_INFISICAL_DIR", "kubernetes/vps/infisical"),
 		InfisicalNamespace:     getenv("KUBERPACK_INFISICAL_NAMESPACE", "infisical"),
 		PostgresImage:          getenv("KUBERPACK_POSTGRES_IMAGE", ""),
+		AddonOperators:         splitList(getenv("KUBERPACK_ADDON_OPERATORS", "")),
 		PostgresStorage:        getenv("KUBERPACK_POSTGRES_STORAGE", ""),
 		PostgresStorageClass:   getenv("KUBERPACK_POSTGRES_STORAGE_CLASS", ""),
 		PreviewDatabaseImage:   getenv("KUBERPACK_PREVIEW_DB_IMAGE", ""),

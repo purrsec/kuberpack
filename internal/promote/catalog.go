@@ -58,6 +58,13 @@ type AddonEntry struct {
 	// key of the secret that holds them. The values never pass through
 	// Kuberpack.
 	Env map[string]string `yaml:"env"`
+	// Operator is the operator the type needs in the cluster: a type
+	// that writes the resources of an operator is refused when the
+	// platform does not declare it.
+	Operator string `yaml:"operator"`
+	// Engine is the engine that renders this type. The manifest may name
+	// the type or the engine.
+	Engine string `yaml:"engine"`
 }
 
 // AddonCatalog is the catalogue of the addons of the platform.
@@ -107,6 +114,24 @@ func (c *AddonCatalog) Entry(name string) (AddonEntry, bool) {
 // Types lists the types of the catalogue.
 func (c *AddonCatalog) Types() []string {
 	return append([]string{}, c.types...)
+}
+
+// EntryForEngine returns the entry of the type an engine renders. The
+// manifest may name the type ("postgres") or the engine ("cnpg").
+func (c *AddonCatalog) EntryForEngine(name string) (AddonEntry, bool) {
+	name = strings.ToLower(strings.TrimSpace(name))
+	for _, entry := range c.entries {
+		if strings.EqualFold(entry.Engine, name) {
+			return entry, true
+		}
+	}
+	return c.Entry(name)
+}
+
+// AddonCatalogEntryForEngine returns the entry of the type an engine
+// renders.
+func AddonCatalogEntryForEngine(name string) (AddonEntry, bool) {
+	return catalog.EntryForEngine(name)
 }
 
 // AddonCatalogEntry returns the entry of a type of addon of the platform.

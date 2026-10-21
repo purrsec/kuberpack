@@ -3,8 +3,13 @@
 # contract of the environment. A type of addon is a file, not a hundred
 # lines of code.
 type: postgres
+engine: cnpg
 kind: postgres
 port: 5432
+# The operator this type needs in the cluster. A project that declares a
+# PostgreSQL database is refused when the platform does not have the
+# operator: the whole project would fail to apply, not only the database.
+operator: cnpg
 # The image of the server. It is pinned: a tag can be moved, and the addon
 # would then run something else than what was reviewed.
 image: ghcr.io/cloudnative-pg/postgresql:16.10-minimal-trixie@sha256:294fd7631f8d66fa54bf6ffa2948af685a20fb695fe748a6bafa71c42f1233b7
