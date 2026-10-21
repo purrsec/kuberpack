@@ -52,6 +52,26 @@ type Service struct {
 	Addons []string `yaml:"addons,omitempty" json:"addons,omitempty"`
 	// Build holds the build-time overrides of the service.
 	Build *BuildOptions `yaml:"build,omitempty" json:"build,omitempty"`
+	// Volumes are the volumes of the service. A volume without a size is
+	// temporary; a volume with a size is a disk that outlives the pod.
+	// It is how a database that is a file is deployed.
+	Volumes []Volume `yaml:"volumes,omitempty" json:"volumes,omitempty"`
+	// WritableRoot lets the service write in its own filesystem. A
+	// published image sometimes expects it.
+	WritableRoot bool `yaml:"writable_root,omitempty" json:"writable_root,omitempty"`
+	// RunAsRoot lets the service run as root. A published image with an
+	// init system sometimes expects it.
+	RunAsRoot bool `yaml:"run_as_root,omitempty" json:"run_as_root,omitempty"`
+}
+
+// Volume is a volume of a service.
+type Volume struct {
+	// Name is the name of the volume.
+	Name string `yaml:"name" json:"name"`
+	// Path is where the volume is mounted.
+	Path string `yaml:"path" json:"path"`
+	// Size is the size of the disk. Empty means a temporary volume.
+	Size string `yaml:"size,omitempty" json:"size,omitempty"`
 }
 
 // BuildOptions are the build-time overrides of a service.
@@ -492,6 +512,9 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string,
 		spec.TLSSecretName = sname + "-tls"
 		// A service that runs a published image is not built.
 		spec.Image = strings.TrimSpace(svc.Image)
+		spec.Volumes = svc.Volumes
+		spec.WritableRoot = svc.WritableRoot
+		spec.RunAsRoot = svc.RunAsRoot
 		dir := filepath.Join(work, filepath.FromSlash(p.projectServiceDir(project, sname)))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, nil, nil, err
@@ -508,6 +531,16 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string,
 		}
 		if err := writeFile(filepath.Join(dir, "kustomization.yaml"), RenderAppKustomization(spec, p)); err != nil {
 			return nil, nil, nil, err
+		}
+		// A volume with a size is a disk: the claim is written with the
+		// service, so the data outlives the pod.
+		for _, volume := range spec.Volumes {
+			if volume.Size == "" {
+				continue
+			}
+			if err := writeFile(filepath.Join(dir, volume.Name+".pvc.yaml"), RenderVolumeClaim(volume, spec, p)); err != nil {
+				return nil, nil, nil, err
+			}
 		}
 		if rbac := RenderRegistryRBAC(spec, p); rbac != "" {
 			if err := writeFile(filepath.Join(dir, "rbac.yaml"), rbac); err != nil {

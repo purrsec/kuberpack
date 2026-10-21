@@ -21,9 +21,9 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       securityContext:
-        runAsNonRoot: true
-        runAsUser: {{ .Values.podSecurityContext.runAsUser }}
-        runAsGroup: {{ .Values.podSecurityContext.runAsGroup }}
+        runAsNonRoot: {{ not .Values.runAsRoot }}
+        runAsUser: {{ if .Values.runAsRoot }}0{{ else }}{{ .Values.podSecurityContext.runAsUser }}{{ end }}
+        runAsGroup: {{ if .Values.runAsRoot }}0{{ else }}{{ .Values.podSecurityContext.runAsGroup }}{{ end }}
         fsGroup: {{ .Values.podSecurityContext.fsGroup }}
         seccompProfile:
           type: RuntimeDefault
@@ -74,16 +74,29 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            runAsNonRoot: true
-            runAsUser: {{ .Values.podSecurityContext.runAsUser }}
-            runAsGroup: {{ .Values.podSecurityContext.runAsGroup }}
+            readOnlyRootFilesystem: {{ not .Values.writableRoot }}
+            runAsNonRoot: {{ not .Values.runAsRoot }}
+            runAsUser: {{ if .Values.runAsRoot }}0{{ else }}{{ .Values.podSecurityContext.runAsUser }}{{ end }}
+            runAsGroup: {{ if .Values.runAsRoot }}0{{ else }}{{ .Values.podSecurityContext.runAsGroup }}{{ end }}
             capabilities:
               drop:
                 - ALL
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- range .Values.volumes }}
+            - name: {{ .name }}
+              mountPath: {{ .path }}
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
+        {{- range .Values.volumes }}
+        - name: {{ .name }}
+          {{- if .size }}
+          persistentVolumeClaim:
+            claimName: {{ .name }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}

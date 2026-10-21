@@ -75,3 +75,12 @@ func RenderCertificate(spec AppSpec, p Platform) string {
 // RenderSecretCR renders an InfisicalStaticSecret for a service. Kept here so
 // the compiler stays free of Infisical internals.
 func RenderSecretCR(spec AppSpec, p Platform) string { return infisicalCRContent(spec, p) }
+
+// RenderVolumeClaim renders the claim of a volume of a service. The disk
+// outlives the pod: it is what a database that is a file lives on.
+func RenderVolumeClaim(volume Volume, spec AppSpec, p Platform) string {
+	p = p.withDefaults()
+	return "apiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  name: " + volume.Name +
+		"\n  namespace: " + releaseNamespace(spec, p) +
+		"\nspec:\n  accessModes: [\"ReadWriteOnce\"]\n  resources:\n    requests:\n      storage: " + volume.Size + "\n"
+}

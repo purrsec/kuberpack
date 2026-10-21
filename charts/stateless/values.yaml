@@ -28,6 +28,14 @@ envFrom: []
 # Extra literal env entries (name/value or valueFrom). Used by previews to
 # expose the preview database details without putting credentials in Git.
 env: []
+# The volumes of the application. A volume without a size is a temporary
+# one; a volume with a size is a disk that outlives the pod. It is how a
+# database that is a file is deployed.
+volumes: []
+# A published image sometimes writes in its own filesystem, and expects to
+# be root: the manifest says so when it is the case.
+writableRoot: false
+runAsRoot: false
 # Railpack images often have USER root. A numeric UID is required for runAsNonRoot.
 podSecurityContext:
   runAsUser: 65534

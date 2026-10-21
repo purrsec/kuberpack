@@ -79,6 +79,12 @@ type AppSpec struct {
 	// Image is the published image the application runs, when it is not
 	// built from a repository.
 	Image string
+	// Volumes are the volumes of the application.
+	Volumes []Volume
+	// WritableRoot lets the application write in its own filesystem.
+	WritableRoot bool
+	// RunAsRoot lets the application run as root.
+	RunAsRoot bool
 }
 
 // PreviewSecretSource values for AppSpec.InheritSecretFrom.
@@ -326,6 +332,24 @@ func valuesYAML(spec AppSpec, p Platform) string {
 			b.WriteString("    - " + peer + "\n")
 		}
 	}
+	// The volumes of the application: a temporary one, or a disk that
+	// outlives the pod.
+	if len(spec.Volumes) > 0 {
+		b.WriteString("volumes:\n")
+		for _, volume := range spec.Volumes {
+			b.WriteString("  - name: " + volume.Name + "\n")
+			b.WriteString("    path: " + volume.Path + "\n")
+			if volume.Size != "" {
+				b.WriteString("    size: " + volume.Size + "\n")
+			}
+		}
+	}
+	if spec.WritableRoot {
+		b.WriteString("writableRoot: true\n")
+	}
+	if spec.RunAsRoot {
+		b.WriteString("runAsRoot: true\n")
+	}
 	if len(spec.AddonPeers) == 0 {
 		b.WriteString("  addonPeers: []\n")
 	} else {
@@ -508,6 +532,11 @@ func appKustomizationYAML(spec AppSpec, p Platform) string {
 	}
 	if p.ImagePullSecret != "" {
 		resources += "\n  - rbac.yaml"
+	}
+	for _, volume := range spec.Volumes {
+		if volume.Size != "" {
+			resources += "\n  - " + volume.Name + ".pvc.yaml"
+		}
 	}
 	return fmt.Sprintf(`apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
