@@ -166,7 +166,10 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		return Result{}, fail.Stage(fail.Push, err)
 	}
 	log("waiting for %s:%s", ociRepo, oci.TagForCommit(sha))
-	digest, err := reg.ManifestDigest(ctx, ociName, oci.TagForCommit(sha))
+	// The registry can lag behind the Job that just pushed the image: retry
+	// instead of failing the build on a transient hiccup. The budget is
+	// capped so the total wait stays bounded by --wait.
+	digest, err := reg.WaitForCommit(ctx, ociName, sha, min(req.Wait, 2*time.Minute), 0)
 	if err != nil {
 		return Result{}, fail.Stage(fail.Push, err)
 	}

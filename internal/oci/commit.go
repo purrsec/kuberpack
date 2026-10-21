@@ -27,6 +27,8 @@ func (r *Registry) DigestForCommit(ctx context.Context, repository, commitSHA st
 }
 
 // WaitForCommit polls until DigestForCommit succeeds or the deadline expires.
+// A registry hiccup (404 while the tag is being published, 5xx, transport
+// error) is retried; an explicit rejection (401/403) fails immediately.
 func (r *Registry) WaitForCommit(ctx context.Context, repository, commitSHA string, timeout, interval time.Duration) (string, error) {
 	if timeout <= 0 {
 		timeout = defaultWait
@@ -47,7 +49,7 @@ func (r *Registry) WaitForCommit(ctx context.Context, repository, commitSHA stri
 		if ctx.Err() != nil {
 			break
 		}
-		if !IsNotFound(err) {
+		if !IsTransient(err) {
 			return "", err
 		}
 		timer := time.NewTimer(interval)

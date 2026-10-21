@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -67,10 +68,10 @@ func (r *Registry) ManifestDigest(ctx context.Context, repository, tag string) (
 		}
 	}
 	if res.StatusCode == http.StatusNotFound {
-		return "", notFoundError{fmt.Sprintf("%s:%s not in registry", repository, tag)}
+		return "", statusError{http.StatusNotFound, fmt.Sprintf("%s:%s not in registry", repository, tag)}
 	}
 	if res.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("registry %s %s", res.Status, hintBody(raw))
+		return "", statusError{res.StatusCode, fmt.Sprintf("registry %s %s", res.Status, hintBody(raw))}
 	}
 	digest := strings.ToLower(strings.TrimSpace(res.Header.Get("Docker-Content-Digest")))
 	if digest == "" {
@@ -91,10 +92,10 @@ func (r *Registry) Tags(ctx context.Context, repository string) ([]string, error
 		return nil, err
 	}
 	if res.StatusCode == http.StatusNotFound {
-		return nil, notFoundError{repository + " has no tags"}
+		return nil, statusError{http.StatusNotFound, repository + " has no tags"}
 	}
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("registry tags %s %s", res.Status, hintBody(raw))
+		return nil, statusError{res.StatusCode, fmt.Sprintf("registry tags %s %s", res.Status, hintBody(raw))}
 	}
 	var body struct {
 		Tags []string `json:"tags"`
@@ -136,15 +137,38 @@ func (r *Registry) do(ctx context.Context, method, path, accept string) (*http.R
 	return res, raw, nil
 }
 
-type notFoundError struct {
-	msg string
+// statusError carries the HTTP status of a registry answer so callers can
+// tell "not published yet" (404) from "rejected" (401/403) from a hiccup.
+type statusError struct {
+	code int
+	msg  string
 }
 
-func (e notFoundError) Error() string { return e.msg }
+func (e statusError) Error() string { return e.msg }
 
+// IsNotFound reports whether the registry answered 404.
 func IsNotFound(err error) bool {
-	_, ok := err.(notFoundError)
-	return ok
+	var se statusError
+	return errors.As(err, &se) && se.code == http.StatusNotFound
+}
+
+// IsTransient reports whether the failure is worth retrying: a 404 (the tag
+// is not published yet), a server error or a transport hiccup. An explicit
+// rejection (401, 403, 400) is final.
+func IsTransient(err error) bool {
+	if err == nil {
+		return false
+	}
+	var se statusError
+	if errors.As(err, &se) {
+		switch se.code {
+		case http.StatusUnauthorized, http.StatusForbidden, http.StatusBadRequest:
+			return false
+		}
+		return true
+	}
+	var ue *url.Error
+	return errors.As(err, &ue)
 }
 
 func hintBody(raw []byte) string {
