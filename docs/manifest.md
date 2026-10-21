@@ -90,7 +90,66 @@ services:
       root_directory: ""     # sous-dossier en cas de monorepo
       build_command: ""      # commande personnalisée de build front/asset
       start_command: ""      # commande de démarrage (défaut : détectée par Railpack)
+    image: <image@digest>    # lance une image publiée au lieu de compiler
+    resources:               # la taille du service (optionnel)
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: "1", memory: 1Gi }
+    volumes:                 # les volumes du service (optionnel)
+      - name: data          # un volume sans taille est temporaire
+        path: /data
+        size: 1Gi           # un volume avec une taille est un disque
+    writable_root: true      # l'application écrit dans sa propre racine
+    run_as_root: true        # l'application tourne en root
+    capabilities:            # les capabilities que l'application a besoin
+      - CHOWN
 ```
+
+#### `image` : une application tierce
+
+Une application qui n'est pas la nôtre n'est pas compilée par la plateforme :
+le manifeste dit quelle image publiée lancer, épinglée par digest. Il n'y a
+ni construction, ni webhook, ni écriture dans le dépôt des auteurs, ni statut
+de commit.
+
+```yaml
+services:
+  stirling:
+    type: stateless
+    image: docker.io/stirlingtools/stirling-pdf@sha256:10164ffe...
+    port: 8080
+    hostname: stirling.exemple.bzh
+    healthcheck: /
+```
+
+#### `volumes` : une base de données qui est un fichier
+
+Un volume sans taille est un volume temporaire : il meurt avec le pod. Un
+volume avec une taille est un disque : la demande est écrite avec le service,
+et les données survivent au pod. C'est la primitive d'une base SQLite.
+
+```yaml
+services:
+  api:
+    type: stateless
+    repository: owner/api
+    volumes:
+      - name: data
+        path: /data
+        size: 2Gi
+    env:
+      DATABASE_PATH: /data/app.db
+```
+
+#### `writable_root`, `run_as_root`, `capabilities`
+
+Toutes les images publiées ne sont pas faites pour un système de fichiers en
+lecture seule et pour un utilisateur sans privilège. Une image qui a un
+système d'init (Stirling-PDF, par exemple) écrit dans son propre système de
+fichiers, change le propriétaire de ses fichiers et attend d'être root.
+
+La plateforme est stricte par défaut (racine en lecture seule, toutes les
+capabilities retirées, utilisateur `nobody`). Le manifeste n'obtient que ce
+qu'il demande, service par service.
 
 #### Types de services supportés :
 - `stateless` (par défaut) : Workload HTTP long (API, site SSR, SPA servie par Caddy via Railpack). Déployé via le chart Helm `stateless` Kuberpack.
