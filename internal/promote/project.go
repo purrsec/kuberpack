@@ -364,6 +364,13 @@ func EnsureProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 	project := sanitizeName(req.Manifest.Project)
 	result := ProjectResult{Project: project}
 
+	// The project must fit in the node. A cluster that does not have
+	// enough memory does not fail cleanly: the kernel kills the biggest
+	// process, the DNS goes down, and everything stops reconciling.
+	if err := checkCapacity(req.Manifest, req.Platform); err != nil {
+		return result, err
+	}
+
 	parent, err := os.MkdirTemp("", "kuberpack-project-*")
 	if err != nil {
 		return ProjectResult{}, err

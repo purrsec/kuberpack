@@ -50,6 +50,12 @@ type Platform struct {
 	// operator is not declared: the project would fail to apply as a
 	// whole, not only the database.
 	AddonOperators []string
+	// NodeMemory is the memory of the node. The compiler refuses a
+	// project that does not fit: an application that is scheduled and
+	// then killed takes the whole cluster with it.
+	NodeMemory string
+	// NodeCPU is the cpu of the node, in cores.
+	NodeCPU float64
 	// PreviewDatabase* configure the per-preview CloudNativePG database
 	// (empty, isolated). Used only when an app opts in.
 	PreviewDatabaseImage   string

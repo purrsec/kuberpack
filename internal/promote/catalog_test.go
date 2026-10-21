@@ -261,3 +261,28 @@ func TestTheDocumentDatabaseHasItsCredentialsBornInTheCluster(t *testing.T) {
 		t.Fatalf("the services are %v", peers)
 	}
 }
+
+// A project that does not fit in the node is refused: the cluster would
+// start killing the applications that work.
+func TestAProjectThatDoesNotFitIsRefused(t *testing.T) {
+	bare := setupAppsGitOps(t)
+	m := ProjectManifest{
+		Project: "demo",
+		Services: map[string]Service{
+			"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "demo.host.bzh",
+				Resources: &ServiceResources{Limits: ResourceList{Memory: "2Gi"}}},
+		},
+	}
+	// The node is big enough: the project compiles.
+	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{NodeMemory: "4Gi"}}
+	if _, err := EnsureProject(context.Background(), req); err != nil {
+		t.Fatalf("the project fits in the node: %v", err)
+	}
+	// The node is too small: the project is refused.
+	req.Platform = Platform{NodeMemory: "1Gi"}
+	if _, err := EnsureProject(context.Background(), req); err == nil {
+		t.Fatal("a project that does not fit in the node must be refused")
+	} else if !strings.Contains(err.Error(), "2.0Gi") {
+		t.Errorf("the error does not say how much is needed: %v", err)
+	}
+}
