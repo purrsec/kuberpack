@@ -286,3 +286,71 @@ func TestAProjectThatDoesNotFitIsRefused(t *testing.T) {
 		t.Errorf("the error does not say how much is needed: %v", err)
 	}
 }
+
+// The whole platform must fit in the node: it is the total that kills a
+// cluster, not one project.
+func TestTheClusterThatDoesNotFitIsRefused(t *testing.T) {
+	bare := setupAppsGitOps(t)
+	big := ProjectManifest{
+		Project: "big",
+		Services: map[string]Service{
+			"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "big.host.bzh",
+				Resources: &ServiceResources{Limits: ResourceList{Memory: "2Gi"}}},
+		},
+	}
+	other := ProjectManifest{
+		Project: "other",
+		Services: map[string]Service{
+			"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "other.host.bzh",
+				Resources: &ServiceResources{Limits: ResourceList{Memory: "2Gi"}}},
+		},
+	}
+	platform := Platform{NetworkPolicy: true, NodeMemory: "3Gi"}
+	for _, manifest := range []ProjectManifest{big, other} {
+		req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: manifest, Platform: platform}
+		if _, err := EnsureProject(context.Background(), req); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The two projects fit one after the other, and together they do not.
+	if _, err := EnsureProject(context.Background(), ProjectRequest{
+		GitOpsURL: bare, GitOpsBranch: "main", Manifest: big, Platform: platform,
+	}); err != nil {
+		t.Fatalf("a project that fits alone must compile: %v", err)
+	}
+}
+
+// The reload refuses a platform whose projects do not fit together.
+func TestTheReloadRefusesAPlatformThatDoesNotFit(t *testing.T) {
+	bare := setupAppsGitOps(t)
+	platform := Platform{NetworkPolicy: true, NodeMemory: "3Gi"}
+	big := ProjectManifest{
+		Project: "big",
+		Services: map[string]Service{
+			"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "big.host.bzh",
+				Resources: &ServiceResources{Limits: ResourceList{Memory: "2Gi"}}},
+		},
+	}
+	other := ProjectManifest{
+		Project: "other",
+		Services: map[string]Service{
+			"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "other.host.bzh",
+				Resources: &ServiceResources{Limits: ResourceList{Memory: "2Gi"}}},
+		},
+	}
+	for _, manifest := range []ProjectManifest{big, other} {
+		req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: manifest, Platform: platform}
+		if _, err := EnsureProject(context.Background(), req); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err := ReloadProjects(context.Background(), ReloadRequest{
+		GitOpsURL: bare, GitOpsBranch: "main", Platform: platform,
+	})
+	if err == nil {
+		t.Fatal("a platform whose projects do not fit together must be refused")
+	}
+	if !strings.Contains(err.Error(), "big") || !strings.Contains(err.Error(), "other") {
+		t.Errorf("the error does not name the projects: %v", err)
+	}
+}

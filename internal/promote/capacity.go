@@ -2,6 +2,9 @@ package promote
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -104,4 +107,64 @@ func checkCapacity(m ProjectManifest, p Platform) error {
 	}
 	return fmt.Errorf("this project asks for %s of memory, and the node has %s: the cluster would start killing the applications that work",
 		formatBytes(needed), formatBytes(node))
+}
+
+// checkClusterCapacity refuses a set of projects that does not fit in the
+// node.
+//
+// It is the total that kills a cluster, not one project: three applications
+// that each fit are deployed one after the other, and the third one is the
+// one that gets the cluster killed. The developer is told before, with the
+// name of the projects.
+func checkClusterCapacity(work string, p Platform) error {
+	node, err := parseQuantity(p.NodeMemory)
+	if err != nil {
+		return fmt.Errorf("the memory of the node is not a quantity: %w", err)
+	}
+	if node <= 0 {
+		return nil
+	}
+	entries, err := os.ReadDir(filepath.Join(work, filepath.FromSlash(p.ProjectsDirPath())))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	total := 0.0
+	names := []string{}
+	perProject := map[string]float64{}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := sanitizeName(entry.Name())
+		raw, err := os.ReadFile(filepath.Join(work, filepath.FromSlash(p.ProjectManifestPath(name))))
+		if err != nil {
+			continue
+		}
+		manifest, err := ParseProjectManifest(raw)
+		if err != nil {
+			// A manifest the compiler does not understand is refused
+			// elsewhere. Here, it does not count.
+			continue
+		}
+		need := projectMemoryLimit(manifest)
+		if need <= 0 {
+			continue
+		}
+		total += need
+		perProject[name] = need
+		names = append(names, name)
+	}
+	if total <= node {
+		return nil
+	}
+	sort.Strings(names)
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
+		parts = append(parts, name+" ("+formatBytes(perProject[name])+")")
+	}
+	return fmt.Errorf("the projects of this platform ask for %s of memory, and the node has %s: the cluster would start killing the applications that work (%s)",
+		formatBytes(total), formatBytes(node), strings.Join(parts, ", "))
 }

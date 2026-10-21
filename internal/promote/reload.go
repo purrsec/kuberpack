@@ -84,6 +84,12 @@ func ReloadProjects(ctx context.Context, req ReloadRequest) (ReloadResult, error
 			return result, err
 		}
 
+		// The whole platform must fit in the node. It is the total that
+		// kills a cluster, not one project.
+		if err := checkClusterCapacity(work, platform); err != nil {
+			return result, err
+		}
+
 		result = ReloadResult{}
 		for _, name := range wanted {
 			manifestPath := filepath.Join(work, filepath.FromSlash(platform.ProjectManifestPath(name)))
