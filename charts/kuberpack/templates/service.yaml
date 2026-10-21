@@ -54,4 +54,7 @@ spec:
   tls:
     - hosts:
         - {{ .Values.host | quote }}
+      {{- if .Values.tlsSecret }}
+      secretName: {{ .Values.tlsSecret | quote }}
+      {{- end }}
 {{- end }}

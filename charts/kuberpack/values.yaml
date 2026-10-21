@@ -28,6 +28,9 @@ extraEnv: []
 # Public ingress of the control plane.
 ingress:
   enabled: true
+# Secret that holds the certificate of the host. Empty means the default of
+# the ingress controller.
+tlsSecret: kuberpack-tls
 
 # NodePort service of the control plane. Useful when no public ingress or
 # TLS termination is available (test environments).
