@@ -2,6 +2,7 @@ package promote
 
 import (
 	"context"
+	"gopkg.in/yaml.v3"
 	"strings"
 	"testing"
 )
@@ -195,5 +196,35 @@ func TestAThirdPartyApplicationRunsAPublishedImage(t *testing.T) {
 	parent := readFile(t, tree, "kubernetes/vps/projects/demo/kustomization.yaml")
 	if !strings.Contains(parent, "stirling") {
 		t.Errorf("the service is not activated:\n%s", parent)
+	}
+}
+
+// The values of a service must stay parsable, whatever the service
+// declares.
+func TestTheValuesOfAServiceWithVolumesStayParsable(t *testing.T) {
+	values := valuesYAML(AppSpec{
+		Name:         "stirling",
+		Hostname:     "stirling.host.bzh",
+		Port:         8080,
+		Healthcheck:  "/",
+		Image:        "docker.io/stirlingtools/stirling-pdf@sha256:10164ffe",
+		Volumes:      []Volume{{Name: "toolbox", Path: "/usr/local/bin", Size: "1Gi"}},
+		WritableRoot: true,
+		RunAsRoot:    true,
+		AddonPeers:   []AddonPeer{{Kind: "postgres", Name: "main", For: "demo", Port: 5432}},
+	}, Platform{NetworkPolicy: true})
+	var doc map[string]any
+	if err := yaml.Unmarshal([]byte(values), &doc); err != nil {
+		t.Fatalf("the values are not parsable: %v\n%s", err, values)
+	}
+	if doc["writableRoot"] != true || doc["runAsRoot"] != true {
+		t.Errorf("the root of the application is not declared:\n%s", values)
+	}
+	volumes, ok := doc["volumes"].([]any)
+	if !ok || len(volumes) != 1 {
+		t.Errorf("the volumes are not declared:\n%s", values)
+	}
+	if _, ok := doc["networkPolicy"].(map[string]any); !ok {
+		t.Errorf("the network policy is not declared:\n%s", values)
 	}
 }

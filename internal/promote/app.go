@@ -313,6 +313,24 @@ func valuesYAML(spec AppSpec, p Platform) string {
 	if p.IngressTLS && p.TraefikCertResolver != "" && spec.TLSSecretName == "" {
 		b.WriteString("    traefik.ingress.kubernetes.io/router.tls.certresolver: " + p.TraefikCertResolver + "\n")
 	}
+	// The volumes of the application: a temporary one, or a disk that
+	// outlives the pod.
+	if len(spec.Volumes) > 0 {
+		b.WriteString("volumes:\n")
+		for _, volume := range spec.Volumes {
+			b.WriteString("  - name: " + volume.Name + "\n")
+			b.WriteString("    path: " + volume.Path + "\n")
+			if volume.Size != "" {
+				b.WriteString("    size: " + volume.Size + "\n")
+			}
+		}
+	}
+	if spec.WritableRoot {
+		b.WriteString("writableRoot: true\n")
+	}
+	if spec.RunAsRoot {
+		b.WriteString("runAsRoot: true\n")
+	}
 	b.WriteString("networkPolicy:\n")
 	if networkPolicyEnabled(spec, p) {
 		b.WriteString("  enabled: true\n")
@@ -331,24 +349,6 @@ func valuesYAML(spec AppSpec, p Platform) string {
 		for _, peer := range spec.Peers {
 			b.WriteString("    - " + peer + "\n")
 		}
-	}
-	// The volumes of the application: a temporary one, or a disk that
-	// outlives the pod.
-	if len(spec.Volumes) > 0 {
-		b.WriteString("volumes:\n")
-		for _, volume := range spec.Volumes {
-			b.WriteString("  - name: " + volume.Name + "\n")
-			b.WriteString("    path: " + volume.Path + "\n")
-			if volume.Size != "" {
-				b.WriteString("    size: " + volume.Size + "\n")
-			}
-		}
-	}
-	if spec.WritableRoot {
-		b.WriteString("writableRoot: true\n")
-	}
-	if spec.RunAsRoot {
-		b.WriteString("runAsRoot: true\n")
 	}
 	if len(spec.AddonPeers) == 0 {
 		b.WriteString("  addonPeers: []\n")
