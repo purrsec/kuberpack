@@ -97,6 +97,9 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) Start(ctx context.Context) {
 	s.kick()
 	go s.worker(ctx)
+	// The manifest lives in the GitOps repository: the webhook on that
+	// repository is what makes it drive the deployment.
+	go s.waitForGitOpsHook(ctx)
 }
 
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
@@ -151,11 +154,20 @@ func (s *Server) getApp(w http.ResponseWriter, r *http.Request) {
 type pushPayload struct {
 	Ref        string `json:"ref"`
 	After      string `json:"after"`
+	Before     string `json:"before"`
 	Deleted    bool   `json:"deleted"`
 	Action     string `json:"action"`
 	Repository struct {
 		FullName string `json:"full_name"`
 	} `json:"repository"`
+	// Commits carry the files of the push: they tell which projects the
+	// push touched.
+	Commits []struct {
+		ID       string   `json:"id"`
+		Added    []string `json:"added"`
+		Removed  []string `json:"removed"`
+		Modified []string `json:"modified"`
+	} `json:"commits"`
 }
 
 func (s *Server) webhook(w http.ResponseWriter, r *http.Request) {
@@ -177,6 +189,12 @@ func (s *Server) webhook(w http.ResponseWriter, r *http.Request) {
 	repo := strings.ToLower(strings.TrimSpace(payload.Repository.FullName))
 	if repo == "" {
 		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	// The push on the GitOps repository is the manifest itself: it
+	// recompiles the projects it touched.
+	if s.isGitOpsRepo(repo) {
+		s.handleGitOpsWebhook(w, r, payload, body)
 		return
 	}
 	app, err := s.cfg.Store.AppByRepository(r.Context(), repo)

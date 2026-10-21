@@ -12,6 +12,13 @@ Kuberpack compile le manifeste : il écrit le contrat GitOps du service (`values
 
 Les projets sont un second arbre GitOps : ils exigent leur propre `Kustomization` Flux (`path: ./kubernetes/vps/projects`).
 
+## Le manifeste dans Git
+
+Le manifeste vit dans le dépôt GitOps. Kuberpack y pose un webhook : un push
+qui change un `kuberpack.yaml` recompile le projet, sans passer par l'API.
+Le manifeste est lu depuis le dépôt et n'est jamais réécrit. Un push qui
+supprime un manifeste supprime le projet.
+
 ## Production
 
 ```mermaid

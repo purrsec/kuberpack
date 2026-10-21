@@ -71,6 +71,23 @@ func pinnedValues(raw []byte) (image string, track string) {
 	return strings.TrimSpace(image), strings.TrimSpace(track)
 }
 
+// canonicalValues normalizes a generated values file.
+//
+// The compiler writes the values, the control plane patches the image in
+// them. Both go through the same YAML encoding, so a recompilation produces
+// exactly the same file and never a diff.
+func canonicalValues(content string) string {
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
+		return content
+	}
+	out, err := encodeYAML(&doc)
+	if err != nil {
+		return content
+	}
+	return string(out)
+}
+
 func encodeYAML(doc *yaml.Node) ([]byte, error) {
 	node := doc
 	if doc.Kind == yaml.DocumentNode {

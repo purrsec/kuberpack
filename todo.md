@@ -69,6 +69,25 @@ un droit RBAC à ajouter au chart (`pods/log`).
 - l’extrait de log et la SBOM sont archivés par défaut, sans configuration
   supplémentaire.
 
+### Étape 5 — le manifeste est recompilé par un push (fait)
+
+Le manifeste vivait dans le dépôt GitOps, mais seul `POST /api/v1/projects`
+le compilait : éditer le manifeste dans Git ne changeait rien.
+
+Kuberpack pose maintenant un webhook sur le dépôt GitOps. Un push qui touche
+un `kuberpack.yaml` recompile le projet : le manifeste est **lu** depuis le
+dépôt et **jamais réécrit** (les commentaires du développeur survivent). Un
+push qui supprime un manifeste supprime le projet, l’app, son webhook et son
+secret.
+
+Le statut de commit sur le push dit audeveloppeur si son manifeste compile :
+`1 project(s) compiled`, ou l’erreur.
+
+**Pièges evités** : le fichier `values.yaml` est canonisé (compilateur et
+control plane écrivent la même forme), sinon chaque build déclencherait un
+commit parasite ; le compilateur applique les mêmes défauts que l’ancien
+chemin (port 8080, healthcheck `/`).
+
 ### Pièges
 
 - **Taille.** Un build qui échoue peut produire des mégabytes de logs. On
@@ -133,6 +152,25 @@ conditionne le Service, pas seulement le Deployment.
 - la valeur par défaut reste celle du chart : une app sans `resources`
   déclarées se comporte comme aujourd’hui.
 
+### Étape 5 — le manifeste est recompilé par un push (fait)
+
+Le manifeste vivait dans le dépôt GitOps, mais seul `POST /api/v1/projects`
+le compilait : éditer le manifeste dans Git ne changeait rien.
+
+Kuberpack pose maintenant un webhook sur le dépôt GitOps. Un push qui touche
+un `kuberpack.yaml` recompile le projet : le manifeste est **lu** depuis le
+dépôt et **jamais réécrit** (les commentaires du développeur survivent). Un
+push qui supprime un manifeste supprime le projet, l’app, son webhook et son
+secret.
+
+Le statut de commit sur le push dit audeveloppeur si son manifeste compile :
+`1 project(s) compiled`, ou l’erreur.
+
+**Pièges evités** : le fichier `values.yaml` est canonisé (compilateur et
+control plane écrivent la même forme), sinon chaque build déclencherait un
+commit parasite ; le compilateur applique les mêmes défauts que l’ancien
+chemin (port 8080, healthcheck `/`).
+
 ### Pièges
 
 - **La NetworkPolicy et la PSA `restricted` ne bougent pas.** Changer la
@@ -189,6 +227,25 @@ fonctionner depuis un poste, sans kubeconfig.
 - `apps`, `app`, `builds` et `redeploy` fonctionnent contre l’API ;
 - la sortie est lisible sans `jq` (tableau par défaut, `--json` disponible) ;
 - les codes de sortie sont exploitables dans un script.
+
+### Étape 5 — le manifeste est recompilé par un push (fait)
+
+Le manifeste vivait dans le dépôt GitOps, mais seul `POST /api/v1/projects`
+le compilait : éditer le manifeste dans Git ne changeait rien.
+
+Kuberpack pose maintenant un webhook sur le dépôt GitOps. Un push qui touche
+un `kuberpack.yaml` recompile le projet : le manifeste est **lu** depuis le
+dépôt et **jamais réécrit** (les commentaires du développeur survivent). Un
+push qui supprime un manifeste supprime le projet, l’app, son webhook et son
+secret.
+
+Le statut de commit sur le push dit audeveloppeur si son manifeste compile :
+`1 project(s) compiled`, ou l’erreur.
+
+**Pièges evités** : le fichier `values.yaml` est canonisé (compilateur et
+control plane écrivent la même forme), sinon chaque build déclencherait un
+commit parasite ; le compilateur applique les mêmes défauts que l’ancien
+chemin (port 8080, healthcheck `/`).
 
 ### Pièges
 
@@ -285,6 +342,25 @@ spec:
 
 C’est le seul réglage côté opérateur : sans lui, un manifeste compilé reste
 inerte.
+
+### Étape 5 — le manifeste est recompilé par un push (fait)
+
+Le manifeste vivait dans le dépôt GitOps, mais seul `POST /api/v1/projects`
+le compilait : éditer le manifeste dans Git ne changeait rien.
+
+Kuberpack pose maintenant un webhook sur le dépôt GitOps. Un push qui touche
+un `kuberpack.yaml` recompile le projet : le manifeste est **lu** depuis le
+dépôt et **jamais réécrit** (les commentaires du développeur survivent). Un
+push qui supprime un manifeste supprime le projet, l’app, son webhook et son
+secret.
+
+Le statut de commit sur le push dit audeveloppeur si son manifeste compile :
+`1 project(s) compiled`, ou l’erreur.
+
+**Pièges evités** : le fichier `values.yaml` est canonisé (compilateur et
+control plane écrivent la même forme), sinon chaque build déclencherait un
+commit parasite ; le compilateur applique les mêmes défauts que l’ancien
+chemin (port 8080, healthcheck `/`).
 
 ### Pièges
 

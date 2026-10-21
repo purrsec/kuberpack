@@ -313,7 +313,9 @@ func valuesYAML(spec AppSpec, p Platform) string {
 		b.WriteString("      name: " + AppRuntimeSecretName(spec.Name) + "\n")
 		b.WriteString("      optional: true\n")
 	}
-	return b.String()
+	// The canonical form is the one the control plane produces when it
+	// patches the image: a recompilation must not create a diff.
+	return canonicalValues(b.String())
 }
 
 // AppRuntimeSecretName is the Kubernetes Secret the production pod mounts via envFrom.

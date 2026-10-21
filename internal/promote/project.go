@@ -292,7 +292,7 @@ func EnsureProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 		if _, err := req.remoteGit(ctx, "", "clone", "--branch", req.GitOpsBranch, "--single-branch", req.GitOpsURL, work); err != nil {
 			return ProjectResult{}, err
 		}
-		services, adds, apps, err := compileProjectFiles(work, req.Manifest, req.Platform, req.Raw)
+		services, adds, apps, err := compileProjectFiles(work, req.Manifest, req.Platform, req.Raw, true)
 		if err != nil {
 			return ProjectResult{}, err
 		}
@@ -348,7 +348,7 @@ func EnsureProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 }
 
 // compileProjectFiles writes the project source + generated artifacts.
-func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string) ([]string, []string, []ProjectApp, error) {
+func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string, writeManifest bool) ([]string, []string, []ProjectApp, error) {
 	p = p.withDefaults()
 	project := sanitizeName(m.Project)
 	projectDir := filepath.Join(work, filepath.FromSlash(p.ProjectDir(project)))
@@ -357,16 +357,21 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string)
 	}
 
 	// Persist the human source verbatim (so comments survive).
-	manifestText := strings.TrimSpace(raw)
-	if manifestText == "" {
-		b, err := yaml.Marshal(m)
-		if err != nil {
+	// The manifest is the source of truth. It is written only when it comes
+	// from the API: when it is already in the repository, it is read from
+	// there and left untouched.
+	if writeManifest {
+		manifestText := strings.TrimSpace(raw)
+		if manifestText == "" {
+			b, err := yaml.Marshal(m)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			manifestText = string(b)
+		}
+		if err := os.WriteFile(filepath.Join(projectDir, "kuberpack.yaml"), []byte(manifestText+"\n"), 0o644); err != nil {
 			return nil, nil, nil, err
 		}
-		manifestText = string(b)
-	}
-	if err := os.WriteFile(filepath.Join(projectDir, "kuberpack.yaml"), []byte(manifestText+"\n"), 0o644); err != nil {
-		return nil, nil, nil, err
 	}
 
 	net := m.Policies.Internet
@@ -379,7 +384,9 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string)
 	apps := make([]ProjectApp, 0, len(m.Services))
 	for name, svc := range m.Services {
 		sname := sanitizeName(name)
-		spec := AppSpec{
+		// The defaults are the ones of the app registration: the manifest
+		// and the API must not disagree about a port or a probe.
+		spec, err := normalizeSpec(AppSpec{
 			Name:          sname,
 			Hostname:      svc.Hostname,
 			Port:          svc.Port,
@@ -393,6 +400,9 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string)
 			Project:       project,
 			Namespace:     namespace,
 			NetworkPolicy: &isolated,
+		})
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("service %q: %w", name, err)
 		}
 		dir := filepath.Join(work, filepath.FromSlash(p.projectServiceDir(project, sname)))
 		if err := os.MkdirAll(dir, 0o755); err != nil {

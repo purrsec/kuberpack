@@ -178,6 +178,34 @@ kuberpack.yaml (humain)
 4. **`NetworkPolicy` :** Traduit `policies.peers` et `policies.internet` en règles d'isolation Pod réseau natives. `policies.defaultDeny: false` désactive la NetworkPolicy du service.
 5. **`InfisicalStaticSecret` :** Branche la synchronisation des secrets depuis l'instance Infisical du homelab vers un Kubernetes Secret `app-<service>` (sans que les valeurs en clair ne transitent par Kuberpack). L'objet généré est nommé `app-<projet>-<service>` pour que deux projets puissent déclarer un service du même nom.
 
+### Le cycle complet
+
+Le manifeste vit dans le dépôt GitOps, à
+`kubernetes/vps/projects/<projet>/kuberpack.yaml`. Kuberpack y pose un
+webhook : **un push sur ce dépôt recompile les projets touchés**.
+
+```
+développeur            Forgejo              Kuberpack             Flux
+     │                    │                     │                   │
+     │ édite le manifeste│                     │                   │
+     ├───── push ────────►│                     │                   │
+     │                    ├─ webhook ─────────►│                   │
+     │                    │                     │ compile            │
+     │                    │                     ├─ push GitOps ─────►│
+     │                    │                     │                     ├─ apply
+```
+
+Le manifeste est lu depuis le dépôt et **jamais réécrit** : les commentaires
+du développeur survivent, et le contrôleur de version fait foi. Le statut de
+commit.publish sur le push (`1 project(s) compiled`, ou l'erreur de
+compilation) dit au développeur si son manifeste est valide.
+
+`POST /api/v1/projects` reste disponible : c'est la même compilation, avec
+le manifeste fourni par l'API. Les deux chemins écrivent la même chose.
+
+Un push qui supprime un manifeste supprime le projet : l'app, son webhook et
+son secret disparaissent.
+
 ### Ce que fait la compilation
 
 Pour chaque service qui déclare un `repository`, la compilation :
