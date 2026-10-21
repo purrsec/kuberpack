@@ -35,6 +35,7 @@ func New(baseURL, user, token string) (*Registry, error) {
 	if baseURL == "" {
 		return nil, fmt.Errorf("registry URL is empty")
 	}
+	baseURL = withScheme(baseURL)
 	if _, err := url.Parse(baseURL); err != nil {
 		return nil, fmt.Errorf("registry URL: %w", err)
 	}
@@ -208,4 +209,20 @@ func hintBody(raw []byte) string {
 		s = s[:300]
 	}
 	return ": " + s
+}
+
+// withScheme gives a registry the scheme its client needs. A registry is
+// addressed by its host ("ghcr.io"); the client speaks HTTP.
+func withScheme(baseURL string) string {
+	if strings.HasPrefix(baseURL, "http://") || strings.HasPrefix(baseURL, "https://") {
+		return baseURL
+	}
+	host := baseURL
+	if i := strings.Index(host, "/"); i >= 0 {
+		host = host[:i]
+	}
+	if host == "localhost" || host == "127.0.0.1" || strings.HasPrefix(host, "localhost:") {
+		return "http://" + baseURL
+	}
+	return "https://" + baseURL
 }

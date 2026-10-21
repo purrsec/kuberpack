@@ -314,9 +314,17 @@ func ImageRepository(explicit, forgejoURL, owner, name string) (string, error) {
 }
 
 func RegistryHost(raw string) string {
-	u, err := url.Parse(raw)
-	if err != nil {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
 		return ""
 	}
-	return u.Host
+	if u, err := url.Parse(raw); err == nil && u.Host != "" {
+		return u.Host
+	}
+	// A registry is addressed by its host, without a scheme: "ghcr.io".
+	host := raw
+	if i := strings.Index(host, "/"); i >= 0 {
+		host = host[:i]
+	}
+	return host
 }
