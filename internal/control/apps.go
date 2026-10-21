@@ -241,7 +241,10 @@ func (s *Server) redeployApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	del := "redeploy-" + sha
+	// delivery_id is globally unique: scope it to the app so two apps built
+	// from the same commit do not collide (the second redeploy would be
+	// silently dropped as a duplicate).
+	del := "redeploy-" + app.Name + "-" + sha
 	if err := s.cfg.Store.InsertDelivery(r.Context(), store.Delivery{
 		ID: del, AppID: app.ID, EventType: "redeploy", CommitSHA: sha, Status: "queued",
 	}); err != nil && !errors.Is(err, store.ErrDuplicate) {

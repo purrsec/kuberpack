@@ -290,7 +290,11 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 	if auto {
 		sha, err := s.cfg.Client.BranchSHA(r.Context(), owner, repoName, branch)
 		if err == nil && sha != "" {
-			del := "register-" + sha
+			// delivery_id is the primary key of webhook_deliveries: it must be
+			// unique per application, not per commit. Two apps built from the
+			// same commit (monorepo) would otherwise collide and the second one
+			// would never be built.
+			del := "register-" + app.Name + "-" + sha
 			if err := s.cfg.Store.InsertDelivery(r.Context(), store.Delivery{
 				ID:        del,
 				AppID:     app.ID,

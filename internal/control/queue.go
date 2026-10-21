@@ -24,7 +24,7 @@ func (s *Server) queuePush(w http.ResponseWriter, r *http.Request, app store.App
 	}
 	delivery := hmacsig.DeliveryID(r.Header)
 	if delivery == "" {
-		delivery = "push-" + payload.After
+		delivery = "push-" + app.Name + "-" + payload.After
 	}
 	err := s.cfg.Store.InsertDelivery(r.Context(), store.Delivery{
 		ID:        delivery,
