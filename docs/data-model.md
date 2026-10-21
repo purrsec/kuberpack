@@ -12,15 +12,21 @@ apps
 ├── name
 ├── forgejo_repository
 ├── production_branch
+├── strategy
 ├── autodeploy
 ├── autodeploy_pr
-├── configuration_json
 ├── hostname
 ├── port
 ├── healthcheck
 ├── start_command
+├── root_directory
+├── build_command
 ├── internet
 ├── peers
+├── secrets
+├── secret_env
+├── inherit_secret_from
+├── preview_database
 ├── webhook_id
 └── created_at
 
@@ -31,11 +37,14 @@ webhook_deliveries
 ├── action
 ├── commit_sha
 ├── received_at
-└── status
+├── status
+├── error
+└── pull_request
 
 builds
 ├── id
 ├── app_id
+├── delivery_id
 ├── environment
 ├── commit_sha
 ├── image_repository
@@ -44,6 +53,7 @@ builds
 ├── infra_commit_sha
 ├── status
 ├── error
+├── archive_url
 ├── created_at
 └── finished_at
 
@@ -59,7 +69,9 @@ previews
 
 ## Invariants
 
-- `delivery_id` unique ;
+- `delivery_id` unique, scopé à l’application (`register-<app>-<sha>`,
+  `redeploy-<app>-<sha>`, `push-<app>-<sha>`) : deux apps issues du même commit
+  ne se marchent pas dessus ;
 - un déploiement actif par couple application / environnement ;
 - le dernier SHA gagne ;
 - un artefact déjà en registre peut être réutilisé seulement si le commit, la stratégie, sa version et les paramètres de build correspondent, et si son digest est vérifié ;

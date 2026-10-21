@@ -61,6 +61,7 @@ func runTrigger(args []string) error {
 		RegistryUser:    getenv("FORGEJO_REGISTRY_USER", owner),
 		Wait:            *waitFor,
 		SkipPromote:     *skipPromote,
+		Platform:        platformFromEnv(),
 		Log:             func(format string, args ...any) { fmt.Printf(format+"\n", args...) },
 	})
 	return err

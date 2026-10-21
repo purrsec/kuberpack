@@ -52,6 +52,8 @@ Les previews n’héritent jamais des `peers` de production.
 
 Le port se configure, il ne se suppose pas. L’image peut écouter `80` ou `8080`. Une probe sur le mauvais port fait échouer la release.
 
+Si `KUBERPACK_WEBHOOK_URL` n’est pas configuré, Kuberpack ne crée pas le webhook Forgejo : la réponse contient alors `webhook_secret` (le secret HMAC) pour une installation manuelle. Avec une URL configurée, le secret n’est jamais renvoyé et le webhook est (re)configuré avec le secret courant.
+
 ## Overrides de build
 
 La stratégie détecte langage et commandes. Les exceptions vivent dans Kuberpack :
@@ -74,7 +76,7 @@ Le YAML GitOps est le contrat runtime. `track: main` (défaut, ou vide / `latest
 
 ## Suite HTTP
 
-`PATCH /api/v1/apps/{name}` — champs optionnels : `branch`, `strategy`, `autodeploy`, `autodeploy_pr`, `hostname`, `port`, `healthcheck`, `start_command`, `root_directory`, `build_command`, `internet`, `peers`. Un changement `internet`/`peers` réécrit `networkPolicy` dans GitOps, sans toucher `image`. `"peers": []` vide l’allowlist.
+`PATCH /api/v1/apps/{name}` — champs optionnels : `branch`, `strategy`, `autodeploy`, `autodeploy_pr`, `hostname`, `port`, `healthcheck`, `start_command`, `root_directory`, `build_command`, `internet`, `peers`, `secrets`, `secret_env`, `inherit_secret_from`, `preview_database`. Un changement `internet`/`peers` réécrit `networkPolicy` dans GitOps, sans toucher `image`. `"peers": []` vide l’allowlist. Un échec GitOps annule la mise à jour SQLite (retour à l’état précédent).
 
 `DELETE /api/v1/apps/{name}` — retire le webhook, la clé HMAC, l’entrée SQLite, et enlève l’app du kustomization parent (Flux prune).
 

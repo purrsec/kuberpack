@@ -32,6 +32,8 @@ Une installation neuve se fait avec `helmfile apply` (chart `charts/kuberpack`).
 
 Tokens builder dédiés (Infisical → Secret `kuberpack-builder`) : `kuberpack-builder-git-token` (clone HTTPS des apps / archive git) et `kuberpack-builder-registry-token` (`write:package`). Ce ne sont pas le PAT du control plane. Kuberpack ne pose pas de clé SSH : le builder clone en HTTPS avec ce jeton.
 
+Le Secret est monté dans le Job sous `/secrets`. Les fichiers sont nommés d’après les clés du Secret : le builder accepte `git-token` **ou** `kuberpack-builder-git-token`, et `registry-token` **ou** `kuberpack-builder-registry-token` (idem `builds-token` pour l’archive). Un Secret qui n’expose aucune de ces clés fait échouer le build sur `auth`.
+
 Archive de builds : `KUBERPACK_BUILDS_GIT_URL` (dépôt dédié, jamais une source Flux). Secret Flux vers Kuberpack : `KUBERPACK_FLUX_WEBHOOK_SECRET`. Previews : `KUBERPACK_PREVIEW_DOMAIN` (défaut `preview.host.bzh`). DNS apps : `KUBERPACK_DNS_TARGET` IPv6 seulement (AAAA). Une IPv4 dans cette variable est ignorée.
 
 Secrets d’app (Stripe, `DATABASE_URL`, …) : Infisical (ou Secret Kubernetes) nommé `app-<name>` dans le namespace `apps`. Kuberpack ne sync pas Infisical ; il déclare seulement `envFrom`. Postgres et autres stateful : GitOps hors chart `stateless`, URL dans ce Secret.

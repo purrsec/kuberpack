@@ -71,6 +71,7 @@ Usage:
   kuberpack promote [flags]
   kuberpack trigger [flags]
   kuberpack serve [--addr :8080] [--data data]
+  kuberpack project create|delete [flags]
   kuberpack builder           (inside a Kuberpack Kubernetes Job)
 
 promote:
@@ -89,18 +90,29 @@ trigger (FORGEJO_TOKEN, write:repository):
   --strategy auto|uv|railpack
   --start-cmd string       optional Railpack start command
   --gitops-url string      (default KUBERPACK_GITOPS_URL)
-  --values-path string     (default kubernetes/vps/apps/<name>/values.yaml)
+  --values-path string     (default <KUBERPACK_GITOPS_APPS>/<repository>/values.yaml)
   --chart string           (default charts/stateless)
   --wait duration          (default 15m)
   --skip-promote
 
   Submits a Kubernetes build Job (same as serve). Requires a cluster builder.
 
+project (KUBERPACK_API_TOKEN, KUBERPACK_API_URL):
+  create  --project name [--namespace ns] [--service name] [--repository owner/name]
+          [--port 8080] [--hostname host] [--dry-run]
+  delete  --project name
+
+  Compiles a project manifest into GitOps primitives.
+
 serve (FORGEJO_TOKEN, KUBERPACK_API_TOKEN, KUBERPACK_BUILDER_IMAGE):
   POST /api/v1/apps          register (Bearer)
   GET/PATCH/DELETE /api/v1/apps[/{name}]
   GET  /api/v1/apps/{name}/builds
   POST /api/v1/apps/{name}/redeploy
+  POST /api/v1/projects      compile a project manifest (Bearer)
+  GET  /api/v1/projects      list
+  GET  /api/v1/projects/{name}
+  DELETE /api/v1/projects/{name}
   POST /hooks/forgejo        HMAC (push, pull_request)
   POST /hooks/flux           HelmRelease rollback → rolled_back
   GET  /healthz

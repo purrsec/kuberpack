@@ -75,7 +75,7 @@ En `--dry-run`, la CLI importe le **même package Go** pour afficher le diff san
 ```http
 POST /api/v1/projects            # {project, manifest: "<yaml>"} -> compile + commit
 GET  /api/v1/projects            # liste
-GET  /api/v1/projects/{name}     # manifeste + statut
+GET  /api/v1/projects/{name}     # manifeste (YAML)
 DELETE /api/v1/projects/{name}   # retire du parent, supprime le dossier, prune
 ```
 
@@ -87,7 +87,8 @@ DELETE /api/v1/projects/{name}   # retire du parent, supprime le dossier, prune
 | `addons.postgres.engine: cnpg` | `projects/<p>/postgres/` : `Cluster` CNPG (+ `NetworkPolicy`) |
 | `policies.peers` | `networkPolicy.peers` dans chaque service |
 | `services.<name>.secrets` | CR `InfisicalStaticSecret` (`app-<p>-<name>`) |
-| parent | `projects/<p>/kustomization.yaml` listant les services et addons |
+| parent | `projects/<p>/kustomization.yaml` listant les services pinnés et les addons |
+| parent des projets | `projects/kustomization.yaml` listant les projets |
 
 `namespace` du manifeste : utilisé pour `namespace:` de la kustomization du projet.
 (Première tranche : namespace unique par projet ; les addons restent dans ce namespace.)
@@ -102,9 +103,9 @@ DELETE /api/v1/projects/{name}   # retire du parent, supprime le dossier, prune
 ## CLI
 
 ```bash
-kuberpack create     # wizard : pose des questions, écrit kuberpack.yaml, POST
-kuberpack modify     # wizard : relit le manifeste, modifie, POST
-kuberpack create --dry-run   # affiche les artefacts compilés sans écrire
+kuberpack project create   # wizard : pose les questions, POST /api/v1/projects
+kuberpack project create --dry-run   # affiche le manifeste sans écrire
+kuberpack project delete --project <nom>
 ```
 
-Le wizard n'utilise **aucune UI** : prompts texte, validation, puis écriture/relecture du YAML.
+Le wizard n'utilise **aucune UI** : prompts texte, validation, puis POST.

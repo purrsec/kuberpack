@@ -5,8 +5,8 @@ Kuberpack parle l’API Gitea, donc Forgejo.
 Le produit doit, sans fichier dans le dépôt applicatif :
 
 1. lire le dépôt (`GET /repos/{owner}/{repo}`) ;
-2. créer un hook JSON `push` + `pull_request` s’il n’existe pas ;
-3. créer une clé de deploy SSH **read-only** (à l’enregistrement) ;
+2. créer un hook JSON `push` + `pull_request` s’il n’existe pas, et y pousser le secret HMAC courant (le secret est régénéré à chaque enregistrement : un hook déjà présent doit être reconfiguré) ;
+3. cloner en HTTPS avec un jeton, sans clé SSH de deploy (cf. [Identités](#identités)) ;
 4. extraire le SHA (`after` sur push, `pull_request.head.sha` sur PR) ;
 5. lister branches et pull requests ;
 6. publier un commit status : contexte `kuberpack/production` (prod) ou `kuberpack/preview` (PR). `target_url` : hostname, commit d’échec, ou commit d’archive de build si configuré.
