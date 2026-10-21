@@ -28,6 +28,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "kuberpack: %v\n", err)
 			os.Exit(1)
 		}
+	case "install":
+		if err := runInstall(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "kuberpack: %v\n", err)
+			os.Exit(1)
+		}
 	case "serve":
 		if err := runServe(os.Args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "kuberpack: %v\n", err)

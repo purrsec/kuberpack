@@ -1,6 +1,14 @@
 image: ghcr.io/purrsec/kuberpack:latest
 builderImage: ghcr.io/purrsec/kuberpack-builder:latest
-forgejoURL: https://git.example.com
+# The git forge: forgejo, github or gitlab.
+gitProvider: forgejo
+gitURL: https://git.example.com
+# The OCI registry the images are pushed to. Empty means the URL of the
+# forge. registryUser is the namespace of the images.
+registryURL: ""
+registryUser: ""
+# Kept for the installations that still name the forge.
+forgejoURL: ""
 gitopsURL: https://git.example.com/you/gitops.git
 gitopsApps: kubernetes/apps
 gitopsChart: ./charts/stateless
