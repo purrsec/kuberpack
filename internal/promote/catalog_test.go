@@ -320,8 +320,9 @@ func TestTheClusterThatDoesNotFitIsRefused(t *testing.T) {
 	}
 }
 
-// The reload refuses a platform whose projects do not fit together.
-func TestTheReloadRefusesAPlatformThatDoesNotFit(t *testing.T) {
+// The reload refuses a new project that does not fit with the projects
+// that are already deployed.
+func TestANewProjectThatDoesNotFitIsRefused(t *testing.T) {
 	bare := setupAppsGitOps(t)
 	platform := Platform{NetworkPolicy: true, NodeMemory: "3Gi"}
 	big := ProjectManifest{
@@ -331,6 +332,12 @@ func TestTheReloadRefusesAPlatformThatDoesNotFit(t *testing.T) {
 				Resources: &ServiceResources{Limits: ResourceList{Memory: "2Gi"}}},
 		},
 	}
+	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: big, Platform: platform}
+	if _, err := EnsureProject(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	// A second project of the same size does not fit next to the first
+	// one: the node has 3 Gi, the two ask for 4 Gi.
 	other := ProjectManifest{
 		Project: "other",
 		Services: map[string]Service{
@@ -338,28 +345,18 @@ func TestTheReloadRefusesAPlatformThatDoesNotFit(t *testing.T) {
 				Resources: &ServiceResources{Limits: ResourceList{Memory: "2Gi"}}},
 		},
 	}
-	for _, manifest := range []ProjectManifest{big, other} {
-		req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: manifest, Platform: platform}
-		if _, err := EnsureProject(context.Background(), req); err != nil {
-			t.Fatal(err)
-		}
+	// The project that is already deployed stays; the new one is refused.
+	clone := readRemoteTree(t, bare)
+	err := checkClusterAddition(clone, platform, other)
+	if err == nil {
+		t.Fatal("a new project that does not fit with the deployed ones must be refused")
 	}
-	result, err := ReloadProjects(context.Background(), ReloadRequest{
-		GitOpsURL: bare, GitOpsBranch: "main", Platform: platform,
-	})
+	if !strings.Contains(err.Error(), "2.0Gi") || !strings.Contains(err.Error(), "3.0Gi") {
+		t.Errorf("the refusal does not say how much is needed: %v", err)
+	}
+	// The project that is already deployed is not refused: it runs.
+	err = checkClusterAddition(clone, platform, big)
 	if err != nil {
-		t.Fatalf("the reload must not fail: %v", err)
-	}
-	// The project that tips the total over is refused; the other one is
-	// deployed. Refusing everything would leave the platform without any
-	// application.
-	if len(result.Refused) != 1 {
-		t.Fatalf("the refused projects are %v", result.Refused)
-	}
-	if !strings.Contains(result.Refused[0], "does not fit") && !strings.Contains(result.Refused[0], "memory") {
-		t.Errorf("the refusal does not say why: %v", result.Refused)
-	}
-	if len(result.Projects) != 1 {
-		t.Errorf("the projects that fit must be deployed: %v", result.Projects)
+		t.Errorf("a project that is already deployed must not be refused: %v", err)
 	}
 }

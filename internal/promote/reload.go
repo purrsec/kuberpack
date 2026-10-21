@@ -89,7 +89,6 @@ func ReloadProjects(ctx context.Context, req ReloadRequest) (ReloadResult, error
 		}
 
 		result = ReloadResult{}
-		already := 0.0
 		for _, name := range wanted {
 			manifestPath := filepath.Join(work, filepath.FromSlash(platform.ProjectManifestPath(name)))
 			raw, err := os.ReadFile(manifestPath)
@@ -111,7 +110,7 @@ func ReloadProjects(ctx context.Context, req ReloadRequest) (ReloadResult, error
 			// The platform must fit in the node. It is the total that
 			// kills a cluster, not one project: the project that tips
 			// the total over is refused, and the others are deployed.
-			if err := checkClusterAddition(work, platform, manifest, already); err != nil {
+			if err := checkClusterAddition(work, platform, manifest); err != nil {
 				result.Refused = append(result.Refused, name+": "+err.Error())
 				continue
 			}
@@ -119,7 +118,6 @@ func ReloadProjects(ctx context.Context, req ReloadRequest) (ReloadResult, error
 			if err != nil {
 				return result, fmt.Errorf("project %s: %w", name, err)
 			}
-			already += projectMemoryLimit(manifest)
 			result.Projects = append(result.Projects, ProjectResult{
 				Project:        sanitizeName(manifest.Project),
 				Namespace:      projectNamespace(manifest, sanitizeName(manifest.Project)),

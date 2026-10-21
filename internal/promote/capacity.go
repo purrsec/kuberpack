@@ -2,6 +2,8 @@ package promote
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -109,11 +111,12 @@ func checkCapacity(m ProjectManifest, p Platform) error {
 // checkClusterAddition refuses a project that makes the platform exceed the
 // memory of the node.
 //
-// The projects already deployed count: it is the total that kills a
-// cluster. The project that tips it over is refused, and the others are
-// deployed: refusing everything would leave the platform without any
-// application, which is worse than a refusal.
-func checkClusterAddition(work string, p Platform, manifest ProjectManifest, already float64) error {
+// Every project of the platform counts, not only the ones of this
+// recompilation: it is the total that kills a cluster. The project that
+// tips the total over is refused, and the others are deployed: refusing
+// everything would leave the platform without any application, which is
+// worse than a refusal.
+func checkClusterAddition(work string, p Platform, manifest ProjectManifest) error {
 	node, err := parseQuantity(p.NodeMemory)
 	if err != nil {
 		return fmt.Errorf("the memory of the node is not a quantity: %w", err)
@@ -121,10 +124,61 @@ func checkClusterAddition(work string, p Platform, manifest ProjectManifest, alr
 	if node <= 0 {
 		return nil
 	}
-	need := projectMemoryLimit(manifest)
-	if already+need <= node {
+	current := sanitizeName(manifest.Project)
+	others := 0.0
+	entries, err := os.ReadDir(filepath.Join(work, filepath.FromSlash(p.ProjectsDirPath())))
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := sanitizeName(entry.Name())
+		if name == current {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(work, filepath.FromSlash(p.ProjectManifestPath(name))))
+		if err != nil {
+			continue
+		}
+		other, err := ParseProjectManifest(raw)
+		if err != nil {
+			continue
+		}
+		// Only the projects that are already deployed count. The ones
+		// that wait for their turn are judged when their turn comes.
+		if !projectDeployed(work, p, other) {
+			continue
+		}
+		others += projectMemoryLimit(other)
+	}
+	// A project that is already deployed is not refused: it runs, and
+	// refusing it would leave the cluster as it is. The operator decides
+	// what to do with it.
+	if projectDeployed(work, p, manifest) {
 		return nil
 	}
-	return fmt.Errorf("this project asks for %s of memory, and the node has %s: with the projects already deployed (%s), the cluster would start killing the applications that work",
-		formatBytes(need), formatBytes(node), formatBytes(node-already))
+	need := projectMemoryLimit(manifest)
+	if others+need <= node {
+		return nil
+	}
+	return fmt.Errorf("this project asks for %s of memory, and the node has %s: with the other projects of the platform (%s), the cluster would start killing the applications that work",
+		formatBytes(need), formatBytes(node), formatBytes(others))
+}
+
+// projectDeployed reports whether a project is already applied in the
+// cluster. Its generated files are the trace: a manifest alone is a
+// project that waits.
+func projectDeployed(work string, p Platform, manifest ProjectManifest) bool {
+	dir := filepath.Join(work, filepath.FromSlash(p.ProjectsDirPath()), sanitizeName(manifest.Project))
+	for name := range manifest.Services {
+		if _, err := os.Stat(filepath.Join(dir, sanitizeName(name))); err == nil {
+			return true
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "addons")); err == nil {
+		return true
+	}
+	return false
 }
