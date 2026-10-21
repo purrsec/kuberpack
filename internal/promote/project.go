@@ -69,6 +69,11 @@ type Service struct {
 	// Resources are the cpu and the memory of the service. Without them,
 	// the platform's defaults apply.
 	Resources *ServiceResources `yaml:"resources,omitempty" json:"resources,omitempty"`
+	// StartupBudget is how long the application may take to start, in
+	// seconds. An application that is killed while it starts never
+	// starts: the budget is the difference between a slow start and a
+	// crash loop.
+	StartupBudget int `yaml:"startup_budget,omitempty" json:"startup_budget,omitempty"`
 }
 
 // ServiceResources are the cpu and the memory of a service.
@@ -537,6 +542,7 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string,
 		spec.RunAsRoot = svc.RunAsRoot
 		spec.Capabilities = svc.Capabilities
 		spec.Resources = svc.Resources
+		spec.StartupBudget = svc.StartupBudget
 		dir := filepath.Join(work, filepath.FromSlash(p.projectServiceDir(project, sname)))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, nil, nil, err

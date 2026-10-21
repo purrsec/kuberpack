@@ -89,6 +89,9 @@ type AppSpec struct {
 	Capabilities []string
 	// Resources are the cpu and the memory of the application.
 	Resources *ServiceResources
+	// StartupBudget is how long the application may take to start, in
+	// seconds.
+	StartupBudget int
 }
 
 // PreviewSecretSource values for AppSpec.InheritSecretFrom.
@@ -328,6 +331,11 @@ func valuesYAML(spec AppSpec, p Platform) string {
 				b.WriteString("    size: " + volume.Size + "\n")
 			}
 		}
+	}
+	if spec.StartupBudget > 0 {
+		b.WriteString("startupProbe:\n")
+		b.WriteString("  periodSeconds: 2\n")
+		b.WriteString("  failureThreshold: " + strconv.Itoa(spec.StartupBudget/2) + "\n")
 	}
 	if spec.WritableRoot {
 		b.WriteString("writableRoot: true\n")

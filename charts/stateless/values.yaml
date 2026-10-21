@@ -44,7 +44,7 @@ capabilities: []
 # must not be killed while it starts. It is periodSeconds x failureThreshold.
 startupProbe:
   periodSeconds: 2
-  failureThreshold: 90
+  failureThreshold: 300
 # Railpack images often have USER root. A numeric UID is required for runAsNonRoot.
 podSecurityContext:
   runAsUser: 65534
