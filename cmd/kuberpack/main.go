@@ -105,20 +105,22 @@ project (KUBERPACK_API_TOKEN, KUBERPACK_API_URL):
   Compiles a project manifest into GitOps primitives.
 
 serve (FORGEJO_TOKEN, KUBERPACK_API_TOKEN, KUBERPACK_BUILDER_IMAGE):
-  POST /api/v1/apps          register (Bearer)
-  GET/PATCH/DELETE /api/v1/apps[/{name}]
-  GET  /api/v1/apps/{name}/builds
-  POST /api/v1/apps/{name}/redeploy
   POST /api/v1/projects      compile a project manifest (Bearer)
   GET  /api/v1/projects      list
   GET  /api/v1/projects/{name}
   DELETE /api/v1/projects/{name}
+  GET  /api/v1/apps          list
+  GET  /api/v1/apps/{name}
+  GET  /api/v1/apps/{name}/builds
+  POST /api/v1/apps/{name}/redeploy
   POST /hooks/forgejo        HMAC (push, pull_request)
   POST /hooks/flux           HelmRelease rollback → rolled_back
   GET  /healthz
 
-  SQLite + HMAC files under --data. Register writes GitOps Helm files;
-  promote only rewrites image (track stays human-owned) and enables Flux.
+  SQLite + HMAC files under --data. The manifest is the only way to declare
+  an application: compiling it writes the GitOps Helm files, arms the build
+  pipeline and poses the webhook. The promote only rewrites image (track
+  stays human-owned) and enables Flux.
 `)
 }
 

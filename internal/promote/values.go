@@ -39,6 +39,38 @@ func alreadyPinned(in []byte, imageRef string) bool {
 	return s == imageRef
 }
 
+// PatchTrack sets the top-level `track` scalar and leaves every other key
+// as-is. The track is the second field Kuberpack does not own in a values
+// file: it belongs to the control plane.
+func PatchTrack(in []byte, track string) ([]byte, error) {
+	if len(bytes.TrimSpace(in)) == 0 {
+		return nil, fmt.Errorf("values file is empty")
+	}
+	if strings.TrimSpace(track) == "" {
+		return in, nil
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(in, &doc); err != nil {
+		return nil, fmt.Errorf("parse values: %w", err)
+	}
+	if err := setScalarAt(&doc, "track", track, "!!str"); err != nil {
+		return nil, err
+	}
+	return encodeYAML(&doc)
+}
+
+// pinnedValues returns the image and the track that the control plane wrote
+// in a values file. They are the only two fields the manifest does not own.
+func pinnedValues(raw []byte) (image string, track string) {
+	var m map[string]any
+	if err := yaml.Unmarshal(raw, &m); err != nil {
+		return "", ""
+	}
+	image, _ = m["image"].(string)
+	track, _ = m["track"].(string)
+	return strings.TrimSpace(image), strings.TrimSpace(track)
+}
+
 func encodeYAML(doc *yaml.Node) ([]byte, error) {
 	node := doc
 	if doc.Kind == yaml.DocumentNode {
@@ -91,6 +123,16 @@ func setImage(node *yaml.Node, imageRef string) error {
 		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "image"},
 		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: imageRef, Style: yaml.DoubleQuotedStyle},
 	)
+	return nil
+}
+
+// setScalarAt sets a top-level scalar of a values document.
+func setScalarAt(node *yaml.Node, key, value, tag string) error {
+	root := mappingRoot(node)
+	if root == nil {
+		return fmt.Errorf("values must be a YAML mapping")
+	}
+	setScalar(root, key, value, tag)
 	return nil
 }
 

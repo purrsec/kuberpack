@@ -97,198 +97,6 @@ func (req EnsureRequest) remoteGit(ctx context.Context, dir string, args ...stri
 }
 
 // EnsureApp writes values, HelmRelease and app kustomization if they are missing.
-func EnsureApp(ctx context.Context, req EnsureRequest) (Result, error) {
-	spec, err := normalizeSpec(req.App)
-	if err != nil {
-		return Result{}, err
-	}
-	if req.GitOpsURL == "" {
-		return Result{}, fmt.Errorf("gitops URL is empty")
-	}
-	if req.MaxAttempts <= 0 {
-		req.MaxAttempts = defaultAttempts
-	}
-	if req.GitOpsBranch == "" {
-		req.GitOpsBranch = "main"
-	}
-	platform := req.Platform.withDefaults()
-
-	parent, err := os.MkdirTemp("", "kuberpack-register-*")
-	if err != nil {
-		return Result{}, err
-	}
-	defer os.RemoveAll(parent)
-	work := filepath.Join(parent, "repo")
-	result := Result{App: spec.Name}
-
-	var lastErr error
-	for attempt := 1; attempt <= req.MaxAttempts; attempt++ {
-		if err := os.RemoveAll(work); err != nil {
-			return Result{}, err
-		}
-		if _, err := req.remoteGit(ctx, "", "clone", "--branch", req.GitOpsBranch, "--single-branch", req.GitOpsURL, work); err != nil {
-			return Result{}, err
-		}
-
-		changed, err := writeMissingAppFiles(work, spec, platform)
-		if err != nil {
-			return Result{}, err
-		}
-		secretPaths, secretChanged, err := ensureSecretCR(work, spec, platform)
-		if err != nil {
-			return Result{}, err
-		}
-		dbChanged, err := ensurePreviewDatabase(work, spec, platform)
-		if err != nil {
-			return Result{}, err
-		}
-		changed = changed || secretChanged || dbChanged
-		if !changed {
-			sha, err := runGit(ctx, work, "rev-parse", "HEAD")
-			if err != nil {
-				return Result{}, err
-			}
-			result.InfraCommitSHA = sha
-			return result, nil
-		}
-
-		add := append([]string{platform.AppDir(spec.Name)}, secretPaths...)
-		if _, err := runGit(ctx, work, gitConfig(append([]string{"add", "--"}, add...)...)...); err != nil {
-			return Result{}, err
-		}
-		msg := fmt.Sprintf("register %s: %s", spec.Name, spec.Hostname)
-		if _, err := runGit(ctx, work, gitConfig("commit", "-m", msg)...); err != nil {
-			return Result{}, err
-		}
-		if _, err := req.remoteGit(ctx, work, "push", "origin", "HEAD:"+req.GitOpsBranch); err != nil {
-			lastErr = err
-			if _, fetchErr := req.remoteGit(ctx, work, "fetch", "origin", req.GitOpsBranch); fetchErr != nil {
-				return Result{}, err
-			}
-			local, _ := runGit(ctx, work, "rev-parse", "HEAD")
-			remote, _ := runGit(ctx, work, "rev-parse", "origin/"+req.GitOpsBranch)
-			if local != "" && local == remote {
-				return Result{}, err
-			}
-			continue
-		}
-		sha, err := runGit(ctx, work, "rev-parse", "HEAD")
-		if err != nil {
-			return Result{}, err
-		}
-		result.InfraCommitSHA = sha
-		result.Changed = true
-		return result, nil
-	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("gitops push rejected after %d attempts", req.MaxAttempts)
-	}
-	return Result{}, fmt.Errorf("gitops conflict on %s after %d attempts: %w", req.GitOpsBranch, req.MaxAttempts, lastErr)
-}
-
-// SyncRuntime rewrites the runtime contract (hostname, port, healthcheck,
-// networkPolicy) in an existing values.yaml. It never changes image or track.
-func SyncRuntime(ctx context.Context, req EnsureRequest) (Result, error) {
-	spec, err := normalizeSpec(req.App)
-	if err != nil {
-		return Result{}, err
-	}
-	if req.GitOpsURL == "" {
-		return Result{}, fmt.Errorf("gitops URL is empty")
-	}
-	if req.MaxAttempts <= 0 {
-		req.MaxAttempts = defaultAttempts
-	}
-	if req.GitOpsBranch == "" {
-		req.GitOpsBranch = "main"
-	}
-	platform := req.Platform.withDefaults()
-	parent, err := os.MkdirTemp("", "kuberpack-runtime-*")
-	if err != nil {
-		return Result{}, err
-	}
-	defer os.RemoveAll(parent)
-	work := filepath.Join(parent, "repo")
-	result := Result{App: spec.Name}
-	valuesRel := platform.ValuesPath(spec.Name)
-	var lastErr error
-	for attempt := 1; attempt <= req.MaxAttempts; attempt++ {
-		if err := os.RemoveAll(work); err != nil {
-			return Result{}, err
-		}
-		if _, err := req.remoteGit(ctx, "", "clone", "--branch", req.GitOpsBranch, "--single-branch", req.GitOpsURL, work); err != nil {
-			return Result{}, err
-		}
-		path := filepath.Join(work, filepath.FromSlash(valuesRel))
-		raw, err := os.ReadFile(path)
-		if os.IsNotExist(err) {
-			if _, err := writeMissingAppFiles(work, spec, platform); err != nil {
-				return Result{}, err
-			}
-		} else if err != nil {
-			return Result{}, err
-		} else {
-			patched, err := PatchRuntime(raw, RuntimePatch{
-				Hostname:      spec.Hostname,
-				Port:          spec.Port,
-				Healthcheck:   spec.Healthcheck,
-				Internet:      spec.Internet,
-				Peers:         spec.Peers,
-				NetworkPolicy: &platform.NetworkPolicy,
-			})
-			if err != nil {
-				return Result{}, err
-			}
-			if err := os.WriteFile(path, patched, 0o644); err != nil {
-				return Result{}, err
-			}
-		}
-		secretPaths, _, err := ensureSecretCR(work, spec, platform)
-		if err != nil {
-			return Result{}, err
-		}
-		if _, err := ensurePreviewDatabase(work, spec, platform); err != nil {
-			return Result{}, err
-		}
-
-		add := append([]string{valuesRel}, secretPaths...)
-		status, err := runGit(ctx, work, append([]string{"status", "--porcelain", "--"}, add...)...)
-		if err != nil {
-			return Result{}, err
-		}
-		if status == "" {
-			sha, err := runGit(ctx, work, "rev-parse", "HEAD")
-			if err != nil {
-				return Result{}, err
-			}
-			result.InfraCommitSHA = sha
-			return result, nil
-		}
-		if _, err := runGit(ctx, work, gitConfig(append([]string{"add", "--"}, add...)...)...); err != nil {
-			return Result{}, err
-		}
-		msg := fmt.Sprintf("runtime %s", spec.Name)
-		if _, err := runGit(ctx, work, gitConfig("commit", "-m", msg)...); err != nil {
-			return Result{}, err
-		}
-		if _, err := req.remoteGit(ctx, work, "push", "origin", "HEAD:"+req.GitOpsBranch); err != nil {
-			lastErr = err
-			continue
-		}
-		sha, err := runGit(ctx, work, "rev-parse", "HEAD")
-		if err != nil {
-			return Result{}, err
-		}
-		result.InfraCommitSHA = sha
-		result.Changed = true
-		return result, nil
-	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("gitops push rejected after %d attempts", req.MaxAttempts)
-	}
-	return Result{}, fmt.Errorf("gitops conflict on %s after %d attempts: %w", req.GitOpsBranch, req.MaxAttempts, lastErr)
-}
-
 func normalizeSpec(spec AppSpec) (AppSpec, error) {
 	spec.Name = sanitizeName(spec.Name)
 	if spec.Name == "" {
@@ -331,7 +139,15 @@ func normalizeSpec(spec AppSpec) (AppSpec, error) {
 
 func writeMissingAppFiles(work string, spec AppSpec, p Platform) (bool, error) {
 	p = p.withDefaults()
-	dir := filepath.Join(work, filepath.FromSlash(p.AppDir(spec.Name)))
+	return writeMissingAppFilesIn(work, p.AppDir(spec.Name), spec, p)
+}
+
+// writeMissingAppFilesIn writes the GitOps files of a service in a given
+// directory. The directory of a service of a project is not the app
+// directory: the manifest owns the layout.
+func writeMissingAppFilesIn(work string, serviceDir string, spec AppSpec, p Platform) (bool, error) {
+	p = p.withDefaults()
+	dir := filepath.Join(work, filepath.FromSlash(serviceDir))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return false, err
 	}
@@ -358,9 +174,28 @@ func writeMissingAppFiles(work string, spec AppSpec, p Platform) (bool, error) {
 	return changed, nil
 }
 
+// servicePaths returns the directory of a service, the kustomization of its
+// parent and the name of the resource the parent must list.
+//
+// A standalone app lives in <apps>/<app>/values.yaml: its parent is the apps
+// kustomization. A service of a project lives in
+// <projects>/<project>/<service>/values.yaml: its parent is the kustomization
+// of the project. A preview lives in <previews>/<app>/values.yaml.
+func servicePaths(valuesPath string) (dir string, parent string, resource string) {
+	dir = filepath.ToSlash(filepath.Dir(valuesPath))
+	parent = filepath.ToSlash(filepath.Join(filepath.Dir(dir), "kustomization.yaml"))
+	resource = filepath.Base(dir)
+	return dir, parent, resource
+}
+
 func enableInParent(work string, name string, p Platform) (bool, error) {
 	p = p.withDefaults()
-	path := filepath.Join(work, filepath.FromSlash(p.ParentPath()))
+	return enableInParentAt(work, p.ParentPath(), name)
+}
+
+// enableInParentAt lists a resource in a given parent kustomization.
+func enableInParentAt(work string, parentPath string, name string) (bool, error) {
+	path := filepath.Join(work, filepath.FromSlash(parentPath))
 	raw, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -371,7 +206,7 @@ func enableInParent(work string, name string, p Platform) (bool, error) {
 			return false, err
 		}
 	} else if err != nil {
-		return false, fmt.Errorf("read %s: %w", p.ParentPath(), err)
+		return false, fmt.Errorf("read %s: %w", parentPath, err)
 	}
 	if listedInKustomization(raw, name) {
 		return false, nil

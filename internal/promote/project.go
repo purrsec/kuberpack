@@ -35,11 +35,11 @@ type Service struct {
 	// the default branch of the repository.
 	Branch string `yaml:"branch,omitempty" json:"branch,omitempty"`
 	// Strategy is auto, uv or railpack.
-	Strategy    string `yaml:"strategy,omitempty" json:"strategy,omitempty"`
-	Port        int    `yaml:"port,omitempty" json:"port,omitempty"`
-	Hostname    string `yaml:"hostname,omitempty" json:"hostname,omitempty"`
-	Healthcheck string `yaml:"healthcheck,omitempty" json:"healthcheck,omitempty"`
-	Replicas    int    `yaml:"replicas,omitempty" json:"replicas,omitempty"`
+	Strategy    string   `yaml:"strategy,omitempty" json:"strategy,omitempty"`
+	Port        int      `yaml:"port,omitempty" json:"port,omitempty"`
+	Hostname    string   `yaml:"hostname,omitempty" json:"hostname,omitempty"`
+	Healthcheck string   `yaml:"healthcheck,omitempty" json:"healthcheck,omitempty"`
+	Replicas    int      `yaml:"replicas,omitempty" json:"replicas,omitempty"`
 	Secrets     []string `yaml:"secrets,omitempty" json:"secrets,omitempty"`
 	SecretEnv   string   `yaml:"secret_env,omitempty" json:"secret_env,omitempty"`
 	// Env are literal environment variables of the application.
@@ -76,8 +76,8 @@ type Backup struct {
 type Policy struct {
 	// DefaultDeny isolates the services of the project. It defaults to true:
 	// a service only reaches what the manifest allows.
-	DefaultDeny *bool   `yaml:"defaultDeny,omitempty" json:"defaultDeny,omitempty"`
-	Internet    *bool   `yaml:"internet,omitempty" json:"internet,omitempty"`
+	DefaultDeny *bool    `yaml:"defaultDeny,omitempty" json:"defaultDeny,omitempty"`
+	Internet    *bool    `yaml:"internet,omitempty" json:"internet,omitempty"`
 	Peers       []string `yaml:"peers,omitempty" json:"peers,omitempty"`
 }
 
@@ -170,11 +170,46 @@ type ProjectRequest struct {
 	Raw string
 }
 
+// ProjectApp is the operational description of a service of a project: what
+// to build, and where the digest must land. The control plane reconciles it
+// into the app record, the HMAC secret and the Forgejo webhook. A service
+// without a repository produces no app: it stays in the GitOps, it is never
+// built.
+type ProjectApp struct {
+	// Name is the global identity of the app: <project>-<service>.
+	Name string
+	// Service is the name of the service inside the project.
+	Service string
+	// Repository is the Forgejo repository the image is built from.
+	Repository string
+	// Branch is the branch whose pushes become the production.
+	Branch string
+	// Strategy is auto, uv or railpack.
+	Strategy      string
+	Hostname      string
+	Port          int
+	Healthcheck   string
+	StartCommand  string
+	RootDirectory string
+	BuildCommand  string
+	Secrets       []string
+	SecretEnv     string
+	Internet      *bool
+	Peers         []string
+	Namespace     string
+	// ValuesPath is where the digest of the build must be written, relative
+	// to the root of the GitOps repository.
+	ValuesPath string
+}
+
 type ProjectResult struct {
-	Project        string
-	Namespace      string
-	Services       []string
-	Addons         []string
+	Project   string
+	Namespace string
+	Services  []string
+	Addons    []string
+	// Apps are the services that have a repository: the control plane
+	// reconciles them into the build pipeline.
+	Apps           []ProjectApp
 	InfraCommitSHA string
 	Changed        bool
 }
@@ -216,6 +251,12 @@ func (p Platform) projectServiceDir(project, service string) string {
 	return filepath.ToSlash(filepath.Join(p.ProjectDir(project), sanitizeName(service)))
 }
 
+// ProjectServiceValuesPath is where the digest of a service of a project is
+// written, relative to the root of the GitOps repository.
+func (p Platform) ProjectServiceValuesPath(project, service string) string {
+	return filepath.ToSlash(filepath.Join(p.projectServiceDir(project, service), "values.yaml"))
+}
+
 // --- compile --------------------------------------------------------------
 
 // EnsureProject compiles a manifest and commits the result. It never rewrites
@@ -251,12 +292,13 @@ func EnsureProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 		if _, err := req.remoteGit(ctx, "", "clone", "--branch", req.GitOpsBranch, "--single-branch", req.GitOpsURL, work); err != nil {
 			return ProjectResult{}, err
 		}
-		services, adds, err := compileProjectFiles(work, req.Manifest, req.Platform, req.Raw)
+		services, adds, apps, err := compileProjectFiles(work, req.Manifest, req.Platform, req.Raw)
 		if err != nil {
 			return ProjectResult{}, err
 		}
 		result.Services = services
 		result.Addons = adds
+		result.Apps = apps
 
 		rel := req.Platform.ProjectDir(project)
 		parentRel := req.Platform.ProjectsParentPath()
@@ -306,12 +348,12 @@ func EnsureProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 }
 
 // compileProjectFiles writes the project source + generated artifacts.
-func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string) ([]string, []string, error) {
+func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string) ([]string, []string, []ProjectApp, error) {
 	p = p.withDefaults()
 	project := sanitizeName(m.Project)
 	projectDir := filepath.Join(work, filepath.FromSlash(p.ProjectDir(project)))
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// Persist the human source verbatim (so comments survive).
@@ -319,12 +361,12 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string)
 	if manifestText == "" {
 		b, err := yaml.Marshal(m)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		manifestText = string(b)
 	}
 	if err := os.WriteFile(filepath.Join(projectDir, "kuberpack.yaml"), []byte(manifestText+"\n"), 0o644); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	net := m.Policies.Internet
@@ -334,6 +376,7 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string)
 	isolated := m.Policies.defaultDenyEnabled()
 
 	services := make([]string, 0, len(m.Services))
+	apps := make([]ProjectApp, 0, len(m.Services))
 	for name, svc := range m.Services {
 		sname := sanitizeName(name)
 		spec := AppSpec{
@@ -353,40 +396,57 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string)
 		}
 		dir := filepath.Join(work, filepath.FromSlash(p.projectServiceDir(project, sname)))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
-		// Only write missing files: an existing values.yaml keeps its pinned
-		// image (promote owns image/track).
-		if err := writeIfMissing(filepath.Join(dir, "values.yaml"), RenderValues(spec, p)); err != nil {
-			return nil, nil, err
+		// A service of a project must not collide with a legacy standalone
+		// app: both would claim the same hostname, and Flux would keep
+		// deploying the old one.
+		legacyDir := filepath.Join(work, filepath.FromSlash(p.AppDir(sname)))
+		if _, err := os.Stat(legacyDir); err == nil {
+			return nil, nil, nil, fmt.Errorf(
+				"service %q: the standalone app %q still exists in the GitOps: remove it before declaring the service in a project",
+				name, sname)
+		}
+		// The files of a service are generated from the manifest: the
+		// manifest is the source of truth of the runtime. The values file
+		// keeps the image and the track pinned by the control plane, they
+		// are the only two fields Kuberpack does not own there.
+		if err := writeServiceValues(filepath.Join(dir, "values.yaml"), spec, p); err != nil {
+			return nil, nil, nil, err
 		}
 		if err := writeIfMissing(filepath.Join(dir, "helmrelease.yaml"), RenderHelmRelease(spec, p)); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if err := writeIfMissing(filepath.Join(dir, "kustomization.yaml"), RenderAppKustomization(spec, p)); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if len(svc.Secrets) > 0 && p.InfisicalEnabled() {
 			if err := writeIfMissing(filepath.Join(dir, "secret.yaml"), RenderSecretCR(spec, p)); err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 		}
 		services = append(services, sname)
+		// A service with a repository is a build target: the control plane
+		// arms the pipeline for it.
+		if repo := strings.TrimSpace(svc.Repository); repo != "" {
+			apps = append(apps, projectApp(p, project, sname, svc, namespace, net, servicePeers))
+		}
 	}
 	sort.Strings(services)
+	sort.Slice(apps, func(i, j int) bool { return apps[i].Name < apps[j].Name })
 
 	addons := make([]string, 0, len(m.Addons))
 	for name, addon := range m.Addons {
 		aname := sanitizeName(name)
 		dir := filepath.Join(work, filepath.FromSlash(p.projectServiceDir(project, aname)))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if err := writeIfMissing(filepath.Join(dir, "database.yaml"), RenderProjectPostgres(project, aname, addon, namespace, p)); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if err := writeIfMissing(filepath.Join(dir, "kustomization.yaml"), "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\n\nresources:\n  - database.yaml\n"); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		addons = append(addons, aname)
 	}
@@ -404,11 +464,11 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string)
 	// The namespace of the project is created by the project itself: Flux
 	// applies it with the rest.
 	if err := writeIfMissing(filepath.Join(projectDir, "namespace.yaml"), RenderProjectNamespace(namespace)); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	parentYAML := RenderParentKustomization(namespace, append([]string{"namespace.yaml"}, resources...))
 	if err := os.WriteFile(filepath.Join(projectDir, "kustomization.yaml"), []byte(parentYAML), 0o644); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// The projects parent lists the project: Flux only reconciles a project
@@ -418,15 +478,95 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string)
 	if os.IsNotExist(err) {
 		parentRaw = []byte("apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n")
 	} else if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if !listedInKustomization(parentRaw, project) {
 		parentRaw = appendKustomizationResource(parentRaw, project)
 	}
 	if err := os.WriteFile(parentPath, parentRaw, 0o644); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return services, addons, nil
+	return services, addons, apps, nil
+}
+
+// projectApp is the operational description of a service: what to build and
+// where the digest must land. The defaults are the ones of the app
+// registration: the manifest and the API must not disagree.
+func projectApp(p Platform, project, service string, svc Service, namespace string, internet *bool, peers []string) ProjectApp {
+	port := svc.Port
+	if port == 0 {
+		port = 8080
+	}
+	healthcheck := strings.TrimSpace(svc.Healthcheck)
+	if healthcheck == "" {
+		healthcheck = "/"
+	}
+	branch := strings.TrimSpace(svc.Branch)
+	if branch == "" {
+		branch = "main"
+	}
+	strategyName := strings.TrimSpace(svc.Strategy)
+	if strategyName == "" {
+		strategyName = "auto"
+	}
+	secretEnv := strings.TrimSpace(svc.SecretEnv)
+	if secretEnv == "" {
+		secretEnv = "prod"
+	}
+	app := ProjectApp{
+		// The name of an app is global: two projects may declare a service
+		// with the same name.
+		Name:        sanitizeName(project + "-" + service),
+		Service:     service,
+		Repository:  strings.ToLower(strings.TrimSpace(svc.Repository)),
+		Branch:      branch,
+		Strategy:    strategyName,
+		Hostname:    strings.TrimSpace(svc.Hostname),
+		Port:        port,
+		Healthcheck: healthcheck,
+		Secrets:     normalizeSecretKeys(svc.Secrets),
+		SecretEnv:   secretEnv,
+		Internet:    internet,
+		Peers:       peers,
+		Namespace:   namespace,
+		// Where the digest of the build lands: the values file of the
+		// service, inside the project.
+		ValuesPath: p.ProjectServiceValuesPath(project, service),
+	}
+	if svc.Build != nil {
+		app.RootDirectory = strings.TrimSpace(svc.Build.RootDirectory)
+		app.BuildCommand = strings.TrimSpace(svc.Build.BuildCommand)
+		app.StartCommand = strings.TrimSpace(svc.Build.StartCommand)
+	}
+	return app
+}
+
+// writeServiceValues writes the values file of a service from the manifest.
+// The image and the track that the control plane pinned are preserved: the
+// manifest owns the runtime, the control plane owns the digest.
+func writeServiceValues(path string, spec AppSpec, p Platform) error {
+	content := []byte(valuesYAML(spec, p))
+	raw, err := os.ReadFile(path)
+	if err == nil {
+		image, track := pinnedValues(raw)
+		if image != "" {
+			patched, perr := PatchImage(content, image)
+			if perr != nil {
+				return perr
+			}
+			content = patched
+		}
+		if track != "" && track != "main" {
+			patched, perr := PatchTrack(content, track)
+			if perr != nil {
+				return perr
+			}
+			content = patched
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	return os.WriteFile(path, content, 0o644)
 }
 
 // projectNamespace is the namespace the resources of a project land in. It

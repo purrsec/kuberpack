@@ -155,7 +155,6 @@ func RemovePreview(ctx context.Context, req PreviewRequest) (Result, error) {
 	return Result{}, fmt.Errorf("gitops conflict on %s after %d attempts: %w", req.GitOpsBranch, req.MaxAttempts, lastErr)
 }
 
-// DisableApp removes an app from the production parent kustomization so Flux can prune it.
 func DisableApp(ctx context.Context, req EnsureRequest) (Result, error) {
 	spec, err := normalizeSpec(req.App)
 	if err != nil {

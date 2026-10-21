@@ -8,21 +8,32 @@ import (
 	"testing"
 )
 
-func TestEnsureAppWritesContractAndPromoteEnablesFlux(t *testing.T) {
+// The contract of a service is written from the manifest: the image is empty
+// until the control plane pins it, the track follows the branch, the secret
+// is referenced, and the service is activated only after the first pin.
+func TestProjectServiceWritesTheContract(t *testing.T) {
 	bare := setupAppsGitOps(t)
-	spec := AppSpec{Name: "site", Hostname: "site.example.org", Port: 8080, Healthcheck: "/healthz"}
 	platform := Platform{NetworkPolicy: true, IngressTLS: true, ExternalDNSTarget: "95.111.234.93,2a02:c207:2312:1564::1"}
-
-	reg, err := EnsureApp(context.Background(), EnsureRequest{GitOpsURL: bare, GitOpsBranch: "main", App: spec, Platform: platform})
-	if err != nil {
-		t.Fatal(err)
+	m := ProjectManifest{
+		Project: "demo",
+		Services: map[string]Service{
+			"site": {
+				Type:        "stateless",
+				Repository:  "owner/repo",
+				Port:        8080,
+				Hostname:    "site.example.org",
+				Healthcheck: "/healthz",
+			},
+		},
 	}
-	if !reg.Changed {
-		t.Fatal("expected register commit")
+	if _, err := EnsureProject(context.Background(), ProjectRequest{
+		GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: platform,
+	}); err != nil {
+		t.Fatal(err)
 	}
 
 	clone := readRemoteTree(t, bare)
-	values := readFile(t, clone, "kubernetes/vps/apps/site/values.yaml")
+	values := readFile(t, clone, "kubernetes/vps/projects/demo/site/values.yaml")
 	if !strings.Contains(values, "hostname: site.example.org") {
 		t.Fatalf("values:\n%s", values)
 	}
@@ -47,143 +58,43 @@ func TestEnsureAppWritesContractAndPromoteEnablesFlux(t *testing.T) {
 	if !strings.Contains(values, "internet: true") || !strings.Contains(values, "peers: []") {
 		t.Fatalf("expected default network allowlist:\n%s", values)
 	}
-	if !strings.Contains(readFile(t, clone, "kubernetes/vps/apps/site/helmrelease.yaml"), "name: site") {
-		t.Fatal("missing helmrelease")
+
+	hr := readFile(t, clone, "kubernetes/vps/projects/demo/site/helmrelease.yaml")
+	if !strings.Contains(hr, "name: site") {
+		t.Fatalf("helmrelease:\n%s", hr)
 	}
-	hr := readFile(t, clone, "kubernetes/vps/apps/site/helmrelease.yaml")
 	if !strings.Contains(hr, "enable: true") || !strings.Contains(hr, "strategy: rollback") {
 		t.Fatalf("HelmRelease must enable tests and rollback:\n%s", hr)
 	}
-	parent := readFile(t, clone, "kubernetes/vps/apps/kustomization.yaml")
+
+	// Flux must not see the service before an image pin.
+	parent := readFile(t, clone, "kubernetes/vps/projects/demo/kustomization.yaml")
 	if listedInKustomization([]byte(parent), "site") {
-		t.Fatal("Flux must not see the app before an image pin")
+		t.Fatal("Flux must not see the service before an image pin")
 	}
 
-	again, err := EnsureApp(context.Background(), EnsureRequest{GitOpsURL: bare, GitOpsBranch: "main", App: spec, Platform: platform})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if again.Changed {
-		t.Fatal("second register should be a no-op")
-	}
-
-	result, err := Run(context.Background(), Request{
+	if _, err := Run(context.Background(), Request{
 		GitOpsURL:    bare,
 		GitOpsBranch: "main",
-		ValuesPath:   "kubernetes/vps/apps/site/values.yaml",
+		ValuesPath:   "kubernetes/vps/projects/demo/site/values.yaml",
 		ChartPath:    chartDir(t),
 		Image:        mustPin(t),
-		Hostname:     spec.Hostname,
-		Port:         spec.Port,
-		Healthcheck:  spec.Healthcheck,
+		Hostname:     "site.example.org",
+		Port:         8080,
+		Healthcheck:  "/healthz",
 		Platform:     platform,
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatal(err)
-	}
-	if !result.Changed {
-		t.Fatal("expected promote commit")
 	}
 
 	clone = readRemoteTree(t, bare)
-	values = readFile(t, clone, "kubernetes/vps/apps/site/values.yaml")
+	values = readFile(t, clone, "kubernetes/vps/projects/demo/site/values.yaml")
 	if !strings.Contains(values, mustPin(t).String()) {
 		t.Fatalf("image not pinned:\n%s", values)
 	}
-	parent = readFile(t, clone, "kubernetes/vps/apps/kustomization.yaml")
+	parent = readFile(t, clone, "kubernetes/vps/projects/demo/kustomization.yaml")
 	if !listedInKustomization([]byte(parent), "site") {
-		t.Fatalf("app not enabled in parent:\n%s", parent)
-	}
-}
-
-func TestEnsureAppDoesNotOverwriteValues(t *testing.T) {
-	bare := setupAppsGitOps(t)
-	seed := t.TempDir()
-	gitT(t, "", "clone", bare, seed)
-	dir := filepath.Join(seed, "kubernetes", "vps", "apps", "site")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	custom := "# keep me\nhostname: site.example.org\nport: 8080\nhealthcheck: /healthz\nimage: old\n"
-	if err := os.WriteFile(filepath.Join(dir, "values.yaml"), []byte(custom), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gitT(t, seed, "-c", "user.name=seed", "-c", "user.email=seed@test", "-c", "commit.gpgsign=false", "add", ".")
-	gitT(t, seed, "-c", "user.name=seed", "-c", "user.email=seed@test", "-c", "commit.gpgsign=false", "commit", "-m", "custom")
-	gitT(t, seed, "push", "origin", "HEAD:main")
-
-	_, err := EnsureApp(context.Background(), EnsureRequest{
-		GitOpsURL:    bare,
-		GitOpsBranch: "main",
-		App:          AppSpec{Name: "site", Hostname: "other.example.org", Port: 9090, Healthcheck: "/ready"},
-		Platform:     Platform{IngressTLS: true},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := readFile(t, readRemoteTree(t, bare), "kubernetes/vps/apps/site/values.yaml")
-	if !strings.Contains(got, "# keep me") {
-		t.Fatalf("overwrote values:\n%s", got)
-	}
-	if strings.Contains(got, "other.example.org") {
-		t.Fatal("replaced hostname")
-	}
-}
-
-func TestSyncRuntimeRewritesRuntimeFields(t *testing.T) {
-	bare := setupAppsGitOps(t)
-	spec := AppSpec{Name: "site", Hostname: "site.example.org", Port: 8080, Healthcheck: "/healthz"}
-	if _, err := EnsureApp(context.Background(), EnsureRequest{GitOpsURL: bare, GitOpsBranch: "main", App: spec, Platform: Platform{NetworkPolicy: true}}); err != nil {
-		t.Fatal(err)
-	}
-	off := false
-	net, err := SyncRuntime(context.Background(), EnsureRequest{
-		GitOpsURL:    bare,
-		GitOpsBranch: "main",
-		App: AppSpec{
-			Name:        spec.Name,
-			Hostname:    spec.Hostname,
-			Port:        spec.Port,
-			Healthcheck: spec.Healthcheck,
-			Internet:    &off,
-			Peers:       []string{"billing", "postgres:web"},
-		},
-		Platform: Platform{NetworkPolicy: true},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !net.Changed {
-		t.Fatal("expected network commit")
-	}
-	values := readFile(t, readRemoteTree(t, bare), "kubernetes/vps/apps/site/values.yaml")
-	if !strings.Contains(values, `image: ""`) {
-		t.Fatalf("image rewritten:\n%s", values)
-	}
-	if !strings.Contains(values, "internet: false") {
-		t.Fatalf("internet:\n%s", values)
-	}
-	if !strings.Contains(values, "billing") || !strings.Contains(values, "postgres:web") {
-		t.Fatalf("peers:\n%s", values)
-	}
-	again, err := SyncRuntime(context.Background(), EnsureRequest{
-		GitOpsURL:    bare,
-		GitOpsBranch: "main",
-		App: AppSpec{
-			Name:        spec.Name,
-			Hostname:    spec.Hostname,
-			Port:        spec.Port,
-			Healthcheck: spec.Healthcheck,
-			Internet:    &off,
-			Peers:       []string{"billing", "postgres:web"},
-		},
-		Platform: Platform{NetworkPolicy: true},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if again.Changed {
-		t.Fatal("second network update should be a no-op")
+		t.Fatalf("service not enabled in the project parent:\n%s", parent)
 	}
 }
 

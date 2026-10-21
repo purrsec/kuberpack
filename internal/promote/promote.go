@@ -86,7 +86,8 @@ func Run(ctx context.Context, req Request) (Result, error) {
 			if err != nil {
 				return Result{}, fmt.Errorf("read values %s: %w", req.ValuesPath, err)
 			}
-			if _, err := writeMissingAppFiles(work, spec, req.Platform); err != nil {
+			serviceDir, _, _ := servicePaths(req.ValuesPath)
+			if _, err := writeMissingAppFilesIn(work, serviceDir, spec, req.Platform); err != nil {
 				return Result{}, err
 			}
 			// Previews with their own database write the empty CNPG Cluster on
@@ -111,7 +112,10 @@ func Run(ctx context.Context, req Request) (Result, error) {
 			}
 		}
 
-		parentChanged, err := enableInParent(work, app, req.Platform)
+		// The parent of a service of a project is the kustomization of the
+		// project, not the apps parent: the manifest owns the layout.
+		serviceDir, parentPath, resource := servicePaths(req.ValuesPath)
+		parentChanged, err := enableInParentAt(work, parentPath, resource)
 		if err != nil {
 			return Result{}, err
 		}
@@ -122,7 +126,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 
 		// existingGitPaths keeps the app directory when it exists, which covers
 		// a first-pin preview database written next to values.yaml.
-		add := existingGitPaths(work, req.ValuesPath, req.Platform.withDefaults().AppDir(app), req.Platform.ParentPath())
+		add := existingGitPaths(work, req.ValuesPath, serviceDir, parentPath)
 		status, err := runGit(ctx, work, append([]string{"status", "--porcelain", "--"}, add...)...)
 		if err != nil {
 			return Result{}, err

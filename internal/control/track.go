@@ -36,7 +36,7 @@ func (s *Server) gitOpsValues(ctx context.Context, app store.App) ([]byte, error
 	if err != nil {
 		return nil, err
 	}
-	path := s.cfg.Platform.ValuesPath(app.Name)
+	path := appValuesPath(s.cfg.Platform, app)
 	return s.cfg.Client.RawFile(ctx, owner, repo, path, s.cfg.GitOpsBranch)
 }
 
@@ -96,7 +96,7 @@ func (s *Server) alignTrack(ctx context.Context, app store.App) {
 		KnownDigest:  digest,
 		GitOpsURL:    s.cfg.GitOpsURL,
 		GitOpsBranch: s.cfg.GitOpsBranch,
-		ValuesPath:   s.cfg.Platform.ValuesPath(app.Name),
+		ValuesPath:   appValuesPath(s.cfg.Platform, app),
 		ChartPath:    s.cfg.ChartPath,
 		Hostname:     app.Hostname,
 		Port:         app.Port,

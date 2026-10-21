@@ -230,7 +230,7 @@ image: "git.host.bzh/pepe/hello-world:sha-f10cf296ea2c210d374847d1368d0ef9c84866
 	}
 }
 
-func TestCreateAppUnauthorized(t *testing.T) {
+func TestCreateProjectUnauthorized(t *testing.T) {
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "db.sqlite"))
 	if err != nil {
@@ -243,7 +243,7 @@ func TestCreateAppUnauthorized(t *testing.T) {
 		APIToken: "api",
 		Client:   mustForgejo(t),
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/apps", bytes.NewReader([]byte(`{"name":"web"}`)))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects", bytes.NewReader([]byte(`{"project":"web"}`)))
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
@@ -251,12 +251,10 @@ func TestCreateAppUnauthorized(t *testing.T) {
 	}
 }
 
-func TestCreateAndGetApp(t *testing.T) {
+// The manifest is the only way to declare an application: the reconciliation
+// creates the app record, the webhook and the first build.
+func TestReconcileArmsThePipeline(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/repos/pepe/hello-world/keys", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(map[string]any{"id": 1, "read_only": true})
-	})
 	mux.HandleFunc("/api/v1/repos/pepe/hello-world", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"full_name": "pepe/hello-world",
@@ -315,37 +313,74 @@ func TestCreateAndGetApp(t *testing.T) {
 	t.Cleanup(cancel)
 	srv.Start(workerCtx)
 
-	body := []byte(`{"name":"hello-world","repository":"pepe/hello-world","hostname":"hello-world.host.bzh","port":8080}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/apps", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer api")
-	rec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("status %d %s", rec.Code, rec.Body.String())
-	}
-	var created map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+	ctx := context.Background()
+	declared := []promote.ProjectApp{{
+		Name:        "demo-hello-world",
+		Service:     "hello-world",
+		Repository:  "pepe/hello-world",
+		Branch:      "main",
+		Strategy:    "auto",
+		Hostname:    "hello-world.host.bzh",
+		Port:        8080,
+		Healthcheck: "/healthz",
+		ValuesPath:  "kubernetes/vps/projects/demo/hello-world/values.yaml",
+	}}
+	if err := srv.reconcileApps(ctx, "demo", declared); err != nil {
 		t.Fatal(err)
 	}
-	if created["webhook_configured"] != true {
-		t.Fatalf("%v", created)
-	}
-	if created["internet"] != true {
-		t.Fatalf("internet default: %v", created)
-	}
 
-	get := httptest.NewRequest(http.MethodGet, "/api/v1/apps/hello-world", nil)
-	get.Header.Set("Authorization", "Bearer api")
-	getRec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(getRec, get)
-	if getRec.Code != http.StatusOK {
-		t.Fatalf("get %d", getRec.Code)
+	app, err := st.AppByName(ctx, "demo-hello-world")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app.Project != "demo" {
+		t.Fatalf("project: %q", app.Project)
+	}
+	if app.ValuesPath != "kubernetes/vps/projects/demo/hello-world/values.yaml" {
+		t.Fatalf("values path: %q", app.ValuesPath)
+	}
+	if app.WebhookID != 9 {
+		t.Fatalf("webhook: %d", app.WebhookID)
+	}
+	if app.Healthcheck != "/healthz" || app.Port != 8080 {
+		t.Fatalf("runtime: %+v", app)
+	}
+	secret, err := store.SecretsDir(filepath.Join(dir, "secrets")).Get(app.ID)
+	if err != nil || secret == "" {
+		t.Fatalf("the webhook secret must exist: %v", err)
 	}
 
 	select {
 	case <-ran:
 	case <-time.After(2 * time.Second):
 		t.Fatal("first build was not queued")
+	}
+
+	// A second reconciliation is a no-op: no new webhook, no new build.
+	if err := srv.reconcileApps(ctx, "demo", declared); err != nil {
+		t.Fatal(err)
+	}
+	app, err = st.AppByName(ctx, "demo-hello-world")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app.WebhookID != 9 {
+		t.Fatalf("webhook: %d", app.WebhookID)
+	}
+	apps, err := st.ListApps(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(apps) != 1 {
+		t.Fatalf("the reconciliation must not duplicate the app: %d", len(apps))
+	}
+
+	// A service that left the manifest loses its app.
+	if err := srv.reconcileApps(ctx, "demo", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AppByName(ctx, "demo-hello-world"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the app must be removed: %v", err)
 	}
 }
 
@@ -557,7 +592,7 @@ func TestPullRequestPreviewAndForkDenied(t *testing.T) {
 	}
 }
 
-func TestPatchDeleteAndListBuilds(t *testing.T) {
+func TestListBuildsAndRemoveApp(t *testing.T) {
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "db.sqlite"))
 	if err != nil {
@@ -566,7 +601,7 @@ func TestPatchDeleteAndListBuilds(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 	ctx := context.Background()
 	app, err := st.InsertApp(ctx, store.App{
-		Name: "web", ForgejoRepository: "pepe/web", ProductionBranch: "main",
+		Name: "demo-web", Project: "demo", ForgejoRepository: "pepe/web", ProductionBranch: "main",
 		Strategy: "auto", Autodeploy: true, Hostname: "web.example.org", Port: 8080, Healthcheck: "/",
 	})
 	if err != nil {
@@ -592,15 +627,7 @@ func TestPatchDeleteAndListBuilds(t *testing.T) {
 	client.HTTPClient = git.Client()
 	srv := New(Config{Store: st, Secrets: store.SecretsDir(filepath.Join(dir, "secrets")), Client: client, APIToken: "api"})
 
-	patch := httptest.NewRequest(http.MethodPatch, "/api/v1/apps/web", bytes.NewReader([]byte(`{"autodeploy_pr":true,"port":9090}`)))
-	patch.Header.Set("Authorization", "Bearer api")
-	patchRec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(patchRec, patch)
-	if patchRec.Code != http.StatusOK {
-		t.Fatalf("patch %d %s", patchRec.Code, patchRec.Body.String())
-	}
-
-	list := httptest.NewRequest(http.MethodGet, "/api/v1/apps/web/builds", nil)
+	list := httptest.NewRequest(http.MethodGet, "/api/v1/apps/demo-web/builds", nil)
 	list.Header.Set("Authorization", "Bearer api")
 	listRec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(listRec, list)
@@ -608,12 +635,13 @@ func TestPatchDeleteAndListBuilds(t *testing.T) {
 		t.Fatalf("builds %d %s", listRec.Code, listRec.Body.String())
 	}
 
-	del := httptest.NewRequest(http.MethodDelete, "/api/v1/apps/web", nil)
-	del.Header.Set("Authorization", "Bearer api")
-	delRec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(delRec, del)
-	if delRec.Code != http.StatusNoContent {
-		t.Fatalf("delete %d %s", delRec.Code, delRec.Body.String())
+	// A service that left the manifest loses its app: the declaration is
+	// the manifest, not the API.
+	if err := srv.reconcileApps(ctx, "demo", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AppByName(ctx, "demo-web"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the app must be removed: %v", err)
 	}
 }
 

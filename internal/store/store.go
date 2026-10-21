@@ -22,8 +22,17 @@ type Store struct {
 }
 
 type App struct {
-	ID                int64
-	Name              string
+	ID int64
+	// Name is the global identity of the app: <project>-<service> for a
+	// service of a project, the service name alone for a standalone app.
+	Name string
+	// Project is the manifest project the app belongs to ("" outside a
+	// project). It groups the apps a project reconciles.
+	Project string
+	// ValuesPath is where the digest of the build is written, relative to
+	// the root of the GitOps repository. It is empty for an app outside a
+	// project: the platform default applies.
+	ValuesPath        string
 	ForgejoRepository string
 	ProductionBranch  string
 	Strategy          string
@@ -114,6 +123,8 @@ func (s *Store) migrate() error {
 CREATE TABLE IF NOT EXISTS apps (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
+  project TEXT NOT NULL DEFAULT '',
+  values_path TEXT NOT NULL DEFAULT '',
   forgejo_repository TEXT NOT NULL UNIQUE,
   production_branch TEXT NOT NULL,
   strategy TEXT NOT NULL DEFAULT 'auto',
@@ -177,6 +188,8 @@ CREATE TABLE IF NOT EXISTS previews (
 		`ALTER TABLE webhook_deliveries ADD COLUMN pull_request INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE builds ADD COLUMN archive_url TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE apps ADD COLUMN internet INTEGER NOT NULL DEFAULT 1`,
+		`ALTER TABLE apps ADD COLUMN project TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE apps ADD COLUMN values_path TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE apps ADD COLUMN peers TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE apps ADD COLUMN root_directory TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE apps ADD COLUMN build_command TEXT NOT NULL DEFAULT ''`,
@@ -196,9 +209,9 @@ func (s *Store) InsertApp(ctx context.Context, app App) (App, error) {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	app.ForgejoRepository = strings.ToLower(strings.TrimSpace(app.ForgejoRepository))
 	res, err := s.db.ExecContext(ctx, `
-INSERT INTO apps (name, forgejo_repository, production_branch, strategy, autodeploy, autodeploy_pr, hostname, port, healthcheck, start_command, root_directory, build_command, internet, peers, secrets, secret_env, inherit_secret_from, preview_database, webhook_id, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		app.Name, app.ForgejoRepository, app.ProductionBranch, app.Strategy,
+INSERT INTO apps (name, project, values_path, forgejo_repository, production_branch, strategy, autodeploy, autodeploy_pr, hostname, port, healthcheck, start_command, root_directory, build_command, internet, peers, secrets, secret_env, inherit_secret_from, preview_database, webhook_id, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		app.Name, app.Project, app.ValuesPath, app.ForgejoRepository, app.ProductionBranch, app.Strategy,
 		boolInt(app.Autodeploy), boolInt(app.AutodeployPR), app.Hostname, app.Port,
 		app.Healthcheck, app.StartCommand, app.RootDirectory, app.BuildCommand,
 		boolInt(app.Internet), encodePeers(app.Peers), encodePeers(app.Secrets), app.SecretEnv, app.InheritSecretFrom, boolInt(app.PreviewDatabase), app.WebhookID, now,
@@ -233,6 +246,53 @@ func (s *Store) AppByRepository(ctx context.Context, repo string) (App, error) {
 	return scanApp(s.db.QueryRowContext(ctx, appSelect+` WHERE forgejo_repository = ?`, strings.ToLower(repo)))
 }
 
+// AppsByProject lists the apps of a manifest project.
+func (s *Store) AppsByProject(ctx context.Context, project string) ([]App, error) {
+	rows, err := s.db.QueryContext(ctx, appSelect+` WHERE project = ? ORDER BY name`, project)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []App
+	for rows.Next() {
+		app, err := scanAppRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, app)
+	}
+	return out, rows.Err()
+}
+
+// UpsertApp creates or updates the app record of a declared service. It
+// reports whether the app was created. The name and the repository are
+// unique: a conflict on the repository with another name is a duplicate, not
+// an update.
+func (s *Store) UpsertApp(ctx context.Context, app App) (App, bool, error) {
+	existing, err := s.AppByName(ctx, app.Name)
+	if errors.Is(err, ErrNotFound) {
+		created, err := s.InsertApp(ctx, app)
+		if err != nil {
+			return App{}, false, err
+		}
+		return created, true, nil
+	}
+	if err != nil {
+		return App{}, false, err
+	}
+	if !strings.EqualFold(existing.ForgejoRepository, app.ForgejoRepository) {
+		return App{}, false, fmt.Errorf("%w: repository %s is already used by %s",
+			ErrDuplicate, app.ForgejoRepository, existing.Name)
+	}
+	app.ID = existing.ID
+	app.WebhookID = existing.WebhookID
+	app.CreatedAt = existing.CreatedAt
+	if err := s.UpdateApp(ctx, app); err != nil {
+		return App{}, false, err
+	}
+	return app, false, nil
+}
+
 func (s *Store) ListApps(ctx context.Context) ([]App, error) {
 	rows, err := s.db.QueryContext(ctx, appSelect+` ORDER BY name`)
 	if err != nil {
@@ -250,14 +310,14 @@ func (s *Store) ListApps(ctx context.Context) ([]App, error) {
 	return out, rows.Err()
 }
 
-const appSelect = `SELECT id, name, forgejo_repository, production_branch, strategy, autodeploy, autodeploy_pr, hostname, port, healthcheck, start_command, root_directory, build_command, internet, peers, secrets, secret_env, inherit_secret_from, preview_database, webhook_id, created_at FROM apps`
+const appSelect = `SELECT id, name, project, values_path, forgejo_repository, production_branch, strategy, autodeploy, autodeploy_pr, hostname, port, healthcheck, start_command, root_directory, build_command, internet, peers, secrets, secret_env, inherit_secret_from, preview_database, webhook_id, created_at FROM apps`
 
 func scanApp(row *sql.Row) (App, error) {
 	var app App
 	var created, peers, secrets string
 	var auto, autoPR, internet int
 	var previewDB int
-	err := row.Scan(&app.ID, &app.Name, &app.ForgejoRepository, &app.ProductionBranch, &app.Strategy, &auto, &autoPR, &app.Hostname, &app.Port, &app.Healthcheck, &app.StartCommand, &app.RootDirectory, &app.BuildCommand, &internet, &peers, &secrets, &app.SecretEnv, &app.InheritSecretFrom, &previewDB, &app.WebhookID, &created)
+	err := row.Scan(&app.ID, &app.Name, &app.Project, &app.ValuesPath, &app.ForgejoRepository, &app.ProductionBranch, &app.Strategy, &auto, &autoPR, &app.Hostname, &app.Port, &app.Healthcheck, &app.StartCommand, &app.RootDirectory, &app.BuildCommand, &internet, &peers, &secrets, &app.SecretEnv, &app.InheritSecretFrom, &previewDB, &app.WebhookID, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return App{}, ErrNotFound
 	}
@@ -279,7 +339,7 @@ func scanAppRow(rows *sql.Rows) (App, error) {
 	var created, peers, secrets string
 	var auto, autoPR, internet int
 	var previewDB int
-	err := rows.Scan(&app.ID, &app.Name, &app.ForgejoRepository, &app.ProductionBranch, &app.Strategy, &auto, &autoPR, &app.Hostname, &app.Port, &app.Healthcheck, &app.StartCommand, &app.RootDirectory, &app.BuildCommand, &internet, &peers, &secrets, &app.SecretEnv, &app.InheritSecretFrom, &previewDB, &app.WebhookID, &created)
+	err := rows.Scan(&app.ID, &app.Name, &app.Project, &app.ValuesPath, &app.ForgejoRepository, &app.ProductionBranch, &app.Strategy, &auto, &autoPR, &app.Hostname, &app.Port, &app.Healthcheck, &app.StartCommand, &app.RootDirectory, &app.BuildCommand, &internet, &peers, &secrets, &app.SecretEnv, &app.InheritSecretFrom, &previewDB, &app.WebhookID, &created)
 	if err != nil {
 		return App{}, err
 	}
@@ -431,9 +491,9 @@ func (s *Store) MarkRolledBack(ctx context.Context, id int64, errMsg string) err
 
 func (s *Store) UpdateApp(ctx context.Context, app App) error {
 	_, err := s.db.ExecContext(ctx, `
-UPDATE apps SET production_branch=?, strategy=?, autodeploy=?, autodeploy_pr=?, hostname=?, port=?, healthcheck=?, start_command=?, root_directory=?, build_command=?, internet=?, peers=?, secrets=?, secret_env=?, inherit_secret_from=?, preview_database=?
+UPDATE apps SET project=?, values_path=?, production_branch=?, strategy=?, autodeploy=?, autodeploy_pr=?, hostname=?, port=?, healthcheck=?, start_command=?, root_directory=?, build_command=?, internet=?, peers=?, secrets=?, secret_env=?, inherit_secret_from=?, preview_database=?
 WHERE id=?`,
-		app.ProductionBranch, app.Strategy, boolInt(app.Autodeploy), boolInt(app.AutodeployPR),
+		app.Project, app.ValuesPath, app.ProductionBranch, app.Strategy, boolInt(app.Autodeploy), boolInt(app.AutodeployPR),
 		app.Hostname, app.Port, app.Healthcheck, app.StartCommand, app.RootDirectory, app.BuildCommand,
 		boolInt(app.Internet), encodePeers(app.Peers), encodePeers(app.Secrets), app.SecretEnv, app.InheritSecretFrom, boolInt(app.PreviewDatabase), app.ID,
 	)

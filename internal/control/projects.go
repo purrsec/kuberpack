@@ -40,6 +40,13 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "compile failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
+	// The manifest is the source of truth: the declared services become apps
+	// with a webhook and a build. The GitOps is already written, so a retry
+	// of the same manifest arms the pipeline.
+	if err := s.reconcileApps(r.Context(), res.Project, res.Apps); err != nil {
+		http.Error(w, "reconcile failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
 	writeJSON(w, http.StatusCreated, projectJSON(res))
 }
 
@@ -57,6 +64,11 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 		Platform:     s.cfg.Platform,
 	})
 	if err != nil {
+		http.Error(w, "delete failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	// The apps of a deleted project lose their webhook and their secret.
+	if err := s.reconcileApps(r.Context(), name, nil); err != nil {
 		http.Error(w, "delete failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}

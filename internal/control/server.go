@@ -22,7 +22,6 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/promote"
 	"git.host.bzh/pepe/kuberpack/internal/release"
 	"git.host.bzh/pepe/kuberpack/internal/store"
-	"git.host.bzh/pepe/kuberpack/internal/strategy"
 )
 
 // deliveryNonce returns a short random suffix for a delivery id. An explicit
@@ -80,11 +79,10 @@ func New(cfg Config) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.healthz)
-	mux.HandleFunc("POST /api/v1/apps", s.withAPI(s.createApp))
+	// The manifest is the only way to declare an application: there is one
+	// writer, and it is the compiler. The app endpoints read the state.
 	mux.HandleFunc("GET /api/v1/apps", s.withAPI(s.listApps))
 	mux.HandleFunc("GET /api/v1/apps/{name}", s.withAPI(s.getApp))
-	mux.HandleFunc("PATCH /api/v1/apps/{name}", s.withAPI(s.patchApp))
-	mux.HandleFunc("DELETE /api/v1/apps/{name}", s.withAPI(s.deleteApp))
 	mux.HandleFunc("GET /api/v1/apps/{name}/builds", s.withAPI(s.listBuilds))
 	mux.HandleFunc("POST /api/v1/apps/{name}/redeploy", s.withAPI(s.redeployApp))
 	mux.HandleFunc("POST /api/v1/projects", s.withAPI(s.createProject))
@@ -122,210 +120,6 @@ func (s *Server) withAPI(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
-}
-
-type createAppBody struct {
-	Name              string   `json:"name"`
-	Repository        string   `json:"repository"`
-	Branch            string   `json:"branch"`
-	Strategy          string   `json:"strategy"`
-	Autodeploy        *bool    `json:"autodeploy"`
-	AutodeployPR      bool     `json:"autodeploy_pr"`
-	Hostname          string   `json:"hostname"`
-	Port              int      `json:"port"`
-	Healthcheck       string   `json:"healthcheck"`
-	StartCommand      string   `json:"start_command"`
-	RootDirectory     string   `json:"root_directory"`
-	BuildCommand      string   `json:"build_command"`
-	Internet          *bool    `json:"internet"`
-	Peers             []string `json:"peers"`
-	Secrets           []string `json:"secrets"`
-	SecretEnv         string   `json:"secret_env"`
-	InheritSecretFrom string   `json:"inherit_secret_from"`
-	PreviewDatabase   bool     `json:"preview_database"`
-}
-
-func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
-	var body createAppBody
-	if err := readJSON(r, &body); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	name := sanitizeName(body.Name)
-	if name == "" {
-		http.Error(w, "name is required", http.StatusBadRequest)
-		return
-	}
-	owner, repoName, err := forgejo.ParseOwnerName(body.Repository)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	branch := strings.TrimSpace(body.Branch)
-	if branch == "" {
-		branch = "main"
-	}
-	strategyName := strings.TrimSpace(body.Strategy)
-	if strategyName == "" {
-		strategyName = "auto"
-	}
-	if _, err := strategy.ParseKind(strategyName); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if strings.TrimSpace(body.Hostname) == "" {
-		http.Error(w, "hostname is required", http.StatusBadRequest)
-		return
-	}
-	port := body.Port
-	if port == 0 {
-		port = 8080
-	}
-	if port < 1 || port > 65535 {
-		http.Error(w, "port is invalid", http.StatusBadRequest)
-		return
-	}
-	health := strings.TrimSpace(body.Healthcheck)
-	if health == "" {
-		health = "/"
-	}
-	auto := true
-	if body.Autodeploy != nil {
-		auto = *body.Autodeploy
-	}
-	internet := true
-	if body.Internet != nil {
-		internet = *body.Internet
-	}
-	peers, err := promote.ParsePeers(body.Peers)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if _, err := s.cfg.Client.Repo(r.Context(), owner, repoName); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	app, err := s.cfg.Store.InsertApp(r.Context(), store.App{
-		Name:              name,
-		ForgejoRepository: owner + "/" + repoName,
-		ProductionBranch:  branch,
-		Strategy:          strategyName,
-		Autodeploy:        auto,
-		AutodeployPR:      body.AutodeployPR,
-		Hostname:          strings.TrimSpace(body.Hostname),
-		Port:              port,
-		Healthcheck:       health,
-		StartCommand:      strings.TrimSpace(body.StartCommand),
-		RootDirectory:     strings.TrimSpace(body.RootDirectory),
-		BuildCommand:      strings.TrimSpace(body.BuildCommand),
-		Internet:          internet,
-		Peers:             promote.FormatPeers(peers),
-		Secrets:           promote.NormalizeSecretKeys(body.Secrets),
-		SecretEnv:         secretEnvOrDefault(body.SecretEnv),
-		InheritSecretFrom: inheritSecretFromOrDefault(body.InheritSecretFrom),
-		PreviewDatabase:   body.PreviewDatabase,
-	})
-	if err != nil {
-		if errors.Is(err, store.ErrDuplicate) {
-			http.Error(w, err.Error(), http.StatusConflict)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	// Registration performs several external side effects. From here on, any
-	// failure rolls the whole registration back so a retry starts clean
-	// instead of leaving an orphan app / HMAC secret / webhook behind.
-	rollback := func() {
-		if s.cfg.WebhookURL != "" && app.WebhookID > 0 {
-			_ = s.cfg.Client.DeleteHook(r.Context(), owner, repoName, app.WebhookID)
-		}
-		_ = s.cfg.Secrets.Delete(app.ID)
-		_ = s.cfg.Store.DeleteApp(r.Context(), app.ID)
-	}
-
-	secret, err := hmacsig.NewSecret()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := s.cfg.Secrets.Put(app.ID, secret); err != nil {
-		_ = s.cfg.Store.DeleteApp(r.Context(), app.ID)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	resp := appJSON(app)
-	if s.cfg.WebhookURL != "" {
-		hook, err := s.cfg.Client.EnsureHook(r.Context(), owner, repoName, s.cfg.WebhookURL, secret)
-		if err != nil {
-			rollback()
-			http.Error(w, "webhook failed: "+err.Error(), http.StatusBadGateway)
-			return
-		}
-		if err := s.cfg.Store.SetWebhookID(r.Context(), app.ID, hook.ID); err != nil {
-			_ = s.cfg.Client.DeleteHook(r.Context(), owner, repoName, hook.ID)
-			rollback()
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		app.WebhookID = hook.ID
-		resp = appJSON(app)
-		resp["webhook_configured"] = true
-	} else {
-		resp["webhook_configured"] = false
-		resp["webhook_secret"] = secret
-	}
-
-	if s.cfg.GitOpsURL != "" {
-		if _, err := promote.EnsureApp(r.Context(), promote.EnsureRequest{
-			GitOpsURL:    s.cfg.GitOpsURL,
-			GitOpsBranch: s.cfg.GitOpsBranch,
-			HTTPToken:    s.cfg.Token,
-			App: promote.AppSpec{
-				Name:        app.Name,
-				Hostname:    app.Hostname,
-				Port:        app.Port,
-				Healthcheck: app.Healthcheck,
-				Internet:    &app.Internet,
-				Peers:       app.Peers,
-			},
-			Platform: s.cfg.Platform,
-		}); err != nil {
-			// The GitOps files were not written (EnsureApp is all-or-nothing
-			// before its push), so undoing the external state is enough.
-			rollback()
-			http.Error(w, "gitops failed: "+err.Error(), http.StatusBadGateway)
-			return
-		}
-		resp["gitops_configured"] = true
-	}
-
-	if auto {
-		sha, err := s.cfg.Client.BranchSHA(r.Context(), owner, repoName, branch)
-		if err == nil && sha != "" {
-			// delivery_id is the primary key of webhook_deliveries: it must be
-			// unique per application, not per commit. Two apps built from the
-			// same commit (monorepo) would otherwise collide and the second one
-			// would never be built. The nonce keeps the id unique per request,
-			// so registering again always queues a new build.
-			del := "register-" + app.Name + "-" + sha + "-" + deliveryNonce()
-			if err := s.cfg.Store.InsertDelivery(r.Context(), store.Delivery{
-				ID:        del,
-				AppID:     app.ID,
-				EventType: "register",
-				CommitSHA: sha,
-				Status:    "queued",
-			}); err == nil || errors.Is(err, store.ErrDuplicate) {
-				s.publishCommitStatus(r.Context(), owner, repoName, sha, forgejo.StatusPending, "Building", app, false)
-				s.kick()
-			}
-		}
-	}
-
-	writeJSON(w, http.StatusCreated, resp)
 }
 
 func (s *Server) listApps(w http.ResponseWriter, r *http.Request) {
@@ -529,7 +323,7 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 		ChartPath:     s.cfg.ChartPath,
 		// The GitOps directory is keyed by the platform app name, not by the
 		// Forgejo repository name: registration wrote <apps>/<app>/.
-		ValuesPath:   s.cfg.Platform.ValuesPath(app.Name),
+		ValuesPath:   appValuesPath(s.cfg.Platform, app),
 		Hostname:     app.Hostname,
 		Port:         app.Port,
 		Healthcheck:  app.Healthcheck,
@@ -623,6 +417,8 @@ func appJSON(app store.App) map[string]any {
 	return map[string]any{
 		"id":                  app.ID,
 		"name":                app.Name,
+		"project":             app.Project,
+		"values_path":         app.ValuesPath,
 		"repository":          app.ForgejoRepository,
 		"branch":              app.ProductionBranch,
 		"strategy":            app.Strategy,
