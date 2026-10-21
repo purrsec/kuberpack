@@ -424,7 +424,11 @@ func (s *Server) worker(ctx context.Context) {
 	}
 }
 
+// drain processes the queued deliveries, one at a time. A delivery is
+// attempted at most once per pass: if SQLite refuses to move it out of the
+// queue, the same row would otherwise be picked again and again.
 func (s *Server) drain(ctx context.Context) {
+	attempted := map[string]bool{}
 	for {
 		if ctx.Err() != nil {
 			return
@@ -434,10 +438,18 @@ func (s *Server) drain(ctx context.Context) {
 			log.Printf("kuberpack queue: %v", err)
 			return
 		}
-		if len(queued) == 0 {
+		next := -1
+		for i, d := range queued {
+			if !attempted[d.ID] {
+				next = i
+				break
+			}
+		}
+		if next < 0 {
 			return
 		}
-		d := queued[0]
+		d := queued[next]
+		attempted[d.ID] = true
 		s.process(ctx, d)
 	}
 }
