@@ -173,7 +173,10 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	}
 	log("submitting Kubernetes build Job for %s", sha)
 	buildReq := builder.Request{
-		GenerateLock:    plan.GenerateLock,
+		GenerateLock: plan.GenerateLock,
+		// The forge of the application has its own way to authenticate a
+		// clone: the builder must use it, not the way of the platform.
+		GitAuthScheme:   git.AuthScheme(req.Provider.Name()),
 		CloneURL:        repo.CloneURL,
 		CommitSHA:       sha,
 		ImageRepository: ociRepo,
