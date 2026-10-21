@@ -65,6 +65,10 @@ func runServe(args []string) error {
 		runner.PullSecretName = getenv("KUBERPACK_BUILDER_PULL_SECRET", "kuberpack-builder-pull")
 		runner.BuildkitImage = strings.TrimSpace(os.Getenv("KUBERPACK_BUILDKIT_IMAGE"))
 		runner.BuildsGitURL = strings.TrimSpace(os.Getenv("KUBERPACK_BUILDS_GIT_URL"))
+		runner.BuilderCPU = strings.TrimSpace(os.Getenv("KUBERPACK_BUILDER_CPU"))
+		runner.BuilderMemory = strings.TrimSpace(os.Getenv("KUBERPACK_BUILDER_MEMORY"))
+		runner.BuildkitCPU = strings.TrimSpace(os.Getenv("KUBERPACK_BUILDKIT_CPU"))
+		runner.BuildkitMemory = strings.TrimSpace(os.Getenv("KUBERPACK_BUILDKIT_MEMORY"))
 		runner.Timeout = *waitFor
 		jobBuilder = runner
 	}

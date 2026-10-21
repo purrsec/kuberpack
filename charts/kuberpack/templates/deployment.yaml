@@ -64,6 +64,18 @@ spec:
               value: {{ required "builderImage is required" .Values.builderImage | quote }}
             - name: KUBERPACK_BUILDER_NAMESPACE
               value: kuberpack-build
+            {{- with .Values.builderResources }}
+            - name: KUBERPACK_BUILDER_CPU
+              value: {{ .cpu | quote }}
+            - name: KUBERPACK_BUILDER_MEMORY
+              value: {{ .memory | quote }}
+            {{- end }}
+            {{- with .Values.buildkitResources }}
+            - name: KUBERPACK_BUILDKIT_CPU
+              value: {{ .cpu | quote }}
+            - name: KUBERPACK_BUILDKIT_MEMORY
+              value: {{ .memory | quote }}
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

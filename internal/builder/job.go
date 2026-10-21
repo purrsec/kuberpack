@@ -63,6 +63,23 @@ type JobRunner struct {
 	BuildsGitURL   string
 	Timeout        time.Duration
 	PollInterval   time.Duration
+	// The resources of the builder and of its BuildKit sidecar.
+	BuilderCPU     string
+	BuilderMemory  string
+	BuildkitCPU    string
+	BuildkitMemory string
+}
+
+// resourceQuantity reads a quantity, with a default.
+func resourceQuantity(value, fallback string) resource.Quantity {
+	if strings.TrimSpace(value) == "" {
+		value = fallback
+	}
+	quantity, err := resource.ParseQuantity(value)
+	if err != nil {
+		return resource.MustParse(fallback)
+	}
+	return quantity
 }
 
 func InCluster(image string) (*JobRunner, error) {
@@ -244,10 +261,12 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 	tmpSize := resource.MustParse("2Gi")
 	// Trivy downloads and unpacks a vulnerability database of a few hundred
 	// megabytes: the builder container needs more than 2Gi to survive the scan.
-	builderCPU := resource.MustParse("4")
-	builderMemory := resource.MustParse("6Gi")
-	buildkitCPU := resource.MustParse("6")
-	buildkitMemory := resource.MustParse("8Gi")
+	// The resources of the build are the size of the machine that builds.
+	// They are configurable: a small server builds small applications.
+	builderCPU := resourceQuantity(r.BuilderCPU, "4")
+	builderMemory := resourceQuantity(r.BuilderMemory, "6Gi")
+	buildkitCPU := resourceQuantity(r.BuildkitCPU, "6")
+	buildkitMemory := resourceQuantity(r.BuildkitMemory, "8Gi")
 	requestDigest := sha256.Sum256([]byte(cloneURL + "\x00" + req.CommitSHA + "\x00" + req.ImageRepository + "\x00" + req.RegistryUser + "\x00" + req.StartCmd))
 	buildsURL := strings.TrimSpace(req.BuildsGitURL)
 	if buildsURL == "" {

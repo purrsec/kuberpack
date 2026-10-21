@@ -40,6 +40,15 @@ nodePort:
 buildNetworkPolicy:
   enabled: true
 
+# The resources of the builder and of its BuildKit sidecar. They are the size
+# of the machine that builds: a small server builds small applications.
+builderResources:
+  cpu: "2"
+  memory: 2Gi
+buildkitResources:
+  cpu: "3"
+  memory: 4Gi
+
 # Resource quota of the build namespace. It must leave room for one build Job
 # (builder + rootless BuildKit sidecar).
 buildQuota:
