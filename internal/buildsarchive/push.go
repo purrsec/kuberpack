@@ -13,8 +13,11 @@ import (
 )
 
 type Request struct {
-	GitURL      string
-	Token       string
+	GitURL string
+	Token  string
+	// AuthScheme is how the forge of the builds repository authenticates a
+	// clone: "token" for a Gitea, "basic" for GitHub and GitLab.
+	AuthScheme  string
 	App         string
 	CommitSHA   string
 	Environment string
@@ -55,7 +58,7 @@ func Push(ctx context.Context, req Request) (Result, error) {
 	}
 	defer os.RemoveAll(parent)
 	work := filepath.Join(parent, "repo")
-	extra := fetch.TokenHeaderArgs(req.Token)
+	extra := fetch.AuthArgs(req.AuthScheme, req.Token)
 	if _, err := git(ctx, "", extra, "clone", "--depth", "1", req.GitURL, work); err != nil {
 		if _, err := git(ctx, "", extra, "clone", req.GitURL, work); err != nil {
 			return Result{}, err

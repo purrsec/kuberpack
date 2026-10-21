@@ -51,15 +51,11 @@ func (req Request) authArgs() []string {
 	if req.AuthArgs != nil {
 		return req.AuthArgs
 	}
-	return fetch.TokenHeaderArgs(req.HTTPToken)
+	return fetch.AuthArgs(req.AuthScheme, req.HTTPToken)
 }
 
 func (req Request) remoteGit(ctx context.Context, dir string, args ...string) (string, error) {
-	auth := req.AuthArgs
-	if auth == nil {
-		auth = fetch.TokenHeaderArgs(req.HTTPToken)
-	}
-	return runGit(ctx, dir, append(auth, args...)...)
+	return runGit(ctx, dir, append(req.authArgs(), args...)...)
 }
 
 func gitConfig(args ...string) []string {

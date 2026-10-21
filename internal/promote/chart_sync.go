@@ -19,7 +19,10 @@ type ChartRequest struct {
 	HTTPToken    string
 	// AuthArgs are the git arguments that authenticate the clone of the
 	// GitOps repository. Every forge has its own way.
-	AuthArgs    []string
+	AuthArgs []string
+	// AuthScheme is how the forge of the GitOps repository authenticates a
+	// clone: "token" for a Gitea, "basic" for GitHub and GitLab.
+	AuthScheme  string
 	MaxAttempts int
 	// ChartPath is the chart on the disk of the control plane.
 	ChartPath string
@@ -34,7 +37,7 @@ func (req ChartRequest) authArgs() []string {
 	if req.AuthArgs != nil {
 		return req.AuthArgs
 	}
-	return fetch.TokenHeaderArgs(req.HTTPToken)
+	return fetch.AuthArgs(req.AuthScheme, req.HTTPToken)
 }
 
 // ChartResult is the outcome of a chart sync.

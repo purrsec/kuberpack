@@ -40,13 +40,16 @@ type Request struct {
 	// GitAuthScheme is how the forge of the application authenticates a
 	// clone: "token" or "basic". It is not a secret.
 	GitAuthScheme string
-	StartCmd      string
-	RootDirectory string
-	BuildCommand  string
-	BuildID       int64
-	BuildsGitURL  string
-	AppName       string
-	Environment   string
+	// BuildsGitAuthScheme is how the forge of the builds repository
+	// authenticates a clone. It is not a secret.
+	BuildsGitAuthScheme string
+	StartCmd            string
+	RootDirectory       string
+	BuildCommand        string
+	BuildID             int64
+	BuildsGitURL        string
+	AppName             string
+	Environment         string
 }
 
 type Runner interface {
@@ -279,6 +282,7 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 		{Name: "KUBERPACK_REGISTRY_USER", Value: req.RegistryUser},
 		{Name: "KUBERPACK_GENERATE_LOCK", Value: strconv.FormatBool(req.GenerateLock)},
 		{Name: "KUBERPACK_GIT_AUTH", Value: req.GitAuthScheme},
+		{Name: "KUBERPACK_BUILDS_GIT_AUTH", Value: req.BuildsGitAuthScheme},
 		{Name: "KUBERPACK_START_CMD", Value: req.StartCmd},
 		{Name: "KUBERPACK_ROOT_DIRECTORY", Value: req.RootDirectory},
 		{Name: "KUBERPACK_BUILD_CMD", Value: req.BuildCommand},

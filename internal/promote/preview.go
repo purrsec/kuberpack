@@ -22,7 +22,10 @@ type PreviewRequest struct {
 	HTTPToken    string
 	// AuthArgs are the git arguments that authenticate the clone of the
 	// GitOps repository. Every forge has its own way.
-	AuthArgs    []string
+	AuthArgs []string
+	// AuthScheme is how the forge of the GitOps repository authenticates a
+	// clone: "token" for a Gitea, "basic" for GitHub and GitLab.
+	AuthScheme  string
 	MaxAttempts int
 	App         AppSpec
 	Platform    Platform
@@ -33,7 +36,7 @@ func (req PreviewRequest) authArgs() []string {
 	if req.AuthArgs != nil {
 		return req.AuthArgs
 	}
-	return fetch.TokenHeaderArgs(req.HTTPToken)
+	return fetch.AuthArgs(req.AuthScheme, req.HTTPToken)
 }
 
 func (req PreviewRequest) remoteGit(ctx context.Context, dir string, args ...string) (string, error) {
@@ -41,7 +44,7 @@ func (req PreviewRequest) remoteGit(ctx context.Context, dir string, args ...str
 }
 
 // EnsurePreviewBranch clones the previews branch, creating it if Forgejo has none yet.
-func EnsurePreviewBranch(ctx context.Context, gitOpsURL, branch, token string) error {
+func EnsurePreviewBranch(ctx context.Context, gitOpsURL, branch string, authArgs []string) error {
 	if branch == "" {
 		branch = "previews"
 	}
@@ -51,7 +54,7 @@ func EnsurePreviewBranch(ctx context.Context, gitOpsURL, branch, token string) e
 	}
 	defer os.RemoveAll(parent)
 	work := filepath.Join(parent, "repo")
-	extra := fetch.TokenHeaderArgs(token)
+	extra := authArgs
 	if _, err := runGit(ctx, "", append(extra, "clone", "--branch", branch, "--single-branch", gitOpsURL, work)...); err == nil {
 		return nil
 	}

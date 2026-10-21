@@ -63,6 +63,25 @@ func checkout(ctx context.Context, cloneURL, commitSHA, dest string, extraGitArg
 	return nil
 }
 
+// The authentication schemes of a clone. Every forge has its own way, and
+// a scheme that belongs to another forge is refused: a Gitea token in a
+// header is an invalid credential for GitHub.
+const (
+	// AuthToken sends the token in a header, the way a Gitea expects it.
+	AuthToken = "token"
+	// AuthBasic sends the token as the password of a basic authentication.
+	AuthBasic = "basic"
+)
+
+// AuthArgs builds the git arguments of a clone for a scheme. An unknown
+// scheme is the token of a Gitea, the default of the platform.
+func AuthArgs(scheme, token string) []string {
+	if strings.EqualFold(strings.TrimSpace(scheme), AuthBasic) {
+		return BasicAuthArgs("x-access-token", token)
+	}
+	return TokenHeaderArgs(token)
+}
+
 func TokenHeaderArgs(token string) []string {
 	if token == "" {
 		return nil

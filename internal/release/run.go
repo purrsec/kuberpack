@@ -60,8 +60,32 @@ type Request struct {
 	AllowNonHEAD      bool
 	KnownDigest       string
 	BuildsGitURL      string
-	Environment       string
-	Log               func(string, ...any)
+	// BuildsGitAuthScheme is how the forge of the builds repository
+	// authenticates a clone.
+	BuildsGitAuthScheme string
+	// GitOpsAuthArgs authenticate the clone of the GitOps repository. It
+	// is the forge of the platform, which is not necessarily the forge of
+	// the application.
+	GitOpsAuthArgs []string
+	Environment    string
+	Log            func(string, ...any)
+}
+
+// checkout clones the repository of the application. It is a variable so
+// that a test can observe how the clone authenticates itself.
+var checkout = fetch.Checkout
+
+// gitOpsAuthArgs is how the clone of the GitOps repository authenticates.
+// The GitOps repository lives on the forge of the platform; the application
+// may live on another forge.
+func (r Request) gitOpsAuthArgs() []string {
+	if len(r.GitOpsAuthArgs) > 0 {
+		return r.GitOpsAuthArgs
+	}
+	if r.Provider == nil {
+		return nil
+	}
+	return r.Provider.CloneAuth(r.Token)
 }
 
 // registryUser is the namespace the image is published in.
@@ -142,7 +166,11 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	}
 	defer os.RemoveAll(parent)
 	dest := filepath.Join(parent, "src")
-	if err := fetch.Checkout(ctx, repo.CloneURL, sha, dest, fetch.TokenHeaderArgs(req.Token)); err != nil {
+	// The forge of the application has its own way to authenticate a clone:
+	// the token of a Gitea in a header is an invalid credential for GitHub,
+	// which then asks for a username on the terminal.
+	if err := checkout(ctx, repo.CloneURL, sha, dest,
+		git.CloneAuthArgs(git.AuthScheme(req.Provider.Name()), req.Token)); err != nil {
 		return Result{}, fail.Stage(fail.Clone, err)
 	}
 	plan, err := strategy.Resolve(dest, kind)
@@ -176,19 +204,20 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		GenerateLock: plan.GenerateLock,
 		// The forge of the application has its own way to authenticate a
 		// clone: the builder must use it, not the way of the platform.
-		GitAuthScheme:   git.AuthScheme(req.Provider.Name()),
-		CloneURL:        repo.CloneURL,
-		CommitSHA:       sha,
-		ImageRepository: ociRepo,
-		RegistryUser:    req.registryUser(),
-		StartCmd:        req.StartCmd,
-		RootDirectory:   req.RootDirectory,
-		BuildCommand:    req.BuildCommand,
-		BuildID:         req.BuildID,
-		DeliveryID:      req.DeliveryID,
-		BuildsGitURL:    req.BuildsGitURL,
-		AppName:         req.Name,
-		Environment:     req.Environment,
+		GitAuthScheme:       git.AuthScheme(req.Provider.Name()),
+		CloneURL:            repo.CloneURL,
+		CommitSHA:           sha,
+		ImageRepository:     ociRepo,
+		RegistryUser:        req.registryUser(),
+		StartCmd:            req.StartCmd,
+		RootDirectory:       req.RootDirectory,
+		BuildCommand:        req.BuildCommand,
+		BuildID:             req.BuildID,
+		DeliveryID:          req.DeliveryID,
+		BuildsGitURL:        req.BuildsGitURL,
+		BuildsGitAuthScheme: req.BuildsGitAuthScheme,
+		AppName:             req.Name,
+		Environment:         req.Environment,
 	}
 	if err := req.Builder.Build(ctx, buildReq); err != nil {
 		return Result{}, fail.Stage(fail.Job, err)
@@ -250,6 +279,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		ValuesPath:        values,
 		ChartPath:         req.ChartPath,
 		HTTPToken:         req.Token,
+		AuthArgs:          req.gitOpsAuthArgs(),
 		Image:             ref,
 		Hostname:          req.Hostname,
 		Port:              req.Port,

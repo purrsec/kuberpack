@@ -18,7 +18,10 @@ type ReloadRequest struct {
 	HTTPToken    string
 	// AuthArgs are the git arguments that authenticate the clone of the
 	// GitOps repository. Every forge has its own way.
-	AuthArgs    []string
+	AuthArgs []string
+	// AuthScheme is how the forge of the GitOps repository authenticates a
+	// clone: "token" for a Gitea, "basic" for GitHub and GitLab.
+	AuthScheme  string
 	MaxAttempts int
 	// Projects are the names of the projects to reload. Empty means every
 	// project of the repository.
@@ -235,7 +238,7 @@ func (req ReloadRequest) authArgs() []string {
 	if req.AuthArgs != nil {
 		return req.AuthArgs
 	}
-	return fetch.TokenHeaderArgs(req.HTTPToken)
+	return fetch.AuthArgs(req.AuthScheme, req.HTTPToken)
 }
 
 // cloneGitOps clones the GitOps repository.

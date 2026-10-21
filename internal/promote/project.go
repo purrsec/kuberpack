@@ -13,8 +13,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func fetchTokenArgs(token string) []string { return fetch.TokenHeaderArgs(token) }
-
 // ProjectManifest is the human-authored source compiled into GitOps primitives.
 type ProjectManifest struct {
 	Project   string             `yaml:"project" json:"project"`
@@ -171,7 +169,10 @@ type ProjectRequest struct {
 	HTTPToken    string
 	// AuthArgs are the git arguments that authenticate the clone of the
 	// GitOps repository. Every forge has its own way.
-	AuthArgs    []string
+	AuthArgs []string
+	// AuthScheme is how the forge of the GitOps repository authenticates a
+	// clone: "token" for a Gitea, "basic" for GitHub and GitLab.
+	AuthScheme  string
 	MaxAttempts int
 	Manifest    ProjectManifest
 	Platform    Platform
@@ -185,7 +186,7 @@ func (req ProjectRequest) authArgs() []string {
 	if req.AuthArgs != nil {
 		return req.AuthArgs
 	}
-	return fetch.TokenHeaderArgs(req.HTTPToken)
+	return fetch.AuthArgs(req.AuthScheme, req.HTTPToken)
 }
 
 // ProjectApp is the operational description of a service of a project: what
@@ -233,7 +234,7 @@ type ProjectResult struct {
 }
 
 func (req ProjectRequest) remoteGit(ctx context.Context, dir string, args ...string) (string, error) {
-	return runGit(ctx, dir, append(fetchTokenArgs(req.HTTPToken), args...)...)
+	return runGit(ctx, dir, append(req.authArgs(), args...)...)
 }
 
 // --- platform paths -------------------------------------------------------

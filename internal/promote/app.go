@@ -107,7 +107,10 @@ type EnsureRequest struct {
 	HTTPToken    string
 	// AuthArgs are the git arguments that authenticate the clone of the
 	// GitOps repository. Every forge has its own way.
-	AuthArgs    []string
+	AuthArgs []string
+	// AuthScheme is how the forge of the GitOps repository authenticates a
+	// clone: "token" for a Gitea, "basic" for GitHub and GitLab.
+	AuthScheme  string
 	MaxAttempts int
 	App         AppSpec
 	Platform    Platform
@@ -118,7 +121,7 @@ func (req EnsureRequest) authArgs() []string {
 	if req.AuthArgs != nil {
 		return req.AuthArgs
 	}
-	return fetch.TokenHeaderArgs(req.HTTPToken)
+	return fetch.AuthArgs(req.AuthScheme, req.HTTPToken)
 }
 
 func (req EnsureRequest) remoteGit(ctx context.Context, dir string, args ...string) (string, error) {

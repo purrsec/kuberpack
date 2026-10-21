@@ -59,7 +59,7 @@ func (s *Server) processPreview(ctx context.Context, d store.Delivery) {
 		return
 	}
 	if s.cfg.GitOpsURL != "" {
-		if err := promote.EnsurePreviewBranch(ctx, s.cfg.GitOpsURL, previewBranch(s.cfg.Platform), s.cfg.Token); err != nil {
+		if err := promote.EnsurePreviewBranch(ctx, s.cfg.GitOpsURL, previewBranch(s.cfg.Platform), s.cfg.Provider.CloneAuth(s.cfg.Token)); err != nil {
 			_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", err.Error())
 			return
 		}
@@ -82,35 +82,37 @@ func (s *Server) processPreview(ctx context.Context, d store.Delivery) {
 	s.publishStatus(ctx, provider, owner, name, d.CommitSHA, git.StatusPending, "Building preview", git.PreviewContext, "https://"+host)
 	previewPlatform := s.cfg.Platform.ForPreview()
 	result, runErr := s.cfg.Run(ctx, release.Request{
-		Builder:           s.cfg.Builder,
-		BuildID:           buildID,
-		DeliveryID:        d.ID,
-		Provider:          s.cfg.Provider,
-		RegistryURL:       s.cfg.RegistryURL,
-		Token:             s.cfg.Token,
-		Owner:             owner,
-		Name:              name,
-		Branch:            app.ProductionBranch,
-		SHA:               d.CommitSHA,
-		Strategy:          app.Strategy,
-		StartCmd:          app.StartCommand,
-		RootDirectory:     app.RootDirectory,
-		BuildCommand:      app.BuildCommand,
-		GitOpsURL:         s.cfg.GitOpsURL,
-		GitOpsBranch:      previewPlatform.PreviewsBranch,
-		ValuesPath:        previewPlatform.ValuesPath(releaseName),
-		ChartPath:         s.cfg.ChartPath,
-		Hostname:          host,
-		Port:              app.Port,
-		Healthcheck:       app.Healthcheck,
-		InheritSecretFrom: app.InheritSecretFrom,
-		PreviewDatabase:   app.PreviewDatabase,
-		Platform:          previewPlatform,
-		Wait:              s.cfg.Wait,
-		AllowNonHEAD:      true,
-		BuildsGitURL:      s.cfg.BuildsGitURL,
-		Environment:       "preview",
-		Log:               func(format string, args ...any) { log.Printf(format, args...) },
+		Builder:             s.cfg.Builder,
+		BuildID:             buildID,
+		DeliveryID:          d.ID,
+		Provider:            s.cfg.Provider,
+		RegistryURL:         s.cfg.RegistryURL,
+		Token:               s.cfg.Token,
+		Owner:               owner,
+		Name:                name,
+		Branch:              app.ProductionBranch,
+		SHA:                 d.CommitSHA,
+		Strategy:            app.Strategy,
+		StartCmd:            app.StartCommand,
+		RootDirectory:       app.RootDirectory,
+		BuildCommand:        app.BuildCommand,
+		GitOpsURL:           s.cfg.GitOpsURL,
+		GitOpsBranch:        previewPlatform.PreviewsBranch,
+		ValuesPath:          previewPlatform.ValuesPath(releaseName),
+		ChartPath:           s.cfg.ChartPath,
+		Hostname:            host,
+		Port:                app.Port,
+		Healthcheck:         app.Healthcheck,
+		InheritSecretFrom:   app.InheritSecretFrom,
+		PreviewDatabase:     app.PreviewDatabase,
+		Platform:            previewPlatform,
+		Wait:                s.cfg.Wait,
+		AllowNonHEAD:        true,
+		BuildsGitURL:        s.cfg.BuildsGitURL,
+		BuildsGitAuthScheme: git.AuthScheme(s.cfg.Provider.Name()),
+		GitOpsAuthArgs:      s.cfg.Provider.CloneAuth(s.cfg.Token),
+		Environment:         "preview",
+		Log:                 func(format string, args ...any) { log.Printf(format, args...) },
 	})
 	finished := store.Build{Status: "succeeded", ArchiveURL: archiveURL(s.cfg.BuildsGitURL, name, d.CommitSHA)}
 	if runErr != nil {

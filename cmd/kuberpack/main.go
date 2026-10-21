@@ -45,18 +45,19 @@ func main() {
 		}
 	case "builder":
 		if _, err := buildexec.Run(context.Background(), buildexec.Request{
-			CloneURL:        os.Getenv("KUBERPACK_CLONE_URL"),
-			CommitSHA:       os.Getenv("KUBERPACK_COMMIT_SHA"),
-			ImageRepository: os.Getenv("KUBERPACK_IMAGE_REPOSITORY"),
-			RegistryUser:    os.Getenv("KUBERPACK_REGISTRY_USER"),
-			StartCmd:        os.Getenv("KUBERPACK_START_CMD"),
-			RootDirectory:   os.Getenv("KUBERPACK_ROOT_DIRECTORY"),
-			BuildCommand:    os.Getenv("KUBERPACK_BUILD_CMD"),
-			BuildsGitURL:    os.Getenv("KUBERPACK_BUILDS_GIT_URL"),
-			AppName:         os.Getenv("KUBERPACK_APP_NAME"),
-			Environment:     os.Getenv("KUBERPACK_ENVIRONMENT"),
-			GenerateLock:    os.Getenv("KUBERPACK_GENERATE_LOCK") == "1" || os.Getenv("KUBERPACK_GENERATE_LOCK") == "true",
-			GitAuthScheme:   os.Getenv("KUBERPACK_GIT_AUTH"),
+			CloneURL:            os.Getenv("KUBERPACK_CLONE_URL"),
+			CommitSHA:           os.Getenv("KUBERPACK_COMMIT_SHA"),
+			ImageRepository:     os.Getenv("KUBERPACK_IMAGE_REPOSITORY"),
+			RegistryUser:        os.Getenv("KUBERPACK_REGISTRY_USER"),
+			StartCmd:            os.Getenv("KUBERPACK_START_CMD"),
+			RootDirectory:       os.Getenv("KUBERPACK_ROOT_DIRECTORY"),
+			BuildCommand:        os.Getenv("KUBERPACK_BUILD_CMD"),
+			BuildsGitURL:        os.Getenv("KUBERPACK_BUILDS_GIT_URL"),
+			AppName:             os.Getenv("KUBERPACK_APP_NAME"),
+			Environment:         os.Getenv("KUBERPACK_ENVIRONMENT"),
+			GenerateLock:        os.Getenv("KUBERPACK_GENERATE_LOCK") == "1" || os.Getenv("KUBERPACK_GENERATE_LOCK") == "true",
+			GitAuthScheme:       os.Getenv("KUBERPACK_GIT_AUTH"),
+			BuildsGitAuthScheme: os.Getenv("KUBERPACK_BUILDS_GIT_AUTH"),
 		}); err != nil {
 			buildexec.WriteTermination(err.Error())
 			fmt.Fprintf(os.Stderr, "kuberpack builder: %v\n", err)
@@ -155,6 +156,7 @@ func runPromote(args []string) error {
 		ValuesPath:   *valuesPath,
 		ChartPath:    *chartPath,
 		HTTPToken:    strings.TrimSpace(os.Getenv("FORGEJO_TOKEN")),
+		AuthScheme:   strings.TrimSpace(os.Getenv("KUBERPACK_GIT_AUTH")),
 		Image:        ref,
 	})
 	if err != nil {

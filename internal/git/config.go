@@ -36,9 +36,9 @@ func Kinds() []string {
 // The authentication schemes of a clone.
 const (
 	// AuthToken sends the token in a header, the way a Gitea expects it.
-	AuthToken = "token"
+	AuthToken = fetch.AuthToken
 	// AuthBasic sends the token as the password of a basic authentication.
-	AuthBasic = "basic"
+	AuthBasic = fetch.AuthBasic
 )
 
 // AuthScheme is the way a forge authenticates a clone.
@@ -53,10 +53,7 @@ func AuthScheme(provider string) string {
 
 // CloneAuthArgs builds the git arguments of a clone for a scheme.
 func CloneAuthArgs(scheme, token string) []string {
-	if scheme == AuthBasic {
-		return fetch.BasicAuthArgs("x-access-token", token)
-	}
-	return fetch.TokenHeaderArgs(token)
+	return fetch.AuthArgs(scheme, token)
 }
 
 // New builds the provider of a forge.

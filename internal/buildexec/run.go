@@ -42,9 +42,13 @@ type Request struct {
 	// GitAuthScheme is how the forge of the application authenticates a
 	// clone: "token" or "basic".
 	GitAuthScheme string
-	BuildsGitURL  string
-	AppName       string
-	Environment   string
+	// BuildsGitAuthScheme is how the forge of the builds repository
+	// authenticates a clone: it is the forge of the platform, not the one
+	// of the application.
+	BuildsGitAuthScheme string
+	BuildsGitURL        string
+	AppName             string
+	Environment         string
 }
 
 // The builder Secret is written by the operator (Infisical or kubectl). Its
@@ -401,6 +405,7 @@ func archiveBuild(ctx context.Context, req Request, sbom []byte, status, reason,
 		env = "production"
 	}
 	_, _ = buildsarchive.Push(ctx, buildsarchive.Request{
+		AuthScheme:  req.BuildsGitAuthScheme,
 		GitURL:      url,
 		Token:       token,
 		App:         app,

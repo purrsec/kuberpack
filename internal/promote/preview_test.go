@@ -8,7 +8,7 @@ import (
 
 func TestPreviewBranchPinAndPrune(t *testing.T) {
 	bare := setupAppsGitOps(t)
-	if err := EnsurePreviewBranch(context.Background(), bare, "previews", ""); err != nil {
+	if err := EnsurePreviewBranch(context.Background(), bare, "previews", nil); err != nil {
 		t.Fatal(err)
 	}
 	platform := Platform{NetworkPolicy: true, IngressTLS: true, PreviewDomain: "preview.example.org"}
