@@ -100,6 +100,11 @@ func (cnpgEngine) Render(dir string, spec AddonSpec, platform Platform) (AddonRe
 			secret := sanitizeName(spec.Project) + "-" + sanitizeName(storage) + "-app"
 			endpoint := "http://" + sanitizeName(spec.Project) + "-" + sanitizeName(storage) + "." + namespace + ".svc.cluster.local:9000"
 			b.WriteString("  backup:\n")
+			// The retention is a sibling of the destination, not a child
+			// of it: the operator refuses it inside.
+			if retention := strings.TrimSpace(spec.Backup.Retention); retention != "" {
+				b.WriteString("    retentionPolicy: " + retention + "\n")
+			}
 			b.WriteString("    barmanObjectStore:\n")
 			b.WriteString("      destinationPath: s3://" + sanitizeName(spec.Name) + "/\n")
 			b.WriteString("      endpointURL: " + endpoint + "\n")
@@ -113,9 +118,6 @@ func (cnpgEngine) Render(dir string, spec AddonSpec, platform Platform) (AddonRe
 			b.WriteString("      wal:\n")
 			b.WriteString("        compression: gzip\n")
 			b.WriteString("        maxParallel: 2\n")
-			if retention := strings.TrimSpace(spec.Backup.Retention); retention != "" {
-				b.WriteString("      retentionPolicy: " + retention + "\n")
-			}
 		} else if retention := strings.TrimSpace(spec.Backup.Retention); retention != "" {
 			b.WriteString("  backup:\n")
 			b.WriteString("    retentionPolicy: " + retention + "\n")
