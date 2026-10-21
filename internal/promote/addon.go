@@ -22,6 +22,10 @@ type AddonSpec struct {
 	Owner string
 	// Backup is the backup policy of the addon.
 	Backup *Backup
+	// Plan is the size of the addon, and Params what the manifest
+	// overrides in that size.
+	Plan   string
+	Params map[string]string
 }
 
 // AddonEnv is an environment variable an addon provides to the services that

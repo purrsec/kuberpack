@@ -1,0 +1,26 @@
+# The cache of the projects. It is a cache: it holds no durable data, and
+# the storage is optional.
+type: valkey
+kind: valkey
+port: 6379
+image: docker.io/valkey/valkey@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507
+plans:
+  small:
+    instances: 1
+    # A cache without storage is a cache that forgets: it is the default,
+    # and the plan that keeps the data says so.
+    storage: ""
+    maxmemory: 400mb
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  medium:
+    instances: 1
+    storage: 1Gi
+    maxmemory: 800mb
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: "1", memory: 1Gi }
+env:
+  VALKEY_HOST: host
+  VALKEY_PORT: port

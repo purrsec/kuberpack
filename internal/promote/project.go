@@ -62,6 +62,12 @@ type Addon struct {
 	Database string  `yaml:"database,omitempty" json:"database,omitempty"`
 	Owner    string  `yaml:"owner,omitempty" json:"owner,omitempty"`
 	Backup   *Backup `yaml:"backup,omitempty" json:"backup,omitempty"`
+	// Plan is the size of the addon: "small" or "medium". The sizes are
+	// the ones of the catalogue, the same everywhere.
+	Plan string `yaml:"plan,omitempty" json:"plan,omitempty"`
+	// Params overrides what the plan holds: instances, storage, cpu,
+	// memory.
+	Params map[string]string `yaml:"params,omitempty" json:"params,omitempty"`
 }
 
 // Backup describes how an addon is backed up.
@@ -695,6 +701,8 @@ func compileAddons(work string, m ProjectManifest, project string, namespace str
 			Database:  addon.Database,
 			Owner:     addon.Owner,
 			Backup:    addon.Backup,
+			Plan:      addon.Plan,
+			Params:    addon.Params,
 		}, p)
 		if err != nil {
 			return nil, nil, fmt.Errorf("addon %q: %w", name, err)

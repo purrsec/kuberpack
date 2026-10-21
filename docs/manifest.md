@@ -107,14 +107,27 @@ addons:
   postgres:
     engine: cnpg             # moteur PostgreSQL (CloudNativePG)
     database: umami          # nom de la base de données créée
+    plan: small              # taille : small (1 Gio) ou medium (10 Gio)
+    params:                  # surcharge du plan
+      instances: 2
+      storage: 20Gi
     backup:
       retention: 30d         # durée de rétention des sauvegardes (CNPG retentionPolicy)
 ```
 
-Seul `engine: cnpg` est supporté : le compilateur refuse tout autre moteur.
+`engine: cnpg` et `engine: valkey` sont supportés : le compilateur refuse tout
+autre moteur. `plan` choisit une taille du catalogue de la plateforme, `params`
+surcharge ce que le plan contient (`instances`, `storage`, `cpu`, `memory`). Un
+plan qui n'existe pas est refusé.
+
+Les images des add-ons sont épinglées par digest, comme les images des
+applications : une image qui n'est pas épinglée est une erreur de compilation.
+
 `backup.s3` n'est pas encore supporté (le profil de stockage est une décision
 d'infrastructure) : il est refusé explicitement. `backup.retention` est rendu
-dans le `Cluster` CNPG.
+dans le `Cluster` CNPG. Un projet qui détient une base n'est pas supprimé en
+silence : le moteur écrit le Job qui vide la base (`dump.yaml`), la suppression
+est refusée, et `kuberpack project delete --force` passe outre.
 
 ---
 

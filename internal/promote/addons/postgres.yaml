@@ -1,0 +1,32 @@
+# The catalogue of the addons. It holds, in data, what every engine used to
+# repeat in Go: the image, the port, the plans of the resources and the
+# contract of the environment. A type of addon is a file, not a hundred
+# lines of code.
+type: postgres
+kind: postgres
+port: 5432
+# The image of the server. It is pinned: a tag can be moved, and the addon
+# would then run something else than what was reviewed.
+image: ghcr.io/cloudnative-pg/postgresql:16.10-minimal-trixie@sha256:294fd7631f8d66fa54bf6ffa2948af685a20fb695fe748a6bafa71c42f1233b7
+plans:
+  small:
+    instances: 1
+    storage: 1Gi
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: "1", memory: 1Gi }
+  medium:
+    instances: 2
+    storage: 10Gi
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: "2", memory: 2Gi }
+# The contract: the variables the applications receive, and the key of the
+# secret that holds them. The values never pass through Kuberpack.
+env:
+  DATABASE_URL: uri
+  POSTGRES_USER: user
+  POSTGRES_PASSWORD: password
+  POSTGRES_DB: dbname
+  POSTGRES_HOST: host
+  POSTGRES_PORT: port

@@ -1,6 +1,8 @@
 package promote
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -20,7 +22,15 @@ func (valkeyEngine) Render(dir string, spec AddonSpec, platform Platform) (Addon
 		namespace = p.ReleaseNamespace
 	}
 	name := sanitizeName(spec.Project) + "-" + sanitizeName(spec.Name)
-	labels := "    kuberpack.io/addon: valkey\n    kuberpack.io/addon-name: " + sanitizeName(spec.Name) +
+	entry, ok := AddonCatalogEntry("valkey")
+	if !ok {
+		return AddonResult{}, fmt.Errorf("the type valkey is not in the catalogue")
+	}
+	plan, err := entry.Plan(spec.Plan, spec.Params)
+	if err != nil {
+		return AddonResult{}, err
+	}
+	labels := "    kuberpack.io/addon: " + entry.Kind + "\n    kuberpack.io/addon-name: " + sanitizeName(spec.Name) +
 		"\n    kuberpack.io/for: " + sanitizeName(spec.Project) + "\n"
 
 	var stateful strings.Builder
@@ -34,7 +44,7 @@ func (valkeyEngine) Render(dir string, spec AddonSpec, platform Platform) (Addon
 	stateful.WriteString(labels)
 	stateful.WriteString("spec:\n")
 	stateful.WriteString("  serviceName: " + name + "\n")
-	stateful.WriteString("  replicas: 1\n")
+	stateful.WriteString("  replicas: " + strconv.Itoa(plan.Instances) + "\n")
 	stateful.WriteString("  selector:\n")
 	stateful.WriteString("    matchLabels:\n")
 	stateful.WriteString("      app.kubernetes.io/name: " + name + "\n")
@@ -50,32 +60,47 @@ func (valkeyEngine) Render(dir string, spec AddonSpec, platform Platform) (Addon
 	stateful.WriteString("    spec:\n")
 	stateful.WriteString("      containers:\n")
 	stateful.WriteString("        - name: valkey\n")
-	image, err := platform.PinnedImage(p.AddonImages["valkey"])
+	imageRef := strings.TrimSpace(p.AddonImages["valkey"])
+	if imageRef == "" {
+		imageRef = entry.Image
+	}
+	image, err := p.PinnedImage(imageRef)
 	if err != nil {
 		return AddonResult{}, err
 	}
 	stateful.WriteString("          image: " + image + "\n")
 	stateful.WriteString("          imagePullPolicy: IfNotPresent\n")
-	stateful.WriteString("          args: [\"--save\", \"\", \"--appendonly\", \"no\"]\n")
+	// The plan decides whether the cache keeps anything: a cache that
+	// forgets must not pretend to have a volume.
+	if plan.Storage == "" {
+		stateful.WriteString("          args: [\"--save\", \"\", \"--appendonly\", \"no\"]\n")
+	} else {
+		stateful.WriteString("          args: [\"--save\", \"\", \"--appendonly\", \"yes\"]\n")
+	}
+	if plan.MaxMemory != "" {
+		stateful.WriteString("          args: [\"--maxmemory\", \"" + plan.MaxMemory + "\"]\n")
+	}
 	stateful.WriteString("          ports:\n")
 	stateful.WriteString("            - name: valkey\n")
 	stateful.WriteString("              containerPort: 6379\n")
 	stateful.WriteString("          resources:\n")
-	stateful.WriteString("            requests: { cpu: 50m, memory: 128Mi }\n")
-	stateful.WriteString("            limits: { cpu: \"1\", memory: 512Mi }\n")
-	stateful.WriteString("          volumeMounts:\n")
-	stateful.WriteString("            - name: data\n")
-	stateful.WriteString("              mountPath: /data\n")
-	stateful.WriteString("  volumeClaimTemplates:\n")
-	stateful.WriteString("    - metadata:\n")
-	stateful.WriteString("        name: data\n")
-	stateful.WriteString("      spec:\n")
-	stateful.WriteString("        accessModes: [\"ReadWriteOnce\"]\n")
-	stateful.WriteString("        resources:\n")
-	stateful.WriteString("          requests:\n")
-	stateful.WriteString("            storage: " + p.AddonStorage["valkey"] + "\n")
-	if p.AddonStorageClass != "" {
-		stateful.WriteString("        storageClassName: " + p.AddonStorageClass + "\n")
+	stateful.WriteString("            requests: { cpu: " + plan.Resources.Requests.CPU + ", memory: " + plan.Resources.Requests.Memory + " }\n")
+	stateful.WriteString("            limits: { cpu: \"" + plan.Resources.Limits.CPU + "\", memory: \"" + plan.Resources.Limits.Memory + "\" }\n")
+	if plan.Storage != "" {
+		stateful.WriteString("          volumeMounts:\n")
+		stateful.WriteString("            - name: data\n")
+		stateful.WriteString("              mountPath: /data\n")
+		stateful.WriteString("  volumeClaimTemplates:\n")
+		stateful.WriteString("    - metadata:\n")
+		stateful.WriteString("        name: data\n")
+		stateful.WriteString("      spec:\n")
+		stateful.WriteString("        accessModes: [\"ReadWriteOnce\"]\n")
+		stateful.WriteString("        resources:\n")
+		stateful.WriteString("          requests:\n")
+		stateful.WriteString("            storage: " + plan.Storage + "\n")
+		if p.AddonStorageClass != "" {
+			stateful.WriteString("        storageClassName: " + p.AddonStorageClass + "\n")
+		}
 	}
 
 	var service strings.Builder
