@@ -60,6 +60,7 @@ type ProjectRequest struct {
 
 type ProjectResult struct {
 	Project        string
+	Namespace      string
 	Services       []string
 	Addons         []string
 	InfraCommitSHA string
@@ -90,6 +91,12 @@ func (p Platform) ProjectManifestPath(name string) string {
 
 func (p Platform) ProjectParentPath(name string) string {
 	return filepath.ToSlash(filepath.Join(p.ProjectDir(name), "kustomization.yaml"))
+}
+
+// ProjectsParentPath is the kustomization listing the projects. Flux only
+// reconciles a project once it is listed there.
+func (p Platform) ProjectsParentPath() string {
+	return filepath.ToSlash(filepath.Join(p.ProjectsDirPath(), "kustomization.yaml"))
 }
 
 // serviceDir returns the directory of a service inside the project.
@@ -140,7 +147,8 @@ func EnsureProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 		result.Addons = adds
 
 		rel := req.Platform.ProjectDir(project)
-		status, err := runGit(ctx, work, "status", "--porcelain", "--", rel)
+		parentRel := req.Platform.ProjectsParentPath()
+		status, err := runGit(ctx, work, "status", "--porcelain", "--", rel, parentRel)
 		if err != nil {
 			return ProjectResult{}, err
 		}
@@ -152,7 +160,7 @@ func EnsureProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 			result.InfraCommitSHA = sha
 			return result, nil
 		}
-		if _, err := runGit(ctx, work, gitConfig("add", "--", rel)...); err != nil {
+		if _, err := runGit(ctx, work, gitConfig("add", "--", rel, parentRel)...); err != nil {
 			return ProjectResult{}, err
 		}
 		msg := fmt.Sprintf("project %s: %d services, %d addons", project, len(services), len(adds))
@@ -267,12 +275,50 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string)
 	}
 	sort.Strings(addons)
 
-	resources := append(append([]string{}, services...), addons...)
+	// A service whose image is not pinned yet is not activated: Flux would
+	// otherwise install a HelmRelease whose chart requires a digest.
+	activated := make([]string, 0, len(services))
+	for _, sname := range services {
+		if serviceHasPinnedImage(filepath.Join(work, filepath.FromSlash(p.projectServiceDir(project, sname)))) {
+			activated = append(activated, sname)
+		}
+	}
+	resources := append(append([]string{}, activated...), addons...)
 	parentYAML := RenderParentKustomization(m.Namespace, resources)
 	if err := os.WriteFile(filepath.Join(projectDir, "kustomization.yaml"), []byte(parentYAML), 0o644); err != nil {
 		return nil, nil, err
 	}
+
+	// The projects parent lists the project: Flux only reconciles a project
+	// once it is referenced there.
+	parentPath := filepath.Join(work, filepath.FromSlash(p.ProjectsParentPath()))
+	parentRaw, err := os.ReadFile(parentPath)
+	if os.IsNotExist(err) {
+		parentRaw = []byte("apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n")
+	} else if err != nil {
+		return nil, nil, err
+	}
+	if !listedInKustomization(parentRaw, project) {
+		parentRaw = appendKustomizationResource(parentRaw, project)
+	}
+	if err := os.WriteFile(parentPath, parentRaw, 0o644); err != nil {
+		return nil, nil, err
+	}
 	return services, addons, nil
+}
+
+// serviceHasPinnedImage reports whether the service already carries a
+// digest-pinned image. Only the control plane may write it.
+func serviceHasPinnedImage(dir string) bool {
+	raw, err := os.ReadFile(filepath.Join(dir, "values.yaml"))
+	if err != nil {
+		return false
+	}
+	meta, err := ParseValuesMeta(raw)
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(meta.Image) != ""
 }
 
 // projectPeers turns manifest policy peers into chart peer strings. A bare
@@ -387,6 +433,57 @@ func ReadProjectManifest(ctx context.Context, req ProjectRequest) ([]byte, error
 	return raw, nil
 }
 
+// ListProjects returns the projects present in the GitOps repository, with
+// their manifest when it can be read.
+func ListProjects(ctx context.Context, req ProjectRequest) ([]ProjectResult, error) {
+	if req.GitOpsURL == "" {
+		return nil, fmt.Errorf("gitops URL is empty")
+	}
+	if req.GitOpsBranch == "" {
+		req.GitOpsBranch = "main"
+	}
+	parent, err := os.MkdirTemp("", "kuberpack-project-list-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(parent)
+	work := filepath.Join(parent, "repo")
+	if _, err := req.remoteGit(ctx, "", "clone", "--branch", req.GitOpsBranch, "--single-branch", req.GitOpsURL, work); err != nil {
+		return nil, err
+	}
+	root := filepath.Join(work, filepath.FromSlash(req.Platform.ProjectsDirPath()))
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []ProjectResult{}, nil
+		}
+		return nil, err
+	}
+	out := make([]ProjectResult, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := sanitizeName(entry.Name())
+		if name == "" {
+			continue
+		}
+		item := ProjectResult{Project: name}
+		raw, err := os.ReadFile(filepath.Join(work, filepath.FromSlash(req.Platform.ProjectManifestPath(name))))
+		if err == nil {
+			var m ProjectManifest
+			if yaml.Unmarshal(raw, &m) == nil {
+				if ns := strings.TrimSpace(m.Namespace); ns != "" {
+					item.Namespace = ns
+				}
+			}
+		}
+		out = append(out, item)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Project < out[j].Project })
+	return out, nil
+}
+
 // DeleteProject removes the project from the GitOps repository.
 func DeleteProject(ctx context.Context, req ProjectRequest) (ProjectResult, error) {
 	project := sanitizeName(req.Manifest.Project)
@@ -409,13 +506,33 @@ func DeleteProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 		return ProjectResult{}, err
 	}
 	rel := req.Platform.ProjectDir(project)
-	if _, err := os.Stat(filepath.Join(work, filepath.FromSlash(rel))); os.IsNotExist(err) {
-		return ProjectResult{Project: project}, nil
-	}
-	if err := os.RemoveAll(filepath.Join(work, filepath.FromSlash(rel))); err != nil {
+	parentRel := req.Platform.ProjectsParentPath()
+	parentPath := filepath.Join(work, filepath.FromSlash(parentRel))
+	add := []string{}
+	changed := false
+	if _, err := os.Stat(filepath.Join(work, filepath.FromSlash(rel))); err == nil {
+		if err := os.RemoveAll(filepath.Join(work, filepath.FromSlash(rel))); err != nil {
+			return ProjectResult{}, err
+		}
+		add = append(add, rel)
+		changed = true
+	} else if !os.IsNotExist(err) {
 		return ProjectResult{}, err
 	}
-	if _, err := runGit(ctx, work, gitConfig("add", "-A", "--", rel)...); err != nil {
+	// Drop the project from the projects parent so Flux prunes it.
+	if raw, err := os.ReadFile(parentPath); err == nil {
+		if listedInKustomization(raw, project) {
+			if err := os.WriteFile(parentPath, removeKustomizationResource(raw, project), 0o644); err != nil {
+				return ProjectResult{}, err
+			}
+			add = append(add, parentRel)
+			changed = true
+		}
+	}
+	if !changed {
+		return ProjectResult{Project: project}, nil
+	}
+	if _, err := runGit(ctx, work, gitConfig(append([]string{"add", "-A", "--"}, add...)...)...); err != nil {
 		return ProjectResult{}, err
 	}
 	if _, err := runGit(ctx, work, gitConfig("commit", "-m", "unregister project "+project)...); err != nil {

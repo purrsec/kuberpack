@@ -64,6 +64,31 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, projectJSON(res))
 }
 
+func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.GitOpsURL == "" {
+		http.Error(w, "gitops is not configured", http.StatusForbidden)
+		return
+	}
+	items, err := promote.ListProjects(r.Context(), promote.ProjectRequest{
+		GitOpsURL:    s.cfg.GitOpsURL,
+		GitOpsBranch: s.cfg.GitOpsBranch,
+		HTTPToken:    s.cfg.Token,
+		Platform:     s.cfg.Platform,
+	})
+	if err != nil {
+		http.Error(w, "list failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		out = append(out, map[string]any{
+			"project":   item.Project,
+			"namespace": item.Namespace,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"projects": out})
+}
+
 func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if s.cfg.GitOpsURL == "" {

@@ -61,13 +61,59 @@ func TestEnsureProjectCompilesServicesAddonsPolicies(t *testing.T) {
 		t.Fatalf("addon labels:\n%s", db)
 	}
 
-	// Parent lists both and carries the namespace.
+	// Parent carries the namespace and lists the addon. The service is not
+	// listed yet: its image is not pinned, and Flux must not see an app
+	// before the first digest pin.
 	parent := readFile(t, clone, "kubernetes/vps/projects/mitame/kustomization.yaml")
 	if !strings.Contains(parent, "namespace: mitame") {
 		t.Fatalf("parent namespace:\n%s", parent)
 	}
-	if !listedInKustomization([]byte(parent), "site") || !listedInKustomization([]byte(parent), "postgres") {
+	if listedInKustomization([]byte(parent), "site") {
+		t.Fatalf("an unpinned service must not be activated:\n%s", parent)
+	}
+	if !listedInKustomization([]byte(parent), "postgres") {
 		t.Fatalf("parent resources:\n%s", parent)
+	}
+
+	// The projects parent lists the project, otherwise Flux never sees it.
+	projects := readFile(t, clone, "kubernetes/vps/projects/kustomization.yaml")
+	if !listedInKustomization([]byte(projects), "mitame") {
+		t.Fatalf("projects parent:\n%s", projects)
+	}
+}
+
+// Deleting a project must drop it from the projects parent, otherwise Flux
+// keeps a dangling resource. Deleting an unknown project is a no-op.
+func TestDeleteProjectRemovesItFromTheProjectsParent(t *testing.T) {
+	bare := setupAppsGitOps(t)
+	m := ProjectManifest{
+		Project:  "demo",
+		Services: map[string]Service{"app": {Type: "stateless", Port: 8080, Hostname: "demo.host.bzh"}},
+	}
+	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{NetworkPolicy: true}}
+	if _, err := EnsureProject(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	tree := readRemoteTree(t, bare)
+	parent := readFile(t, tree, "kubernetes/vps/projects/kustomization.yaml")
+	if !listedInKustomization([]byte(parent), "demo") {
+		t.Fatalf("projects parent:\n%s", parent)
+	}
+
+	if _, err := DeleteProject(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	tree = readRemoteTree(t, bare)
+	parent = readFile(t, tree, "kubernetes/vps/projects/kustomization.yaml")
+	if listedInKustomization([]byte(parent), "demo") {
+		t.Fatalf("project is still listed:\n%s", parent)
+	}
+	if _, err := os.Stat(filepath.Join(tree, "kubernetes", "vps", "projects", "demo")); !os.IsNotExist(err) {
+		t.Fatalf("project directory still present: %v", err)
+	}
+
+	if _, err := DeleteProject(context.Background(), req); err != nil {
+		t.Fatalf("deleting an unknown project must be a no-op: %v", err)
 	}
 }
 
@@ -100,8 +146,15 @@ func TestEnsureProjectPreservesPinnedImage(t *testing.T) {
 	if _, err := EnsureProject(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}
-	again := readFile(t, readRemoteTree(t, bare), "kubernetes/vps/projects/demo/app/values.yaml")
+	tree := readRemoteTree(t, bare)
+	again := readFile(t, tree, "kubernetes/vps/projects/demo/app/values.yaml")
 	if !strings.Contains(again, "sha256:dead") {
 		t.Fatalf("pinned image was overwritten:\n%s", again)
+	}
+
+	// A pinned service is activated: the parent lists it.
+	parent := readFile(t, tree, "kubernetes/vps/projects/demo/kustomization.yaml")
+	if !listedInKustomization([]byte(parent), "app") {
+		t.Fatalf("a pinned service must be activated:\n%s", parent)
 	}
 }
