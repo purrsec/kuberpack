@@ -2,8 +2,6 @@ package promote
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
