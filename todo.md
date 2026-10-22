@@ -201,6 +201,15 @@ Les dimensions du **noeud** sont bornées par la plateforme :
 Le seuil de disque est configurable (`KUBERPACK_MIN_FREE_DISK`, `minFreeDisk`
 du chart) : un petit noeud l’accepte plus bas qu’un grand.
 
+**Une application ne doit pas affamer la plateforme.** Un JVM lancé sur un
+noeud de trois coeurs a pris les coeurs du control plane : l’API a
+repondu « timeout » pendant que l’application demarrait. Le manifeste peut
+dire `replicas: 0` (l’application est declaree, elle ne tourne pas) et
+`startup_budget` (le temps de demarrage). Ce qui manque : la plateforme
+refuse un projet dont les limites CPU et RAM dépassent la part du noeud
+que le control plane se reserve, au lieu de laisser l’application affamer
+la plateforme qui doit la deployer.
+
 ### Étape 5 — le manifeste est recompilé par un push (fait)
 
 Le manifeste vivait dans le dépôt GitOps, mais seul `POST /api/v1/projects`
