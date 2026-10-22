@@ -41,10 +41,15 @@ func (cnpgEngine) Render(dir string, spec AddonSpec, platform Platform) (AddonRe
 	name := sanitizeName(spec.Project) + "-" + sanitizeName(spec.Name)
 
 	// The image of the operator is the platform's choice; the catalogue
-	// holds the default.
-	imageRef := strings.TrimSpace(p.PostgresImage)
-	if imageRef == "" {
-		imageRef = entry.Image
+	// holds the default. The version the manifest asks for is the one
+	// that decides the image: a PostgreSQL 14 and a PostgreSQL 16 do not
+	// share their data directory.
+	imageRef, _, err := entry.ImageForVersion(spec.Version)
+	if err != nil {
+		return AddonResult{}, err
+	}
+	if override := strings.TrimSpace(p.PostgresImage); override != "" {
+		imageRef = override
 	}
 	image, err := p.PinnedImage(imageRef)
 	if err != nil {

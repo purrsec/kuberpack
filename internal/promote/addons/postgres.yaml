@@ -13,6 +13,12 @@ operator: cnpg
 # The image of the server. It is pinned: a tag can be moved, and the addon
 # would then run something else than what was reviewed.
 image: ghcr.io/cloudnative-pg/postgresql:16.10-minimal-trixie@sha256:294fd7631f8d66fa54bf6ffa2948af685a20fb695fe748a6bafa71c42f1233b7
+# Les versions que le manifeste peut demander. La cle est la version
+# majeure de la base, la valeur est l'image, epinglee par digest : une
+# version que le catalogue ne connait pas est refusee a la compilation.
+defaultVersion: "16"
+versions:
+  "16": ghcr.io/cloudnative-pg/postgresql:16.10-minimal-trixie@sha256:294fd7631f8d66fa54bf6ffa2948af685a20fb695fe748a6bafa71c42f1233b7
 plans:
   tiny:
     instances: 1

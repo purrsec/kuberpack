@@ -109,6 +109,10 @@ type Addon struct {
 	// Plan is the size of the addon: "small" or "medium". The sizes are
 	// the ones of the catalogue, the same everywhere.
 	Plan string `yaml:"plan,omitempty" json:"plan,omitempty"`
+	// Version is the version of the addon: the major version of the
+	// database, for a database. It is the one of the catalogue, unless
+	// the catalogue holds several.
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
 	// Params overrides what the plan holds: instances, storage, cpu,
 	// memory.
 	Params map[string]string `yaml:"params,omitempty" json:"params,omitempty"`
@@ -820,6 +824,7 @@ func compileAddons(work string, m ProjectManifest, project string, namespace str
 			Backup:    addon.Backup,
 			Plan:      addon.Plan,
 			Params:    addon.Params,
+			Version:   addon.Version,
 			Siblings:  siblings,
 		}, p)
 		if err != nil {

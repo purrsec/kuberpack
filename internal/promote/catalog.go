@@ -52,6 +52,17 @@ type AddonEntry struct {
 	Port int `yaml:"port"`
 	// Image is the image of the addon, pinned by digest.
 	Image string `yaml:"image"`
+	// Versions are the versions of the addon the manifest can ask for,
+	// with the image of each one. The key is the version, the value is
+	// the image, pinned by digest.
+	//
+	// The version of a database is the version of the software: a
+	// PostgreSQL 14 and a PostgreSQL 16 do not share their data
+	// directory, and the application that needs one of them says so.
+	Versions map[string]string `yaml:"versions"`
+	// DefaultVersion is the version the manifest gets when it does not
+	// ask for one.
+	DefaultVersion string `yaml:"defaultVersion"`
 	// Plans are the sizes the manifest can ask for.
 	Plans map[string]AddonPlan `yaml:"plans"`
 	// Env is the contract: the variables an application receives, and the
@@ -155,6 +166,38 @@ func AddonCatalogEntry(name string) (AddonEntry, bool) {
 // AddonCatalogTypes lists the types of addon the platform knows.
 func AddonCatalogTypes() []string {
 	return catalog.Types()
+}
+
+// ImageForVersion returns the image of a version of the addon, and the
+// version itself.
+//
+// A version the catalogue does not know is refused: the platform does not
+// guess an image, and it does not run something else than what was
+// reviewed.
+func (e AddonEntry) ImageForVersion(version string) (string, string, error) {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		version = strings.TrimSpace(e.DefaultVersion)
+	}
+	if version == "" {
+		return e.Image, "", nil
+	}
+	image, ok := e.Versions[version]
+	if !ok {
+		return "", "", fmt.Errorf("the addon %q does not have the version %q (%s)",
+			e.Type, version, strings.Join(e.VersionNames(), ", "))
+	}
+	return image, version, nil
+}
+
+// VersionNames lists the versions the catalogue holds for the addon.
+func (e AddonEntry) VersionNames() []string {
+	out := make([]string, 0, len(e.Versions))
+	for name := range e.Versions {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Plan resolves the size of an addon: the plan of the catalogue the

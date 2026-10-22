@@ -499,3 +499,51 @@ func TestAProjectThatTakesTheCoresOfTheNodeIsRefused(t *testing.T) {
 		t.Fatalf("the message must talk about the cpu:\n%v", err)
 	}
 }
+
+// The manifest can ask for a version of the addon: the catalogue holds the
+// image of each one.
+func TestTheVersionOfAnAddonChoosesItsImage(t *testing.T) {
+	entry, ok := AddonCatalogEntry("postgres")
+	if !ok {
+		t.Fatal("the type postgres is not in the catalogue")
+	}
+	image, version, err := entry.ImageForVersion("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != "16" {
+		t.Fatalf("the default version of postgres is %q, want 16", version)
+	}
+	if !strings.Contains(image, "postgresql:16") {
+		t.Fatalf("the image of the default version is %q", image)
+	}
+	// A version the catalogue does not know is refused: the platform
+	// does not guess an image.
+	if _, _, err := entry.ImageForVersion("9.6"); err == nil {
+		t.Fatal("a version the catalogue does not know must be refused")
+	}
+}
+
+// The version of the addon reaches the engine.
+func TestTheVersionOfAnAddonIsRendered(t *testing.T) {
+	dir := t.TempDir()
+	engine, ok := AddonEngineFor("cnpg")
+	if !ok {
+		t.Fatal("the engine cnpg is not available")
+	}
+	if _, err := engine.Render(dir, AddonSpec{
+		Name: "db", Project: "demo", Namespace: "demo", Version: "16",
+	}, Platform{}); err != nil {
+		t.Fatal(err)
+	}
+	raw := readFile(t, dir, "database.yaml")
+	if !strings.Contains(raw, "postgresql:16") {
+		t.Fatalf("the image of the version is missing:\n%s", raw)
+	}
+	// A version the catalogue does not know is refused at the rendering.
+	if _, err := engine.Render(t.TempDir(), AddonSpec{
+		Name: "db", Project: "demo", Namespace: "demo", Version: "9.6",
+	}, Platform{}); err == nil {
+		t.Fatal("a version the catalogue does not know must be refused")
+	}
+}

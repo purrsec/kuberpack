@@ -196,7 +196,8 @@ addons:
   postgres:
     engine: cnpg             # moteur PostgreSQL (CloudNativePG)
     database: umami          # nom de la base de données créée
-    plan: small              # taille : small (1 Gio) ou medium (10 Gio)
+    plan: small              # taille : tiny, small (1 Gio) ou medium (10 Gio)
+    version: "16"            # version de la base (majeure) : celle du catalogue
     params:                  # surcharge du plan
       instances: 2
       storage: 20Gi
@@ -208,6 +209,12 @@ addons:
 autre moteur. `plan` choisit une taille du catalogue de la plateforme, `params`
 surcharge ce que le plan contient (`instances`, `storage`, `cpu`, `memory`). Un
 plan qui n'existe pas est refusé.
+
+`version` est la version majeure de la base (par exemple `16` pour PostgreSQL).
+C'est elle qui choisit l'image : une PostgreSQL 14 et une PostgreSQL 16 ne
+partagent pas leur répertoire de données. Le catalogue ne tient que les
+versions qu'il a epinglées : une version qu'il ne connait pas est refusée à la
+compilation, la plateforme ne devine pas d'image.
 
 Les images des add-ons sont épinglées par digest, comme les images des
 applications : une image qui n'est pas épinglée est une erreur de compilation.

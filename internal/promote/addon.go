@@ -26,6 +26,9 @@ type AddonSpec struct {
 	// overrides in that size.
 	Plan   string
 	Params map[string]string
+	// Version is the version of the addon the manifest asks for: the
+	// major version of the database, for a database.
+	Version string
 	// Siblings are the other addons of the project, by name and by type.
 	// A database that is backed up needs to know where the storage is.
 	Siblings map[string]string
