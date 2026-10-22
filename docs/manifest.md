@@ -214,7 +214,15 @@ applications : une image qui n'est pas épinglée est une erreur de compilation.
 
 `backup.s3` nomme l'add-on de stockage objet du projet (par exemple
 `rustfs`) : la base est sauvegardée vers ce stockage, avec les identifiants
-référencés et jamais écrits. Un `backup.s3` qui ne nomme aucun add-on du
+référencés et jamais écrits.
+
+> **CloudNativePG 1.27 et plus :** les binaires `barman-cloud-backup` ne sont
+> plus dans l'image de l'opérateur. La sauvegarde passe par un **plugin**
+> (`spec.plugins`, avec `isWALArchiver: true`), et la configuration
+> `spec.backup.barmanObjectStore` ne doit plus être présente en même temps :
+> l'opérateur refuse les deux ensemble. C'est le dernier maillon de
+> `backup.s3`, et il dépend de la version de l'opérateur que la plateforme
+> installe. Un `backup.s3` qui ne nomme aucun add-on du
 projet, ou un add-on qui ne parle pas S3, est refusé.
 
 Les identifiants d'un add-on qui en a besoin naissent **dans le cluster** : un
