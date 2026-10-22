@@ -217,12 +217,21 @@ applications : une image qui n'est pas épinglée est une erreur de compilation.
 référencés et jamais écrits.
 
 > **CloudNativePG 1.27 et plus :** les binaires `barman-cloud-backup` ne sont
-> plus dans l'image de l'opérateur. La sauvegarde passe par un **plugin**
-> (`spec.plugins`, avec `isWALArchiver: true`), et la configuration
+> plus dans l'image de l'opérateur. La sauvegarde passe par un **plugin** :
+> `spec.plugins`, avec `isWALArchiver: true`. La configuration
 > `spec.backup.barmanObjectStore` ne doit plus être présente en même temps :
-> l'opérateur refuse les deux ensemble. C'est le dernier maillon de
-> `backup.s3`, et il dépend de la version de l'opérateur que la plateforme
-> installe. Un `backup.s3` qui ne nomme aucun add-on du
+> l'opérateur refuse les deux ensemble (`isWALArchiver` : « This cannot be
+> enabled if the `.spec.backup.barmanObjectStore` configuration is present »).
+>
+> Dans la 1.30, le plugin barman tourne en **conteneur additionnel** dans le
+> pod de l'instance, et l'opérateur lui parle par une socket
+> (`PLUGIN_SOCKET_DIR`). Si l'opérateur ne le charge pas, il dit
+> « Unknown plugin: '%s'. This may be caused by the plugin not being loaded
+> correctly by the operator ».
+>
+> C'est le dernier maillon de `backup.s3`, et il dépend de la version de
+> l'opérateur que la plateforme installe : la plateforme doit déclarer
+> l'opérateur **et** son plugin, avec la même version. Un `backup.s3` qui ne nomme aucun add-on du
 projet, ou un add-on qui ne parle pas S3, est refusé.
 
 Les identifiants d'un add-on qui en a besoin naissent **dans le cluster** : un
