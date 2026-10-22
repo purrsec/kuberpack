@@ -298,3 +298,27 @@ func TestTheKustomizationOfAServiceWithAVolumeAddonIsBuildable(t *testing.T) {
 		t.Fatalf("the kustomization must not list the claim of the addon:\n%s", kustomization)
 	}
 }
+
+// Une image tierce attend parfois une commande : le manifeste la declare,
+// et elle arrive au conteneur.
+func TestTheCommandOfTheManifestReachesTheContainer(t *testing.T) {
+	bare := setupGitOps(t, "")
+	manifest := ProjectManifest{
+		Project:   "shop",
+		Namespace: "shop",
+		Services: map[string]Service{
+			"app": {Type: "stateless", Image: "example.org/app@sha256:abc", Port: 8080,
+				Hostname: "app.shop.bzh", Command: []string{"serve", "--listen-http=:80"}},
+		},
+	}
+	if _, err := EnsureProject(context.Background(), ProjectRequest{
+		GitOpsURL: bare, GitOpsBranch: "main", Manifest: manifest, Platform: Platform{NetworkPolicy: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	clone := readRemoteTree(t, bare)
+	values := readFile(t, clone, "kubernetes/vps/projects/shop/app/values.yaml")
+	if !strings.Contains(values, `command:`) || !strings.Contains(values, `"serve"`) {
+		t.Fatalf("the command of the manifest is not in the values:\n%s", values)
+	}
+}

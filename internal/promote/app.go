@@ -49,6 +49,9 @@ type AppSpec struct {
 	Peers       []string
 	// Env are the literal environment variables of the application.
 	Env []EnvVar
+	// Command is what the container runs, when the image expects
+	// something else than its default.
+	Command []string
 	// AddonPeers are the addons of the project the application may reach.
 	AddonPeers []AddonPeer
 	// NetworkPolicy overrides the platform default for the NetworkPolicy of
@@ -424,6 +427,13 @@ func valuesYAML(spec AppSpec, p Platform) string {
 		b.WriteString("env:\n")
 		for _, line := range strings.Split(strings.TrimRight(env, "\n"), "\n") {
 			b.WriteString("  " + line + "\n")
+		}
+	}
+	// The command the container runs, when the image expects one.
+	if len(spec.Command) > 0 {
+		b.WriteString("command:\n")
+		for _, part := range spec.Command {
+			b.WriteString("  - " + strconv.Quote(part) + "\n")
 		}
 	}
 	if spec.Preview {

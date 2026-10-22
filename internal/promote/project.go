@@ -48,6 +48,11 @@ type Service struct {
 	SecretEnv   string   `yaml:"secret_env,omitempty" json:"secret_env,omitempty"`
 	// Env are literal environment variables of the application.
 	Env map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
+	// Command is what the container runs, when the image expects
+	// something else than its default. Many published images want a
+	// command: ntfy wants "serve", for a third party application the
+	// platform does not build.
+	Command []string `yaml:"command,omitempty" json:"command,omitempty"`
 	// Addons are the addons of the project the service uses: it gets their
 	// environment and may reach them.
 	Addons []string `yaml:"addons,omitempty" json:"addons,omitempty"`
@@ -529,6 +534,7 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 			return nil, nil, nil, fmt.Errorf("service %q: %w", name, err)
 		}
 		spec.Env = append(used.env, serviceEnv(svc)...)
+		spec.Command = svc.Command
 		spec.AddonPeers = mergeAddonPeers(policyAddonPeers, used.peers)
 		// The volumes the addons mount: they come before the volumes the
 		// manifest declares, so that a volume of the application is never

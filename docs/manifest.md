@@ -219,6 +219,16 @@ compilation, la plateforme ne devine pas d'image.
 Les images des add-ons sont épinglées par digest, comme les images des
 applications : une image qui n'est pas épinglée est une erreur de compilation.
 
+Une image tierce attend parfois une commande : ntfy veut `serve`, par
+exemple. Le manifeste la declare.
+
+```yaml
+services:
+  ntfy:
+    image: docker.io/binwiederhier/ntfy:v2.32.0
+    command: [serve]
+```
+
 Une base de donnees qui est un fichier (SQLite, par exemple) est un
 **volume** : il n'y a rien a lancer, et rien a atteindre.
 
