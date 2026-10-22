@@ -43,6 +43,16 @@ func main() {
 			fmt.Fprintf(os.Stderr, "kuberpack: %v\n", err)
 			os.Exit(1)
 		}
+	case "apps":
+		if err := runApps(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "kuberpack: %v\n", err)
+			os.Exit(1)
+		}
+	case "app":
+		if err := runApp(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "kuberpack: %v\n", err)
+			os.Exit(1)
+		}
 	case "builder":
 		if _, err := buildexec.Run(context.Background(), buildexec.Request{
 			CloneURL:                os.Getenv("KUBERPACK_CLONE_URL"),
