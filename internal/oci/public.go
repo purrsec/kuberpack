@@ -42,6 +42,31 @@ var PublicEndpoints = map[string]Endpoints{
 // defaultRegistry is the registry of a reference that does not name one.
 const defaultRegistry = "docker.io"
 
+// Pin replaces the tag of a reference with its digest.
+//
+// The repository is kept as it was written: an image of the default
+// registry that is written "nginx:1.27" stays "nginx@sha256:...", and an
+// image that is written "docker.io/vaultwarden/server:1.37.4" stays
+// "docker.io/vaultwarden/server@sha256:...". A digest alone is not an
+// image: the cluster does not know what to pull.
+func Pin(reference, digest string) string {
+	ref := strings.TrimSpace(reference)
+	digest = strings.TrimSpace(digest)
+	if ref == "" || digest == "" {
+		return ref
+	}
+	if strings.Contains(ref, "@") {
+		// The reference is already pinned.
+		return ref
+	}
+	// The tag is the last colon, when what follows it has no slash: a
+	// colon in the host is a port.
+	if index := strings.LastIndex(ref, ":"); index >= 0 && !strings.Contains(ref[index+1:], "/") {
+		return ref[:index] + "@" + digest
+	}
+	return ref + "@" + digest
+}
+
 // ResolveDigest returns the digest of a tag of a published image.
 //
 // A reference that already carries a digest is returned unchanged: the

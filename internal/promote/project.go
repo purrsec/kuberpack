@@ -543,11 +543,13 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 			// the manifest is the source of truth and is never rewritten.
 			// The digest lives in the generated file, like the digest of
 			// a built image.
-			pinned, err := oci.ResolveDigest(ctx, spec.Image)
+			digest, err := oci.ResolveDigest(ctx, spec.Image)
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("service %q: the image %q could not be pinned: %w", name, spec.Image, err)
 			}
-			spec.Image = pinned
+			// The digest is pinned with the repository: a digest alone
+			// is not an image the cluster can pull.
+			spec.Image = oci.Pin(spec.Image, digest)
 		}
 		spec.Volumes = svc.Volumes
 		spec.WritableRoot = svc.WritableRoot

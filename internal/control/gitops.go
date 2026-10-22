@@ -166,9 +166,18 @@ func (s *Server) handleGitOpsPush(ctx context.Context, payload pushPayload) erro
 		}
 	}
 
+	// A refused project is not deployed. The developer must know why: the
+	// reason is in the log of the platform, and in the status of the
+	// commit.
+	for _, refusal := range result.Refused {
+		log.Printf("kuberpack project refused: %s", refusal)
+	}
 	description := fmt.Sprintf("%d project(s) compiled", len(result.Projects))
 	if len(result.Removed) > 0 {
 		description = fmt.Sprintf("%s, %d removed", description, len(result.Removed))
+	}
+	if len(result.Refused) > 0 {
+		description = fmt.Sprintf("%s, %d refused", description, len(result.Refused))
 	}
 	s.publishStatusOnCommit(ctx, owner, repo, payload.After, git.StatusSuccess, description)
 	return nil

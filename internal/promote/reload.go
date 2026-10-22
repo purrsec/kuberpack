@@ -149,6 +149,9 @@ func ReloadProjects(ctx context.Context, req ReloadRequest) (ReloadResult, error
 		msg := fmt.Sprintf("compile %d project(s)", len(result.Projects))
 		if len(result.Refused) > 0 {
 			msg = fmt.Sprintf("%s, %d refused", msg, len(result.Refused))
+			// The reason of a refusal is in the commit: the developer
+			// reads it there, and not only in a log of the platform.
+			msg = msg + "\n\n" + strings.Join(result.Refused, "\n")
 		}
 		if _, err := runGit(ctx, work, gitConfig("commit", "-m", msg)...); err != nil {
 			return result, err

@@ -95,3 +95,28 @@ func TestResolveDigestOnTheInternet(t *testing.T) {
 		t.Errorf("the digest is %q", got)
 	}
 }
+
+// The pinned reference keeps the repository: a digest alone is not an
+// image the cluster can pull.
+func TestPinKeepsTheRepository(t *testing.T) {
+	cases := map[string]string{
+		"docker.io/vaultwarden/server:1.37.4": "docker.io/vaultwarden/server@sha256:abc",
+		"nginx:1.27":                          "nginx@sha256:abc",
+		"stirlingtools/stirling-pdf:1.0.1":    "stirlingtools/stirling-pdf@sha256:abc",
+		"localhost:5000/app:v1":               "localhost:5000/app@sha256:abc",
+		"ghcr.io/user/app:tag":                "ghcr.io/user/app@sha256:abc",
+	}
+	for reference, want := range cases {
+		if got := Pin(reference, "sha256:abc"); got != want {
+			t.Errorf("Pin(%q) = %q, want %q", reference, got, want)
+		}
+	}
+}
+
+// A reference that is already pinned is left alone.
+func TestPinLeavesAPinnedReferenceAlone(t *testing.T) {
+	reference := "docker.io/app@sha256:abc"
+	if got := Pin(reference, "sha256:def"); got != reference {
+		t.Errorf("Pin(%q) = %q, want %q", reference, got, reference)
+	}
+}
