@@ -251,7 +251,23 @@ référencés et jamais écrits.
 >
 > C'est le dernier maillon de `backup.s3`, et il dépend de la version de
 > l'opérateur que la plateforme installe : la plateforme doit déclarer
-> l'opérateur **et** son plugin, avec la même version. Un `backup.s3` qui ne nomme aucun add-on du
+> l'opérateur **et** son plugin, avec la même version.
+>
+> **Le plugin** (`cloudnative-pg/charts`, chart `plugin-barman-cloud`) est un
+> Deployment autonome, dans le namespace de l'opérateur, dont le Service
+> porte le label `cnpg.io/pluginName: barman-cloud.cloudnative-pg.io`.
+>
+> **La destination** est une ressource de son propre, `ObjectStore`
+> (`barmancloud.cnpg.io/v1`), qui porte la configuration barman *et* la
+> `retentionPolicy` comme frère. Le cluster la nomme par
+> `spec.plugins[].parameters.barmanObjectName`.
+>
+> **Le bucket** doit exister avant la première sauvegarde : sur AWS, barman
+> attend qu'il apparaisse ; sur un autre stockage objet, il échoue
+> simplement (`NoSuchBucket`). C'est une incompatibilité d'API que la
+> documentation du plugin signale elle-même. La plateforme crée donc le
+> bucket, par une tâche quotidienne : un stockage effacé le perd, et
+> personne ne s'en aperçoit sinon. Un `backup.s3` qui ne nomme aucun add-on du
 projet, ou un add-on qui ne parle pas S3, est refusé.
 
 Les identifiants d'un add-on qui en a besoin naissent **dans le cluster** : un
