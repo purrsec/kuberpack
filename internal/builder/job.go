@@ -421,8 +421,10 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 		{Name: "TMPDIR", Value: "/work"},
 		{Name: "TRIVY_CACHE_DIR", Value: "/work/trivy-cache"},
 		// The space the build writes. The builder refuses to start
-		// when the node cannot hold it.
-		{Name: "KUBERPACK_BUILD_DISK_NEED", Value: strconv.FormatInt(workSize.Value()+cacheSize.Value()+tmpSize.Value(), 10)},
+		// when the node cannot hold it. The cache of BuildKit is not
+		// counted: BuildKit deletes it when it grows, it is not a
+		// volume that grows with the build.
+		{Name: "KUBERPACK_BUILD_DISK_NEED", Value: strconv.FormatInt(workSize.Value()+tmpSize.Value(), 10)},
 	}
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
