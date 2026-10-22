@@ -7,4 +7,7 @@ spec:
   accessModes: [ReadWriteOnce]
   resources:
     requests:
-      storage: 1Gi
+      # The cache holds the database of the vulnerabilities of Trivy: it is
+      # downloaded once and kept. The database is a few hundred megabytes,
+      # and the archive it is unpacked from is written next to it.
+      storage: 2Gi

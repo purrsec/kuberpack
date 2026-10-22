@@ -74,6 +74,7 @@ func runServe(args []string) error {
 		runner.BuilderMemory = strings.TrimSpace(os.Getenv("KUBERPACK_BUILDER_MEMORY"))
 		runner.BuildkitCPU = strings.TrimSpace(os.Getenv("KUBERPACK_BUILDKIT_CPU"))
 		runner.BuildkitMemory = strings.TrimSpace(os.Getenv("KUBERPACK_BUILDKIT_MEMORY"))
+		runner.BuildkitCache = strings.TrimSpace(os.Getenv("KUBERPACK_BUILDKIT_CACHE"))
 		runner.AcceptedVulnerabilities = splitList(os.Getenv("KUBERPACK_TRIVY_IGNORE"))
 		runner.Timeout = *waitFor
 		jobBuilder = runner

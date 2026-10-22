@@ -107,6 +107,12 @@ func Run(ctx context.Context, req Request) (digest string, err error) {
 		return "", fail.Stage(fail.Job, err)
 	}
 	defer os.RemoveAll(work)
+	// A build that does not fit on the node fails in the middle, with a
+	// message that says nothing. It is refused here, with the space that
+	// is missing.
+	if err := requireDisk(work); err != nil {
+		return "", fail.Stage(fail.Disk, err)
+	}
 	authDir := filepath.Join(work, "auth")
 	if err := os.MkdirAll(authDir, 0o700); err != nil {
 		return "", fail.Stage(fail.Auth, err)
@@ -171,25 +177,40 @@ func Run(ctx context.Context, req Request) (digest string, err error) {
 	tag := "sha-" + req.CommitSHA
 	cache := req.ImageRepository + ":buildcache"
 	image := req.ImageRepository + ":" + tag
+	imageTar := filepath.Join(work, "image.tar")
 	if err = commandLogged(ctx, &logBuf, "buildctl", "--addr", "unix:///run/buildkit/buildkitd.sock", "build",
 		"--local", "context="+buildDir, "--local", "dockerfile="+work,
 		"--frontend", "gateway.v0", "--opt", "source="+frontend,
 		"--opt", "build-arg:cache-key="+name,
 		"--import-cache", "type=registry,ref="+cache,
 		"--export-cache", "type=registry,ref="+cache+",mode=max",
-		"--output", "type=oci,dest="+filepath.Join(work, "image.tar")+",name="+image); err != nil {
+		"--output", "type=oci,dest="+imageTar+",name="+image); err != nil {
 		return "", fail.Stage(fail.Image, err)
 	}
 	ociDir := filepath.Join(work, "oci")
 	if err := os.MkdirAll(ociDir, 0o700); err != nil {
 		return "", fail.Stage(fail.Image, err)
 	}
-	if err = commandLogged(ctx, &logBuf, "tar", "-C", ociDir, "-xf", filepath.Join(work, "image.tar")); err != nil {
+	if err = commandLogged(ctx, &logBuf, "tar", "-C", ociDir, "-xf", imageTar); err != nil {
 		return "", fail.Stage(fail.Image, err)
+	}
+	// The archive of the image and the directory that holds it have the
+	// same bytes. The archive is deleted as soon as it is unpacked: a
+	// build holds one copy of the image, not two.
+	if err := os.Remove(imageTar); err != nil && !os.IsNotExist(err) {
+		fmt.Printf("the archive of the image is kept: %v\n", err)
 	}
 	scanArchive := filepath.Join(work, "scan.tar")
 	if err = commandLogged(ctx, &logBuf, "skopeo", "copy", "oci:"+ociDir, "docker-archive:"+scanArchive+":"+image); err != nil {
 		return "", fail.Stage(fail.Trivy, err)
+	}
+	// The scan needs the room of the archive. The rest of the build does
+	// not: it is deleted as soon as the report is written.
+	defer os.Remove(scanArchive)
+	// The image is on the disk now, and the database of the vulnerabilities
+	// is about to be written. The node must still have the room for both.
+	if err := requireDisk(work); err != nil {
+		return "", fail.Stage(fail.Disk, err)
 	}
 	scanReport := filepath.Join(work, "trivy.json")
 	scanErr := commandLogged(ctx, &logBuf, "trivy", "image", "--input", scanArchive, "--exit-code", "1", "--severity", "CRITICAL", "--ignore-unfixed", "--pkg-types", "library", "--scanners", "vuln", "--format", "json", "--output", scanReport)

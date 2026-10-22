@@ -191,3 +191,35 @@ func TestNewJobPassesStartCommandAndRejectsChangedRequest(t *testing.T) {
 		t.Fatalf("changed start command reused an old Job: %v", err)
 	}
 }
+
+func TestBuildkitCacheIsBounded(t *testing.T) {
+	r := &JobRunner{Client: fake.NewSimpleClientset(), Image: "git.host.bzh/pepe/kuberpack-builder:0.1.0"}
+	job, err := r.NewJob(testRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := job.Spec.Template.Spec.InitContainers[0].Args
+	limit := ""
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--oci-worker-gc-keepstorage=") {
+			limit = arg
+		}
+	}
+	if limit == "" {
+		t.Fatalf("the cache of BuildKit is not bounded: %v", args)
+	}
+	r.BuildkitCache = "100,500,2000"
+	job, err = r.NewJob(testRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, arg := range job.Spec.Template.Spec.InitContainers[0].Args {
+		if arg == "--oci-worker-gc-keepstorage=100,500,2000" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the room of the cache of the operator must be used: %v", job.Spec.Template.Spec.InitContainers[0].Args)
+	}
+}

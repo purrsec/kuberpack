@@ -20,6 +20,9 @@ const (
 	Job      = "job"
 	Strategy = "strategy"
 	GitOps   = "gitops"
+	// Disk is the room of the node. A build that does not fit is refused
+	// before it starts.
+	Disk = "disk"
 )
 
 // Stage prefixes err with a short step tag for the Forgejo status line.

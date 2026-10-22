@@ -88,6 +88,26 @@ type JobRunner struct {
 	// of the builder follow it: a build that asks for more than the
 	// machine can give does not fail, it takes the node down.
 	NodeMemory string
+	// BuildkitCache is the room of the cache of BuildKit, in megabytes:
+	// "Reserved,Free,Maximum". BuildKit deletes the oldest entries of
+	// the cache when it grows past the maximum. Without a limit, the
+	// cache of a build fills the disk of the node.
+	BuildkitCache string
+}
+
+// buildkitCacheLimit is the room of the cache of BuildKit.
+//
+// The cache holds the layers of the dependencies and of the images of the
+// base. It is a cache: BuildKit deletes the oldest entries when it grows
+// past the maximum, and the build keeps the room it needs.
+//
+// The value is the one of BuildKit: the space that is reserved, the space
+// that must stay free, and the maximum, in megabytes.
+func (r *JobRunner) buildkitCacheLimit() string {
+	if value := strings.TrimSpace(r.BuildkitCache); value != "" {
+		return value
+	}
+	return "100,500,1000"
 }
 
 // memoryLimits returns the memory the builder and BuildKit may use.
@@ -388,8 +408,13 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 					SecurityContext:              &corev1.PodSecurityContext{RunAsNonRoot: &allowEscalation, RunAsUser: &uid, RunAsGroup: &uid, FSGroup: &uid},
 					InitContainers: []corev1.Container{{
 						Name: "buildkitd", Image: buildkitImage, ImagePullPolicy: corev1.PullIfNotPresent,
-						Command:         []string{"rootlesskit", "buildkitd"},
-						Args:            []string{"--addr=unix:///run/buildkit/buildkitd.sock", "--oci-worker-no-process-sandbox"},
+						Command: []string{"rootlesskit", "buildkitd"},
+						// The cache of BuildKit is bounded: BuildKit deletes
+						// the oldest entries when it grows past the limit.
+						// Without it, the cache of a build fills the disk of
+						// the node, and the next build fails for lack of
+						// space.
+						Args:            []string{"--addr=unix:///run/buildkit/buildkitd.sock", "--oci-worker-no-process-sandbox", "--oci-worker-gc-keepstorage=" + r.buildkitCacheLimit()},
 						RestartPolicy:   &rootlessRestart,
 						SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: &allowEscalation, RunAsNonRoot: &allowEscalation, RunAsUser: &uid, RunAsGroup: &uid, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeUnconfined}, AppArmorProfile: &corev1.AppArmorProfile{Type: corev1.AppArmorProfileTypeUnconfined}},
 						VolumeMounts:    []corev1.VolumeMount{{Name: "buildkit-socket", MountPath: "/run/buildkit"}, {Name: "buildkit-cache", MountPath: "/home/user/.local/share/buildkit"}},
