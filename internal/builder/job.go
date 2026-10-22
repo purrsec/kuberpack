@@ -173,11 +173,14 @@ func (r *JobRunner) volumeSizes() (work, cache, tmp resource.Quantity) {
 	if err != nil || total.IsZero() {
 		return resource.MustParse("3Gi"), resource.MustParse("2Gi"), resource.MustParse("1Gi")
 	}
-	workSize := total.Value() * 12 / 100
-	cacheSize := total.Value() * 8 / 100
-	tmpSize := total.Value() * 3 / 100
+	// The volumes must leave the node room to breathe: the kubelet
+	// evicts the pods that write the most when the disk crosses its
+	// threshold, and a build is the pod that writes the most.
+	workSize := total.Value() * 8 / 100
+	cacheSize := total.Value() * 5 / 100
+	tmpSize := total.Value() * 2 / 100
 	return resource.MustParse(fmt.Sprintf("%d", maxInt64(workSize, 1<<30))),
-		resource.MustParse(fmt.Sprintf("%d", maxInt64(cacheSize, 1<<30))),
+		resource.MustParse(fmt.Sprintf("%d", maxInt64(cacheSize, 512<<20))),
 		resource.MustParse(fmt.Sprintf("%d", maxInt64(tmpSize, 256<<20)))
 }
 
