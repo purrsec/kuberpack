@@ -59,3 +59,32 @@ func TestRenderVolumeClaimCarriesTheNameOfTheApplication(t *testing.T) {
 		t.Fatalf("the size of the volume is missing:\n%s", out)
 	}
 }
+
+// The pods of the application carry the labels of the platform: the
+// NetworkPolicy of an addon selects the applications that may reach it.
+func TestRenderChartGivesTheLabelsToThePods(t *testing.T) {
+	dir := t.TempDir()
+	values := filepath.Join(dir, "values.yaml")
+	content := `port: 8080
+healthcheck: /
+hostname: web.example.org
+image: example.org/web@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+`
+	if err := os.WriteFile(values, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := RenderChart(chartDir(t), "web", values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The labels of the pod template, not only the ones of the Deployment.
+	marker := "template:"
+	index := strings.Index(out, marker)
+	if index < 0 {
+		t.Fatalf("the pod template is missing:\n%s", out)
+	}
+	template := out[index:]
+	if !strings.Contains(template, "app.kubernetes.io/part-of: kuberpack") {
+		t.Fatalf("the pods must carry the labels of the platform:\n%s", template)
+	}
+}
