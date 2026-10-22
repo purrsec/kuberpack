@@ -58,3 +58,22 @@ func TestSyncAppValuesUpdatesTheValues(t *testing.T) {
 		t.Fatalf("the values of the application are not updated: %q", cm.Data["values.yaml"])
 	}
 }
+
+// The release of an application is named after its service, not after the
+// identity of the application in the database.
+func TestSyncAppValuesUsesTheNameOfTheService(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	s := New(Config{
+		Kube: client,
+		GitOpsFile: func(context.Context, store.App) ([]byte, error) {
+			return []byte("replicas: 1\n"), nil
+		},
+	})
+	app := store.App{Name: "comptoir-comptoir", Project: "comptoir"}
+	if err := s.syncAppValues(context.Background(), app, "comptoir"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.CoreV1().ConfigMaps("comptoir").Get(context.Background(), "comptoir-values", metav1.GetOptions{}); err != nil {
+		t.Fatalf("the values of the application are not in the ConfigMap of the service: %v", err)
+	}
+}

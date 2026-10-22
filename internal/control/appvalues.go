@@ -42,7 +42,8 @@ func (s *Server) syncAppValues(ctx context.Context, app store.App, namespace str
 	if err != nil {
 		return fmt.Errorf("read the values of %s: %w", app.Name, err)
 	}
-	name := app.Name + "-values"
+	service := releaseName(app)
+	name := service + "-values"
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 		Data:       map[string]string{"values.yaml": string(values)},
@@ -63,10 +64,23 @@ func (s *Server) syncAppValues(ctx context.Context, app store.App, namespace str
 	}
 	// The release reconciles on its own schedule anyway: asking it to
 	// reconcile now is an accelerator, not a condition.
-	if err := s.forceRelease(ctx, namespace, app.Name); err != nil {
+	if err := s.forceRelease(ctx, namespace, service); err != nil {
 		log.Printf("kuberpack app %s: the release: %v", app.Name, err)
 	}
 	return nil
+}
+
+// releaseName is the name of the release of an application: the name of
+// the service, without the project it belongs to. The identity of an
+// application in the database is <project>-<service>, the release of the
+// application is named after the service.
+func releaseName(app store.App) string {
+	name := strings.TrimSpace(app.Name)
+	project := strings.TrimSpace(app.Project)
+	if project == "" {
+		return name
+	}
+	return strings.TrimPrefix(name, project+"-")
 }
 
 // forceRelease asks the helm controller to reconcile the release of an
