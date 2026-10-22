@@ -55,6 +55,7 @@ func runProjectCreate(args []string) error {
 	namespace := fs.String("namespace", "", "namespace (default: project name)")
 	service := fs.String("service", "app", "first service name")
 	repository := fs.String("repository", "", "owner/name Forgejo repository for the service")
+	image := fs.String("image", "", "published image to run instead of building one (a third party application)")
 	port := fs.Int("port", 8080, "service port")
 	hostname := fs.String("hostname", "", "service hostname")
 	database := fs.String("database", "", "add a PostgreSQL database to the project (postgres)")
@@ -79,8 +80,12 @@ func runProjectCreate(args []string) error {
 		ns = name
 	}
 	repo := strings.TrimSpace(*repository)
-	if repo == "" {
+	published := strings.TrimSpace(*image)
+	if repo == "" && published == "" {
 		repo = prompt(in, "Service repository (owner/name)", "")
+	}
+	if repo == "" && published == "" {
+		return fmt.Errorf("the service needs a repository to build, or an image to run")
 	}
 	host := strings.TrimSpace(*hostname)
 	if host == "" {
@@ -117,7 +122,7 @@ func runProjectCreate(args []string) error {
 		Project:   name,
 		Namespace: ns,
 		Services: map[string]promote.Service{
-			sanitizeCLI(*service): {Type: "stateless", Repository: repo, Port: *port, Hostname: host, Addons: peers},
+			sanitizeCLI(*service): {Type: "stateless", Repository: repo, Image: published, Port: *port, Hostname: host, Addons: peers},
 		},
 		Addons:   addons,
 		Policies: promote.Policy{DefaultDeny: promote.BoolPtr(true)},

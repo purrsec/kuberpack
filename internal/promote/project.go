@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"git.host.bzh/pepe/kuberpack/internal/fetch"
+	"git.host.bzh/pepe/kuberpack/internal/oci"
 	"gopkg.in/yaml.v3"
 )
 
@@ -391,7 +392,7 @@ func EnsureProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 		if _, err := req.remoteGit(ctx, "", "clone", "--branch", req.GitOpsBranch, "--single-branch", req.GitOpsURL, work); err != nil {
 			return ProjectResult{}, err
 		}
-		services, adds, apps, err := compileProjectFiles(work, req.Manifest, req.Platform, req.Raw, true)
+		services, adds, apps, err := compileProjectFiles(ctx, work, req.Manifest, req.Platform, req.Raw, true)
 		if err != nil {
 			return ProjectResult{}, err
 		}
@@ -447,7 +448,7 @@ func EnsureProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 }
 
 // compileProjectFiles writes the project source + generated artifacts.
-func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string, writeManifest bool) ([]string, []string, []ProjectApp, error) {
+func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p Platform, raw string, writeManifest bool) ([]string, []string, []ProjectApp, error) {
 	p = p.withDefaults()
 	project := sanitizeName(m.Project)
 	projectDir := filepath.Join(work, filepath.FromSlash(p.ProjectDir(project)))
@@ -537,6 +538,17 @@ func compileProjectFiles(work string, m ProjectManifest, p Platform, raw string,
 		spec.TLSSecretName = sname + "-tls"
 		// A service that runs a published image is not built.
 		spec.Image = strings.TrimSpace(svc.Image)
+		if spec.Image != "" {
+			// The image is pinned by digest. The manifest keeps the tag:
+			// the manifest is the source of truth and is never rewritten.
+			// The digest lives in the generated file, like the digest of
+			// a built image.
+			pinned, err := oci.ResolveDigest(ctx, spec.Image)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("service %q: the image %q could not be pinned: %w", name, spec.Image, err)
+			}
+			spec.Image = pinned
+		}
 		spec.Volumes = svc.Volumes
 		spec.WritableRoot = svc.WritableRoot
 		spec.RunAsRoot = svc.RunAsRoot

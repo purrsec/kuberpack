@@ -114,7 +114,7 @@ func ReloadProjects(ctx context.Context, req ReloadRequest) (ReloadResult, error
 				result.Refused = append(result.Refused, name+": "+err.Error())
 				continue
 			}
-			services, adds, apps, err := compileProjectFiles(work, manifest, platform, string(raw), false)
+			services, adds, apps, err := compileProjectFiles(ctx, work, manifest, platform, string(raw), false)
 			if err != nil {
 				return result, fmt.Errorf("project %s: %w", name, err)
 			}
