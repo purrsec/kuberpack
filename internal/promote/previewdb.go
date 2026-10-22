@@ -39,7 +39,9 @@ func ensurePreviewDatabase(work string, spec AppSpec, p Platform) (bool, error) 
 	}
 	before, _ := os.ReadFile(filepath.Join(dir, "database.yaml"))
 	preview := p
-	preview.PostgresImage = p.PreviewDatabaseImage
+	// The database of a preview is the database of the production: one
+	// image, one implementation. Only its storage is smaller.
+	preview.PostgresImage = p.PostgresImage
 	preview.PostgresStorage = p.PreviewDatabaseStorage
 	preview.PostgresStorageClass = p.PreviewDatabaseClass
 	if _, err := engine.Render(dir, AddonSpec{

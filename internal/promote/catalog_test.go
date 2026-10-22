@@ -346,7 +346,9 @@ func TestTheClusterThatDoesNotFitIsRefused(t *testing.T) {
 				Resources: &ServiceResources{Limits: ResourceList{Memory: "2Gi"}}},
 		},
 	}
-	platform := Platform{NetworkPolicy: true, NodeMemory: "3Gi"}
+	// The platform keeps a fifth of the node: the applications may take
+	// 2.4 Gi of the 3 Gi.
+	platform := Platform{NetworkPolicy: true, NodeMemory: "3Gi", NodeReserve: "20"}
 	for _, manifest := range []ProjectManifest{big, other} {
 		req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: manifest, Platform: platform}
 		if _, err := EnsureProject(context.Background(), req); err != nil {
@@ -365,7 +367,9 @@ func TestTheClusterThatDoesNotFitIsRefused(t *testing.T) {
 // that are already deployed.
 func TestANewProjectThatDoesNotFitIsRefused(t *testing.T) {
 	bare := setupAppsGitOps(t)
-	platform := Platform{NetworkPolicy: true, NodeMemory: "3Gi"}
+	// The platform keeps a fifth of the node: the applications may take
+	// 2.4 Gi of the 3 Gi.
+	platform := Platform{NetworkPolicy: true, NodeMemory: "3Gi", NodeReserve: "20"}
 	big := ProjectManifest{
 		Project: "big",
 		Services: map[string]Service{
@@ -378,7 +382,8 @@ func TestANewProjectThatDoesNotFitIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A second project of the same size does not fit next to the first
-	// one: the node has 3 Gi, the two ask for 4 Gi.
+	// one: the node has 3 Gi, the two ask for 4 Gi, and the platform
+	// keeps a share of the node for itself.
 	other := ProjectManifest{
 		Project: "other",
 		Services: map[string]Service{
@@ -437,5 +442,60 @@ func TestAServiceWithZeroReplicasIsDeclaredAndNotRun(t *testing.T) {
 	values = readFile(t, readRemoteTree(t, bare), "kubernetes/vps/projects/other/app/values.yaml")
 	if !strings.Contains(values, "replicas: 1") {
 		t.Errorf("a service that says nothing must get one replica:\n%s", values)
+	}
+}
+
+// The platform keeps a share of the node for itself: an application that
+// takes the whole node takes the API of the platform with it.
+func TestAProjectThatTakesTheShareOfThePlatformIsRefused(t *testing.T) {
+	platform := Platform{NetworkPolicy: true, NodeMemory: "4Gi", NodeCPU: 3, NodeReserve: "40"}
+	manifest := ProjectManifest{
+		Project: "greedy",
+		Services: map[string]Service{
+			"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "greedy.host.bzh",
+				Resources: &ServiceResources{Limits: ResourceList{Memory: "3Gi", CPU: "2"}}},
+		},
+	}
+	err := checkCapacity(manifest, platform)
+	if err == nil {
+		t.Fatal("a project that takes more than the share of the applications must be refused")
+	}
+	if !strings.Contains(err.Error(), "2.4Gi") {
+		t.Fatalf("the message must say what the applications may take:\n%v", err)
+	}
+}
+
+// A project that fits in the share of the applications is accepted.
+func TestAProjectThatFitsTheShareOfTheApplicationsIsAccepted(t *testing.T) {
+	platform := Platform{NetworkPolicy: true, NodeMemory: "4Gi", NodeCPU: 3, NodeReserve: "40"}
+	manifest := ProjectManifest{
+		Project: "modest",
+		Services: map[string]Service{
+			"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "modest.host.bzh",
+				Resources: &ServiceResources{Limits: ResourceList{Memory: "1Gi", CPU: "1"}}},
+		},
+	}
+	if err := checkCapacity(manifest, platform); err != nil {
+		t.Fatalf("a project that fits must compile: %v", err)
+	}
+}
+
+// The cpu counts too: an application that takes the cores of the node
+// stops the platform from answering.
+func TestAProjectThatTakesTheCoresOfTheNodeIsRefused(t *testing.T) {
+	platform := Platform{NetworkPolicy: true, NodeMemory: "8Gi", NodeCPU: 2, NodeReserve: "40"}
+	manifest := ProjectManifest{
+		Project: "greedy",
+		Services: map[string]Service{
+			"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "greedy.host.bzh",
+				Resources: &ServiceResources{Limits: ResourceList{Memory: "1Gi", CPU: "2"}}},
+		},
+	}
+	err := checkCapacity(manifest, platform)
+	if err == nil {
+		t.Fatal("a project that takes the cores of the node must be refused")
+	}
+	if !strings.Contains(err.Error(), "cpu") {
+		t.Fatalf("the message must talk about the cpu:\n%v", err)
 	}
 }

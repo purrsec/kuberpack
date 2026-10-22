@@ -87,6 +87,91 @@ func projectMemoryLimit(m ProjectManifest) float64 {
 	return total
 }
 
+// projectCPULimit returns the cpu the services and the addons of a project
+// ask for. It is the sum of the limits: the node runs them at the same
+// time.
+func projectCPULimit(m ProjectManifest) float64 {
+	total := 0.0
+	for _, service := range m.Services {
+		if service.Resources == nil {
+			continue
+		}
+		value, err := parseCPUs(service.Resources.Limits.CPU)
+		if err != nil {
+			continue
+		}
+		total += value
+	}
+	for _, addon := range m.Addons {
+		entry, ok := AddonCatalogEntryForEngine(addon.Engine)
+		if !ok {
+			continue
+		}
+		plan, err := entry.Plan(addon.Plan, addon.Params)
+		if err != nil {
+			continue
+		}
+		value, err := parseCPUs(plan.Resources.Limits.CPU)
+		if err != nil {
+			continue
+		}
+		total += value
+	}
+	return total
+}
+
+// parseCPUs reads a cpu quantity: a number of cores ("1", "0.5", "2").
+func parseCPUs(raw string) (float64, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	if strings.HasSuffix(raw, "m") {
+		value, err := strconv.ParseFloat(strings.TrimSpace(strings.TrimSuffix(raw, "m")), 64)
+		if err != nil {
+			return 0, fmt.Errorf("the quantity %q is not a number", raw)
+		}
+		return value / 1000, nil
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0, fmt.Errorf("the quantity %q is not a number", raw)
+	}
+	return value, nil
+}
+
+// nodeBudget is what the applications of the platform may take from the
+// node. The platform keeps a share for itself: the control plane, the
+// ingress, the operators and the databases of the platform run there too.
+//
+// An application that takes the whole node takes the API of the platform
+// with it: the platform stops answering, and the application that is
+// being deployed is the reason.
+func nodeBudget(node float64, reserve string) float64 {
+	share := parseReserve(reserve)
+	if share <= 0 || share >= 100 {
+		return node
+	}
+	return node * (100 - share) / 100
+}
+
+// parseReserve reads the share of the node the platform keeps. It is a
+// percentage, and 40 by default.
+func parseReserve(raw string) float64 {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 40
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 40
+	}
+	if value < 0 || value > 90 {
+		return 40
+	}
+	return value
+}
+
 // checkCapacity refuses a project that does not fit in the node.
 //
 // A cluster that does not have enough memory does not fail cleanly: the
@@ -100,12 +185,26 @@ func checkCapacity(m ProjectManifest, p Platform) error {
 	if node <= 0 {
 		return nil
 	}
+	budget := nodeBudget(node, p.NodeReserve)
 	needed := projectMemoryLimit(m)
-	if needed <= node {
-		return nil
+	if needed > budget {
+		return fmt.Errorf("this project asks for %s of memory, and the applications of the platform may take %s of the %s of the node (the platform keeps %s for itself): the cluster would start killing the applications that work",
+			formatBytes(needed), formatBytes(budget), formatBytes(node), formatBytes(node-budget))
 	}
-	return fmt.Errorf("this project asks for %s of memory, and the node has %s: the cluster would start killing the applications that work",
-		formatBytes(needed), formatBytes(node))
+	if p.NodeCPU > 0 {
+		cpuBudget := nodeBudget(p.NodeCPU, p.NodeReserve)
+		cpu := projectCPULimit(m)
+		if cpu > cpuBudget {
+			return fmt.Errorf("this project asks for %s cpu, and the applications of the platform may take %s of the %s of the node (the platform keeps %s for itself): the platform would stop answering while the application starts",
+				formatCPUs(cpu), formatCPUs(cpuBudget), formatCPUs(p.NodeCPU), formatCPUs(p.NodeCPU-cpuBudget))
+		}
+	}
+	return nil
+}
+
+// formatCPUs writes a number of cores the way kubernetes writes it.
+func formatCPUs(value float64) string {
+	return strconv.FormatFloat(value, 'f', 2, 64) + " cpu"
 }
 
 // checkClusterAddition refuses a project that makes the platform exceed the
@@ -126,6 +225,7 @@ func checkClusterAddition(work string, p Platform, manifest ProjectManifest) err
 	}
 	current := sanitizeName(manifest.Project)
 	others := 0.0
+	othersCPU := 0.0
 	entries, err := os.ReadDir(filepath.Join(work, filepath.FromSlash(p.ProjectsDirPath())))
 	if err != nil && !os.IsNotExist(err) {
 		return err
@@ -152,6 +252,7 @@ func checkClusterAddition(work string, p Platform, manifest ProjectManifest) err
 			continue
 		}
 		others += projectMemoryLimit(other)
+		othersCPU += projectCPULimit(other)
 	}
 	// A project that is already deployed is not refused: it runs, and
 	// refusing it would leave the cluster as it is. The operator decides
@@ -159,12 +260,21 @@ func checkClusterAddition(work string, p Platform, manifest ProjectManifest) err
 	if projectDeployed(work, p, manifest) {
 		return nil
 	}
+	budget := nodeBudget(node, p.NodeReserve)
 	need := projectMemoryLimit(manifest)
-	if others+need <= node {
-		return nil
+	if others+need > budget {
+		return fmt.Errorf("this project asks for %s of memory, and the applications of the platform may take %s of the %s of the node (the platform keeps %s for itself): with the other projects of the platform (%s), the cluster would start killing the applications that work",
+			formatBytes(need), formatBytes(budget), formatBytes(node), formatBytes(node-budget), formatBytes(others))
 	}
-	return fmt.Errorf("this project asks for %s of memory, and the node has %s: with the other projects of the platform (%s), the cluster would start killing the applications that work",
-		formatBytes(need), formatBytes(node), formatBytes(others))
+	if p.NodeCPU > 0 {
+		cpuBudget := nodeBudget(p.NodeCPU, p.NodeReserve)
+		cpu := projectCPULimit(manifest)
+		if othersCPU+cpu > cpuBudget {
+			return fmt.Errorf("this project asks for %s cpu, and the applications of the platform may take %s of the %s of the node (the platform keeps %s for itself): with the other projects of the platform (%s), the platform would stop answering",
+				formatCPUs(cpu), formatCPUs(cpuBudget), formatCPUs(p.NodeCPU), formatCPUs(p.NodeCPU-cpuBudget), formatCPUs(othersCPU))
+		}
+	}
+	return nil
 }
 
 // projectDeployed reports whether a project is already applied in the

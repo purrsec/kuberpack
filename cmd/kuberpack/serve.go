@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"strconv"
 
 	"context"
 	"flag"
@@ -152,37 +153,53 @@ func clusterClient() (kubernetes.Interface, error) {
 
 func platformFromEnv() promote.Platform {
 	return promote.Platform{
-		AppsDir:                getenv("KUBERPACK_GITOPS_APPS", "kubernetes/vps/apps"),
-		ChartRef:               getenv("KUBERPACK_GITOPS_CHART", "./kubernetes/vps/charts/stateless"),
-		ChartSourceKind:        getenv("KUBERPACK_GITOPS_CHART_SOURCE_KIND", "GitRepository"),
-		SourceName:             getenv("KUBERPACK_GITOPS_SOURCE", "infra-homelab"),
-		SourceNamespace:        getenv("KUBERPACK_GITOPS_SOURCE_NAMESPACE", "flux-system"),
-		ReleaseNamespace:       getenv("KUBERPACK_RELEASE_NAMESPACE", "apps"),
-		IngressClassName:       getenv("KUBERPACK_INGRESS_CLASS", "traefik"),
-		ImagePullSecret:        getenv("KUBERPACK_IMAGE_PULL_SECRET", "forgejo-registry-pull"),
-		IngressTLS:             getenvBool("KUBERPACK_INGRESS_TLS", true),
-		ExternalDNSTarget:      promote.IPv6DNSTargets(os.Getenv("KUBERPACK_DNS_TARGET")),
-		ExternalDNSTTL:         getenv("KUBERPACK_DNS_TTL", "300"),
-		TraefikEntrypoint:      getenv("KUBERPACK_TRAEFIK_ENTRYPOINT", "websecure"),
-		TraefikCertResolver:    getenv("KUBERPACK_CERT_RESOLVER", "letsencrypt"),
-		NetworkPolicy:          getenvBool("KUBERPACK_NETWORK_POLICY", true),
-		PreviewDomain:          getenv("KUBERPACK_PREVIEW_DOMAIN", "preview.host.bzh"),
-		InfisicalAuthRef:       getenv("KUBERPACK_INFISICAL_AUTH_REF", "contabo-vps"),
-		InfisicalProjectID:     strings.TrimSpace(os.Getenv("KUBERPACK_INFISICAL_PROJECT_ID")),
-		InfisicalPath:          getenv("KUBERPACK_INFISICAL_PATH", "/"),
-		InfisicalDir:           getenv("KUBERPACK_INFISICAL_DIR", "kubernetes/vps/infisical"),
-		InfisicalNamespace:     getenv("KUBERPACK_INFISICAL_NAMESPACE", "infisical"),
-		PostgresImage:          getenv("KUBERPACK_POSTGRES_IMAGE", ""),
-		AddonOperators:         splitList(getenv("KUBERPACK_ADDON_OPERATORS", "")),
-		NodeMemory:             getenv("KUBERPACK_NODE_MEMORY", ""),
+		AppsDir:             getenv("KUBERPACK_GITOPS_APPS", "kubernetes/vps/apps"),
+		ChartRef:            getenv("KUBERPACK_GITOPS_CHART", "./kubernetes/vps/charts/stateless"),
+		ChartSourceKind:     getenv("KUBERPACK_GITOPS_CHART_SOURCE_KIND", "GitRepository"),
+		SourceName:          getenv("KUBERPACK_GITOPS_SOURCE", "infra-homelab"),
+		SourceNamespace:     getenv("KUBERPACK_GITOPS_SOURCE_NAMESPACE", "flux-system"),
+		ReleaseNamespace:    getenv("KUBERPACK_RELEASE_NAMESPACE", "apps"),
+		IngressClassName:    getenv("KUBERPACK_INGRESS_CLASS", "traefik"),
+		ImagePullSecret:     getenv("KUBERPACK_IMAGE_PULL_SECRET", "forgejo-registry-pull"),
+		IngressTLS:          getenvBool("KUBERPACK_INGRESS_TLS", true),
+		ExternalDNSTarget:   promote.IPv6DNSTargets(os.Getenv("KUBERPACK_DNS_TARGET")),
+		ExternalDNSTTL:      getenv("KUBERPACK_DNS_TTL", "300"),
+		TraefikEntrypoint:   getenv("KUBERPACK_TRAEFIK_ENTRYPOINT", "websecure"),
+		TraefikCertResolver: getenv("KUBERPACK_CERT_RESOLVER", "letsencrypt"),
+		NetworkPolicy:       getenvBool("KUBERPACK_NETWORK_POLICY", true),
+		PreviewDomain:       getenv("KUBERPACK_PREVIEW_DOMAIN", "preview.host.bzh"),
+		InfisicalAuthRef:    getenv("KUBERPACK_INFISICAL_AUTH_REF", "contabo-vps"),
+		InfisicalProjectID:  strings.TrimSpace(os.Getenv("KUBERPACK_INFISICAL_PROJECT_ID")),
+		InfisicalPath:       getenv("KUBERPACK_INFISICAL_PATH", "/"),
+		InfisicalDir:        getenv("KUBERPACK_INFISICAL_DIR", "kubernetes/vps/infisical"),
+		InfisicalNamespace:  getenv("KUBERPACK_INFISICAL_NAMESPACE", "infisical"),
+		PostgresImage:       getenv("KUBERPACK_POSTGRES_IMAGE", ""),
+		AddonOperators:      splitList(getenv("KUBERPACK_ADDON_OPERATORS", "")),
+		NodeMemory:          getenv("KUBERPACK_NODE_MEMORY", ""),
+		NodeCPU:             getenvFloat("KUBERPACK_NODE_CPU", 0),
+		// The share of the node the platform keeps for itself. The
+		// applications of the platform share what is left.
+		NodeReserve:            getenv("KUBERPACK_NODE_RESERVE", ""),
 		PostgresStorage:        getenv("KUBERPACK_POSTGRES_STORAGE", ""),
 		PostgresStorageClass:   getenv("KUBERPACK_POSTGRES_STORAGE_CLASS", ""),
-		PreviewDatabaseImage:   getenv("KUBERPACK_PREVIEW_DB_IMAGE", ""),
 		PreviewDatabaseStorage: getenv("KUBERPACK_PREVIEW_DB_STORAGE", ""),
 		PreviewDatabaseClass:   getenv("KUBERPACK_PREVIEW_DB_CLASS", ""),
 		ProjectsDir:            getenv("KUBERPACK_PROJECTS_DIR", "kubernetes/vps/projects"),
 		ControlPlaneNamespace:  getenv("KUBERPACK_CONTROL_PLANE_NAMESPACE", "kuberpack"),
 	}
+}
+
+// getenvFloat reads a number from the environment.
+func getenvFloat(key string, fallback float64) float64 {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	value, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return fallback
+	}
+	return value
 }
 
 func getenvBool(key string, fallback bool) bool {

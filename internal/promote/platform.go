@@ -56,9 +56,14 @@ type Platform struct {
 	NodeMemory string
 	// NodeCPU is the cpu of the node, in cores.
 	NodeCPU float64
+	// NodeReserve is the share of the node the platform keeps for
+	// itself, in percent. The applications of the platform share what is
+	// left: the control plane, the ingress, the operators and the
+	// databases of the platform have to run too, and an application that
+	// takes the node takes the API of the platform with it.
+	NodeReserve string
 	// PreviewDatabase* configure the per-preview CloudNativePG database
 	// (empty, isolated). Used only when an app opts in.
-	PreviewDatabaseImage   string
 	PreviewDatabaseStorage string
 	PreviewDatabaseClass   string
 	// ProjectsDir is where project manifests and their compiled artifacts live.
@@ -135,9 +140,6 @@ func (p Platform) withDefaults() Platform {
 	}
 	if p.InfisicalNamespace == "" {
 		p.InfisicalNamespace = "infisical"
-	}
-	if p.PreviewDatabaseImage == "" {
-		p.PreviewDatabaseImage = "ghcr.io/cloudnative-pg/postgresql:16.10-minimal-trixie@sha256:294fd7631f8d66fa54bf6ffa2948af685a20fb695fe748a6bafa71c42f1233b7"
 	}
 	if p.PostgresStorage == "" {
 		p.PostgresStorage = "1Gi"
