@@ -44,7 +44,37 @@ notice pour une installation de démonstration. En production, la notice
 demande des bases gérées à l'extérieur ; le cluster a déjà l'opérateur
 CloudNativePG, qui sait faire le même travail.
 
-## L'installation
+## L'installation en une commande
+
+L'opérateur n'écrit aucun YAML. Une commande pose tout : le namespace,
+les secrets, le certificat, l'instance, l'opérateur, les comptes de
+service, la délégation d'authentification, la connexion et
+l'authentification.
+
+```bash
+kuberpack install \
+  --git-url https://api.github.com \
+  --gitops-url https://github.com/vous/deploiement.git \
+  --git-token <jeton de lecture> \
+  --registry-url ghcr.io --registry-user vous \
+  --registry-token <jeton de build> \
+  --infisical-domain infisical.exemple.org
+```
+
+L'identité de la machine n'est pas demandée : le chart amorce l'instance
+et dépose son jeton dans un Secret, la commande le lit et crée les
+objets de l'opérateur avec.
+
+L'installation est idempotente, à une réserve près : un chart dont les
+valeurs changent un champ immuable d'un StatefulSet — le PostgreSQL du
+chart — ne se met pas à jour. Il faut alors le désinstaller, ou garder
+les mêmes valeurs.
+
+### L'installation à la main
+
+Elle n'est plus nécessaire, mais elle reste possible. Voici ce que la
+commande fait, pour qu'on puisse le faire à la main si le cluster n'est
+pas joignable depuis la machine de l'opérateur.
 
 ```bash
 export KUBECONFIG=~/.kube/cluster.yaml

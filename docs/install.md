@@ -122,7 +122,16 @@ Infisical vers un Secret Kubernetes. Les valeurs ne sont ni dans le dépôt
 Git, ni dans la base SQLite, ni dans le control plane.
 
 L'installation d'Infisical sur le cluster est décrite dans
-[infisical.md](infisical.md).
+[infisical.md](infisical.md). Elle tient dans la commande
+`kuberpack install` : l'opérateur n'écrit aucun YAML.
+
+Le parcours complet, du cluster vide à l'application qui tourne :
+
+```bash
+kuberpack install --git-token ... --gitops-url ... --registry-token ...
+kuberpack project init          # écrit kuberpack.yaml, ou l'utilisateur l'écrit
+kuberpack project compile       # compile le manifeste et pousse
+```
 
 ## Ce que Kuberpack ne fait pas
 
