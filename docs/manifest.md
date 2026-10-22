@@ -235,14 +235,19 @@ référencés et jamais écrits.
 > configuration reste vide et le plugin est « inconnu », sans autre
 > message.
 >
-> État du chantier : le nom seul (`barman-cloud-backup.cloudnative-pg.io`)
-> est chargé par l'opérateur, mais le plugin reste « inconnu » et le pod
-> de l'instance ne reçoit pas de conteneur de plugin. Le format
-> `nom=image` ne change rien. L'opérateur attend une spécification de
-> plugin complète, et il la cherche dans un conteneur supplémentaire du
-> pod (le plugin est identifié par un **label**, « plugin name label is
-> empty »). La documentation du chart de l'opérateur n'expose pas cette
-> partie : elle se trouve dans le code de `internal/cnpi/plugin/client`.
+> **Comment le plugin est trouvé** (lu dans le code de l'opérateur 1.30,
+> `internal/cnpi/plugin/repository` et `.../client`) : l'opérateur ne
+> charge pas une image. Il scanne un **répertoire de sockets unix**
+> (`/plugins`, le `pluginSocketDir` de sa configuration) et enregistre
+> chaque fichier comme un plugin, sous le **nom du fichier**. Le nom
+> demandé par `INCLUDE_PLUGINS` doit donc correspondre à une socket de ce
+> répertoire, sinon : « Unknown plugin ».
+>
+> Cette socket est créée par le **conteneur additionnel** du pod de
+> l'instance (le plugin est repéré par un **label**, « plugin name label
+> is empty »). C'est donc le nom du plugin — et lui seul — qui manque à
+> l'appel : le nom du socket, le nom du label et le nom de
+> `spec.plugins[].name` doivent être le même.
 >
 > C'est le dernier maillon de `backup.s3`, et il dépend de la version de
 > l'opérateur que la plateforme installe : la plateforme doit déclarer
