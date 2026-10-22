@@ -84,6 +84,41 @@ type JobRunner struct {
 	// AcceptedVulnerabilities are the CVE the platform accepts. A finding
 	// of the scan that is not in this list stops the build.
 	AcceptedVulnerabilities []string
+	// NodeMemory is the memory of the node the builds run on. The bounds
+	// of the builder follow it: a build that asks for more than the
+	// machine can give does not fail, it takes the node down.
+	NodeMemory string
+}
+
+// memoryLimits returns the memory the builder and BuildKit may use.
+//
+// The two run together, so they share the node. By default they take
+// half of it each, and the other half is left to the platform and to
+// the applications.
+func (r *JobRunner) memoryLimits() (builder, buildkit string) {
+	total := r.NodeMemory
+	if strings.TrimSpace(total) == "" {
+		return "2Gi", "2Gi"
+	}
+	quantity, err := resource.ParseQuantity(total)
+	if err != nil {
+		return "2Gi", "2Gi"
+	}
+	half := quantity.Value() / 2
+	if half < 256*1024*1024 {
+		half = 256 * 1024 * 1024
+	}
+	limit := strconv.FormatInt(half, 10)
+	return limit, limit
+}
+
+// volumeSizes returns the size of the volumes of a build.
+//
+// The work holds the source, the cache of BuildKit and the database of
+// the vulnerabilities. They are bounded: a build must not fill the
+// disk of the node.
+func (r *JobRunner) volumeSizes() (work, cache, tmp resource.Quantity) {
+	return resource.MustParse("3Gi"), resource.MustParse("2Gi"), resource.MustParse("1Gi")
 }
 
 // resourceQuantity reads a quantity, with a default.
@@ -272,17 +307,19 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 	readOnly := true
 	never := false
 	rootlessRestart := corev1.ContainerRestartPolicyAlways
-	cacheSize := resource.MustParse("8Gi")
-	workSize := resource.MustParse("8Gi")
-	tmpSize := resource.MustParse("2Gi")
+	// The bounds of the builder follow the node. A build that asks for
+	// more than the machine can give does not fail: it takes the node
+	// down, and the platform that shares it falls with it.
+	workSize, cacheSize, tmpSize := r.volumeSizes()
+	builderMemoryLimit, buildkitMemoryLimit := r.memoryLimits()
 	// Trivy downloads and unpacks a vulnerability database of a few hundred
 	// megabytes: the builder container needs more than 2Gi to survive the scan.
 	// The resources of the build are the size of the machine that builds.
 	// They are configurable: a small server builds small applications.
-	builderCPU := resourceQuantity(r.BuilderCPU, "4")
-	builderMemory := resourceQuantity(r.BuilderMemory, "6Gi")
-	buildkitCPU := resourceQuantity(r.BuildkitCPU, "6")
-	buildkitMemory := resourceQuantity(r.BuildkitMemory, "8Gi")
+	builderCPU := resourceQuantity(r.BuilderCPU, "2")
+	builderMemory := resourceQuantity(r.BuilderMemory, builderMemoryLimit)
+	buildkitCPU := resourceQuantity(r.BuildkitCPU, "2")
+	buildkitMemory := resourceQuantity(r.BuildkitMemory, buildkitMemoryLimit)
 	requestDigest := sha256.Sum256([]byte(cloneURL + "\x00" + req.CommitSHA + "\x00" + req.ImageRepository + "\x00" + req.RegistryUser + "\x00" + req.StartCmd))
 	buildsURL := strings.TrimSpace(req.BuildsGitURL)
 	if buildsURL == "" {
