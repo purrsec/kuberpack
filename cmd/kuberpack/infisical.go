@@ -183,13 +183,29 @@ func installInfisical(ctx context.Context, config *rest.Config, client kubernete
 	// chiffrement. Elles ne quittent jamais le cluster, et l'operateur les
 	// lit. La cle de chiffrement est ecrite a part, sur le disque de
 	// l'operateur : sans elle, les secrets de la base sont illisibles.
-	authSecret := randomSecret(32)
-	encryptionKey := randomHex(16)
-	if err := ensureSecret(ctx, client, infisicalNamespace, "infisical-secrets", map[string][]byte{
-		"AUTH_SECRET":    []byte(authSecret),
-		"ENCRYPTION_KEY": []byte(encryptionKey),
-		"SITE_URL":       []byte("https://" + domain),
-	}); err != nil {
+	// La cle de chiffrement n'est jamais changee : elle chiffre ce qui est
+	// deja dans la base. Regeneree, l'instance ne peut plus lire ses
+	// propres secrets. Elle n'est donc ecrite que si elle n'existe pas.
+	existing, err := client.CoreV1().Secrets(infisicalNamespace).Get(ctx, "infisical-secrets", metav1.GetOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	secrets := map[string][]byte{"SITE_URL": []byte("https://" + domain)}
+	if err == nil {
+		if key := strings.TrimSpace(string(existing.Data["ENCRYPTION_KEY"])); key != "" {
+			secrets["ENCRYPTION_KEY"] = existing.Data["ENCRYPTION_KEY"]
+		}
+		if auth := strings.TrimSpace(string(existing.Data["AUTH_SECRET"])); auth != "" {
+			secrets["AUTH_SECRET"] = existing.Data["AUTH_SECRET"]
+		}
+	}
+	if _, ok := secrets["ENCRYPTION_KEY"]; !ok {
+		secrets["ENCRYPTION_KEY"] = []byte(randomHex(16))
+	}
+	if _, ok := secrets["AUTH_SECRET"]; !ok {
+		secrets["AUTH_SECRET"] = []byte(randomSecret(32))
+	}
+	if err := ensureSecret(ctx, client, infisicalNamespace, "infisical-secrets", secrets); err != nil {
 		return err
 	}
 	adminPassword := randomSecret(18)
