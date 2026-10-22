@@ -29,6 +29,15 @@ const (
 var commitPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
 
 type Request struct {
+	// ControlTokenDigest is the fingerprint of the token the control
+	// plane uses. The builder must not have it: the builder runs the
+	// code of the build, and that code must not be able to write in the
+	// repositories of the platform.
+	ControlTokenDigest string
+	// StrictTokens refuses the build when the builder holds the token of
+	// the control plane. The default is a warning: the operator decides
+	// when the platform is strict.
+	StrictTokens    bool
 	DeliveryID      string
 	CloneURL        string
 	CommitSHA       string
@@ -281,9 +290,14 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 	}
 	env := []corev1.EnvVar{
 		{Name: "KUBERPACK_CLONE_URL", Value: cloneURL},
+		// The fingerprint of the token of the control plane. It is not a
+		// secret: a fingerprint cannot be reversed. It tells the builder
+		// that it was handed the wrong token.
+		{Name: "KUBERPACK_CONTROL_FINGERPRINT", Value: req.ControlTokenDigest},
 		{Name: "KUBERPACK_COMMIT_SHA", Value: req.CommitSHA},
 		{Name: "KUBERPACK_IMAGE_REPOSITORY", Value: req.ImageRepository},
 		{Name: "KUBERPACK_REGISTRY_USER", Value: req.RegistryUser},
+		{Name: "KUBERPACK_STRICT_CREDENTIALS", Value: strconv.FormatBool(req.StrictTokens)},
 		{Name: "KUBERPACK_GENERATE_LOCK", Value: strconv.FormatBool(req.GenerateLock)},
 		{Name: "KUBERPACK_GIT_AUTH", Value: req.GitAuthScheme},
 		{Name: "KUBERPACK_BUILDS_GIT_AUTH", Value: req.BuildsGitAuthScheme},

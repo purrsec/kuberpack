@@ -2,6 +2,8 @@ package release
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -202,6 +204,10 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	log("submitting Kubernetes build Job for %s", sha)
 	buildReq := builder.Request{
 		GenerateLock: plan.GenerateLock,
+		// The builder must not hold the token of the control plane. It
+		// is given the fingerprint of it, so that it can tell.
+		ControlTokenDigest: tokenDigest(req.Token),
+		StrictTokens:       strictTokens(),
 		// The forge of the application has its own way to authenticate a
 		// clone: the builder must use it, not the way of the platform.
 		GitAuthScheme:       git.AuthScheme(req.Provider.Name()),
@@ -327,4 +333,23 @@ func RegistryHost(raw string) string {
 		host = host[:i]
 	}
 	return host
+}
+
+// tokenDigest is the fingerprint of a token. It cannot be reversed: it
+// tells two tokens apart without revealing either of them.
+func tokenDigest(token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+// strictTokens tells whether the platform refuses a build whose builder
+// holds the token of the control plane. The operator decides: the
+// default is a warning, because a platform that refuses to build must
+// say why.
+func strictTokens() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("KUBERPACK_STRICT_CREDENTIALS")), "true")
 }

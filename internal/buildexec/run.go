@@ -3,10 +3,13 @@ package buildexec
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -91,6 +94,12 @@ func Run(ctx context.Context, req Request) (digest string, err error) {
 	}
 	registryToken, err := readFirstToken(registryTokenPaths(req.RegistryTokenFile)...)
 	if err != nil {
+		return "", fail.Stage(fail.Auth, err)
+	}
+	// The builder runs the code of the build. That code must not hold
+	// the token of the control plane: it would be able to write in the
+	// repositories of the platform, and to change what is deployed.
+	if err := checkTokens(gitToken, registryToken, os.Getenv("KUBERPACK_CONTROL_FINGERPRINT"), strictTokens()); err != nil {
 		return "", fail.Stage(fail.Auth, err)
 	}
 	work, err := os.MkdirTemp("/work", "build-*")
@@ -444,4 +453,58 @@ func WriteTermination(msg string) {
 		msg = string(runes[:4096])
 	}
 	_ = os.WriteFile(terminationLog, []byte(msg), 0o644)
+}
+
+// tokenDigest is the fingerprint of a token. It cannot be reversed: it
+// tells two tokens apart without revealing either of them.
+func tokenDigest(token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+// strictTokens tells whether the platform refuses a build whose builder
+// holds the token of the control plane.
+func strictTokens() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("KUBERPACK_STRICT_CREDENTIALS")), "true")
+}
+
+// checkTokens refuses a builder that holds the token of the control
+// plane.
+//
+// The builder runs the code of the build, and that code is not trusted:
+// it must not be able to write in the repositories of the platform. The
+// builder is given a token that only reads the repositories, and one that
+// only writes the registry.
+func checkTokens(gitToken, registryToken, controlDigest string, strict bool) error {
+	controlDigest = strings.TrimSpace(controlDigest)
+	if controlDigest == "" {
+		return nil
+	}
+	for _, credential := range []struct {
+		name  string
+		token string
+	}{
+		{"git", gitToken},
+		{"registry", registryToken},
+	} {
+		if strings.TrimSpace(credential.token) == "" {
+			continue
+		}
+		if tokenDigest(credential.token) != controlDigest {
+			continue
+		}
+		if strict {
+			return fmt.Errorf(
+				"the %s token of the builder is the token of the control plane: the build is refused. "+
+					"Give the builder a token that only reads the repositories, and one that only writes the registry",
+				credential.name)
+		}
+		log.Printf("WARNING: the %s token of the builder is the token of the control plane: "+
+			"a build could write in the repositories of the platform", credential.name)
+	}
+	return nil
 }
