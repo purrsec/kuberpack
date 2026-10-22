@@ -229,6 +229,14 @@ référencés et jamais écrits.
 > « Unknown plugin: '%s'. This may be caused by the plugin not being loaded
 > correctly by the operator ».
 >
+> L'opérateur se configure avec la variable **`INCLUDE_PLUGINS`** (elle
+> remplit `includePlugins` dans sa configuration). Une valeur que
+> l'opérateur n'arrive pas à lire est **silencieusement ignorée** : la
+> configuration reste vide et le plugin est « inconnu », sans autre
+> message. C'est le format exact de la valeur qui reste à établir — un
+> nom seul ne suffit pas, il faut dire à l'opérateur de quelle image il
+> s'agit.
+>
 > C'est le dernier maillon de `backup.s3`, et il dépend de la version de
 > l'opérateur que la plateforme installe : la plateforme doit déclarer
 > l'opérateur **et** son plugin, avec la même version. Un `backup.s3` qui ne nomme aucun add-on du
