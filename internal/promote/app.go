@@ -581,7 +581,10 @@ func appKustomizationYAML(spec AppSpec, p Platform) string {
 		resources += "\n  - rbac.yaml"
 	}
 	for _, volume := range spec.Volumes {
-		if volume.Size != "" {
+		// A volume that comes from an addon has its claim already: the
+		// addon wrote it, in its own directory. Listing it here would
+		// point at a file that does not exist.
+		if volume.Size != "" && volume.Claim == "" {
 			resources += "\n  - " + volume.Name + ".pvc.yaml"
 		}
 	}

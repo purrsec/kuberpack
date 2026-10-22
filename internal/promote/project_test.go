@@ -270,3 +270,31 @@ func TestTheProjectWithAVolumeAddonMountsTheDisk(t *testing.T) {
 		t.Fatalf("the claim of the addon is missing:\n%s", claim)
 	}
 }
+
+// Le volume d'un addon a sa reclamation, ecrite par l'addon : le
+// kustomization de l'application ne doit pas la lister une seconde fois,
+// sous peine de pointer un fichier qui n'existe pas.
+func TestTheKustomizationOfAServiceWithAVolumeAddonIsBuildable(t *testing.T) {
+	bare := setupGitOps(t, "")
+	manifest := ProjectManifest{
+		Project:   "shop",
+		Namespace: "shop",
+		Addons: map[string]Addon{
+			"data": {Engine: "volume", Path: "/data"},
+		},
+		Services: map[string]Service{
+			"app": {Type: "stateless", Image: "example.org/app@sha256:abc", Port: 8080,
+				Hostname: "app.shop.bzh", Addons: []string{"data"}},
+		},
+	}
+	if _, err := EnsureProject(context.Background(), ProjectRequest{
+		GitOpsURL: bare, GitOpsBranch: "main", Manifest: manifest, Platform: Platform{NetworkPolicy: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	clone := readRemoteTree(t, bare)
+	kustomization := readFile(t, clone, "kubernetes/vps/projects/shop/app/kustomization.yaml")
+	if strings.Contains(kustomization, "data.pvc.yaml") {
+		t.Fatalf("the kustomization must not list the claim of the addon:\n%s", kustomization)
+	}
+}
