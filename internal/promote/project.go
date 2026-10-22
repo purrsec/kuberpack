@@ -91,6 +91,9 @@ type Volume struct {
 	Path string `yaml:"path" json:"path"`
 	// Size is the size of the disk. Empty means a temporary volume.
 	Size string `yaml:"size,omitempty" json:"size,omitempty"`
+	// Claim is the name of the PersistentVolumeClaim the volume comes
+	// from. It is empty when the claim is named after the application.
+	Claim string `yaml:"claim,omitempty" json:"claim,omitempty"`
 }
 
 // BuildOptions are the build-time overrides of a service.
@@ -113,6 +116,8 @@ type Addon struct {
 	// database, for a database. It is the one of the catalogue, unless
 	// the catalogue holds several.
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+	// Path is where the addon mounts its volume, when it has one.
+	Path string `yaml:"path,omitempty" json:"path,omitempty"`
 	// Params overrides what the plan holds: instances, storage, cpu,
 	// memory.
 	Params map[string]string `yaml:"params,omitempty" json:"params,omitempty"`
@@ -525,6 +530,10 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 		}
 		spec.Env = append(used.env, serviceEnv(svc)...)
 		spec.AddonPeers = mergeAddonPeers(policyAddonPeers, used.peers)
+		// The volumes the addons mount: they come before the volumes the
+		// manifest declares, so that a volume of the application is never
+		// shadowed by a volume of an addon.
+		spec.Volumes = append(used.volumes, svc.Volumes...)
 		// A service of a project must not collide with a legacy standalone
 		// app: both would claim the same hostname, and Flux would keep
 		// deploying the old one. The directory of the project itself is not
@@ -555,7 +564,6 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 			// is not an image the cluster can pull.
 			spec.Image = oci.Pin(spec.Image, digest)
 		}
-		spec.Volumes = svc.Volumes
 		spec.WritableRoot = svc.WritableRoot
 		spec.RunAsRoot = svc.RunAsRoot
 		spec.Capabilities = svc.Capabilities
@@ -579,9 +587,10 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 			return nil, nil, nil, err
 		}
 		// A volume with a size is a disk: the claim is written with the
-		// service, so the data outlives the pod.
+		// service, so the data outlives the pod. A volume that comes from
+		// an addon has its claim already: the addon wrote it.
 		for _, volume := range spec.Volumes {
-			if volume.Size == "" {
+			if volume.Size == "" || volume.Claim != "" {
 				continue
 			}
 			if err := writeFile(filepath.Join(dir, volume.Name+".pvc.yaml"), RenderVolumeClaim(volume, spec, p)); err != nil {
@@ -825,6 +834,7 @@ func compileAddons(work string, m ProjectManifest, project string, namespace str
 			Plan:      addon.Plan,
 			Params:    addon.Params,
 			Version:   addon.Version,
+			Path:      addon.Path,
 			Siblings:  siblings,
 		}, p)
 		if err != nil {
@@ -842,12 +852,14 @@ func compileAddons(work string, m ProjectManifest, project string, namespace str
 // serviceAddons returns what the addons a service uses give to it: their
 // environment and their network peer.
 func serviceAddons(svc Service, project string, results map[string]AddonResult) (struct {
-	env   []EnvVar
-	peers []AddonPeer
+	env     []EnvVar
+	peers   []AddonPeer
+	volumes []Volume
 }, error) {
 	var out struct {
-		env   []EnvVar
-		peers []AddonPeer
+		env     []EnvVar
+		peers   []AddonPeer
+		volumes []Volume
 	}
 	seen := map[string]bool{}
 	for _, name := range svc.Addons {
@@ -874,6 +886,16 @@ func serviceAddons(svc Service, project string, results map[string]AddonResult) 
 				Name: aname,
 				For:  sanitizeName(project),
 				Port: result.Port,
+			})
+		}
+		// The volumes the addon mounts: a database that is a file is
+		// a disk, and the application needs it.
+		for _, mount := range result.Mounts {
+			out.volumes = append(out.volumes, Volume{
+				Name:  mount.Name,
+				Path:  mount.Path,
+				Size:  mount.Size,
+				Claim: mount.Claim,
 			})
 		}
 	}

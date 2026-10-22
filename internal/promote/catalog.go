@@ -63,6 +63,8 @@ type AddonEntry struct {
 	// DefaultVersion is the version the manifest gets when it does not
 	// ask for one.
 	DefaultVersion string `yaml:"defaultVersion"`
+	// Path is where the addon mounts its volume, when it has one.
+	Path string `yaml:"path"`
 	// Plans are the sizes the manifest can ask for.
 	Plans map[string]AddonPlan `yaml:"plans"`
 	// Env is the contract: the variables an application receives, and the

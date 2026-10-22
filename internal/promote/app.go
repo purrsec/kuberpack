@@ -331,6 +331,9 @@ func valuesYAML(spec AppSpec, p Platform) string {
 			if volume.Size != "" {
 				b.WriteString("    size: " + volume.Size + "\n")
 			}
+			if volume.Claim != "" {
+				b.WriteString("    claim: " + volume.Claim + "\n")
+			}
 		}
 	}
 	if spec.StartupBudget > 0 {

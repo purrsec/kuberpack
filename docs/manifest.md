@@ -219,6 +219,20 @@ compilation, la plateforme ne devine pas d'image.
 Les images des add-ons sont épinglées par digest, comme les images des
 applications : une image qui n'est pas épinglée est une erreur de compilation.
 
+Une base de donnees qui est un fichier (SQLite, par exemple) est un
+**volume** : il n'y a rien a lancer, et rien a atteindre.
+
+```yaml
+addons:
+  data:
+    engine: volume            # le type du catalogue est "sqlite"
+    path: /data               # ou l'application trouve son fichier
+```
+
+Le disque est cree par l'addon, et monte dans l'application. La reclamation
+porte le nom du projet et de l'addon : deux applications d'un meme projet
+n'ont pas le meme disque.
+
 `backup.s3` nomme l'add-on de stockage objet du projet (par exemple
 `rustfs`) : la base est sauvegardée vers ce stockage, avec les identifiants
 référencés et jamais écrits.

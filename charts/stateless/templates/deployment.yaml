@@ -103,7 +103,7 @@ spec:
         - name: {{ .name }}
           {{- if .size }}
           persistentVolumeClaim:
-            claimName: {{ include "stateless.fullname" $ }}-{{ .name }}
+            claimName: {{ .claim | default (printf "%s-%s" (include "stateless.fullname" $) .name) }}
           {{- else }}
           emptyDir: {}
           {{- end }}

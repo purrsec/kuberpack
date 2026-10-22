@@ -236,3 +236,37 @@ func TestTheImageOfAPublishedApplicationIsPinnedByTheCompiler(t *testing.T) {
 		t.Fatalf("the compiler must not touch the digest of a built application:\n%s", raw)
 	}
 }
+
+// A database that is a file: the addon writes the claim, and the
+// application mounts it.
+func TestTheProjectWithAVolumeAddonMountsTheDisk(t *testing.T) {
+	bare := setupGitOps(t, "")
+	manifest := ProjectManifest{
+		Project:   "shop",
+		Namespace: "shop",
+		Addons: map[string]Addon{
+			"data": {Engine: "volume", Path: "/data"},
+		},
+		Services: map[string]Service{
+			"app": {Type: "stateless", Image: "example.org/app@sha256:abc", Port: 8080,
+				Hostname: "app.shop.bzh", Addons: []string{"data"}},
+		},
+	}
+	if _, err := EnsureProject(context.Background(), ProjectRequest{
+		GitOpsURL: bare, GitOpsBranch: "main", Manifest: manifest, Platform: Platform{NetworkPolicy: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	clone := readRemoteTree(t, bare)
+	values := readFile(t, clone, "kubernetes/vps/projects/shop/app/values.yaml")
+	if !strings.Contains(values, "path: /data") {
+		t.Fatalf("the volume of the addon is not in the values of the application:\n%s", values)
+	}
+	if !strings.Contains(values, "claim: shop-data") {
+		t.Fatalf("the claim of the volume is not in the values of the application:\n%s", values)
+	}
+	claim := readFile(t, clone, "kubernetes/vps/projects/shop/addons/data/volume.yaml")
+	if !strings.Contains(claim, "name: shop-data") {
+		t.Fatalf("the claim of the addon is missing:\n%s", claim)
+	}
+}

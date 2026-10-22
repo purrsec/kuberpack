@@ -210,3 +210,50 @@ func TestThePeersOfTwoDatabasesAreNotMerged(t *testing.T) {
 		t.Fatalf("merged %d peers, want 2", len(merged))
 	}
 }
+
+// A database that is a file is a volume: the addon writes the claim, and
+// the application mounts it.
+func TestTheVolumeAddonMountsADiskInTheApplication(t *testing.T) {
+	dir := t.TempDir()
+	engine, ok := AddonEngineFor("volume")
+	if !ok {
+		t.Fatal("the engine volume is not available")
+	}
+	result, err := engine.Render(dir, AddonSpec{
+		Name: "data", Project: "shop", Namespace: "shop", Path: "/data",
+	}, Platform{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Mounts) != 1 {
+		t.Fatalf("the addon must mount one volume, got %d", len(result.Mounts))
+	}
+	mount := result.Mounts[0]
+	if mount.Path != "/data" {
+		t.Fatalf("the volume is mounted at %q, want /data", mount.Path)
+	}
+	if mount.Claim != "shop-data" {
+		t.Fatalf("the claim is named %q, want shop-data", mount.Claim)
+	}
+	claim := readFile(t, dir, "volume.yaml")
+	if !strings.Contains(claim, "name: shop-data") {
+		t.Fatalf("the claim of the addon is missing:\n%s", claim)
+	}
+	if !strings.Contains(claim, "kind: PersistentVolumeClaim") {
+		t.Fatalf("the addon must write a claim:\n%s", claim)
+	}
+}
+
+// The volume of an addon is mounted in the application that uses it.
+func TestTheVolumeOfAnAddonReachesTheApplication(t *testing.T) {
+	entry, ok := AddonCatalogEntry("sqlite")
+	if !ok {
+		t.Fatal("the type sqlite is not in the catalogue")
+	}
+	if entry.Engine != "volume" {
+		t.Fatalf("the type sqlite is rendered by the engine %q", entry.Engine)
+	}
+	if entry.Path == "" {
+		t.Fatal("the type sqlite must have a default path")
+	}
+}

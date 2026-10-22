@@ -29,6 +29,8 @@ type AddonSpec struct {
 	// Version is the version of the addon the manifest asks for: the
 	// major version of the database, for a database.
 	Version string
+	// Path is where the addon mounts its volume, when it has one.
+	Path string
 	// Siblings are the other addons of the project, by name and by type.
 	// A database that is backed up needs to know where the storage is.
 	Siblings map[string]string
@@ -61,6 +63,23 @@ type AddonResult struct {
 	Secret string
 	// Service is the name the applications reach the addon by.
 	Service string
+	// Mounts are the volumes the addon mounts in the applications that
+	// use it. A database that is a file is a volume: there is nothing to
+	// run, and nothing to reach.
+	Mounts []AddonMount
+}
+
+// AddonMount is a volume an addon mounts in the applications that use it.
+type AddonMount struct {
+	// Name is the name of the volume in the application.
+	Name string
+	// Path is where the volume is mounted.
+	Path string
+	// Claim is the name of the PersistentVolumeClaim the volume comes
+	// from. It is empty when the volume is a temporary directory.
+	Claim string
+	// Size is the size of the disk.
+	Size string
 }
 
 // AddonEngine renders an infrastructure dependency of a project.
@@ -82,6 +101,7 @@ var addonEngines = map[string]AddonEngine{
 	"valkey": valkeyEngine{},
 	"rustfs": rustfsEngine{},
 	"mongo":  mongoEngine{},
+	"volume": volumeEngine{},
 }
 
 // AddonEngineNames lists the available engines.

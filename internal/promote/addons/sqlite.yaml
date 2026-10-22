@@ -1,0 +1,31 @@
+# Une base de donnees qui est un fichier. Il n'y a rien a lancer et rien
+# a atteindre : l'application trouve un disque monte la ou elle l'attend.
+#
+# C'est la primitive de volume de la plateforme : le disque survit au
+# redemarrage du pod, et la reclamation porte le nom du projet et de
+# l'addon, pour que deux applications d'un meme projet n'aient pas le
+# meme disque.
+type: sqlite
+engine: volume
+kind: volume
+# Le chemin par defaut du montage. Le manifeste peut en choisir un autre.
+path: /data
+plans:
+  tiny:
+    instances: 1
+    storage: 1Gi
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+      limits: { cpu: 100m, memory: 128Mi }
+  small:
+    instances: 1
+    storage: 5Gi
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+      limits: { cpu: 100m, memory: 128Mi }
+  medium:
+    instances: 1
+    storage: 20Gi
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+      limits: { cpu: 100m, memory: 128Mi }
