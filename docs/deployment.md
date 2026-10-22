@@ -32,6 +32,24 @@ Une installation neuve se fait avec `helmfile apply` (chart `charts/kuberpack`).
 
 Tokens builder dédiés (Infisical → Secret `kuberpack-builder`) : `kuberpack-builder-git-token` (clone HTTPS des apps / archive git) et `kuberpack-builder-registry-token` (`write:package`). Ce ne sont pas le PAT du control plane. Kuberpack ne pose pas de clé SSH : le builder clone en HTTPS avec ce jeton.
 
+### Le builder ne doit pas avoir le jeton du control plane
+
+Le builder **exécute le code du build**, et ce code n’est pas fiable. S’il porte le jeton du control plane, un build compromis peut réécrire le dépôt GitOps : il change alors ce qui est déployé.
+
+La plateforme **détecte** ce cas. Le control plane ne lit aucun secret — il ne peut pas comparer lui-même — il donne donc au builder l’empreinte de son jeton, et le builder compare. Une empreinte ne se retourne pas.
+
+- Par défaut, c’est un **avertissement** dans le log du build.
+- `KUBERPACK_STRICT_CREDENTIALS=true` sur le control plane : le build est **refusé**, et le message dit quoi faire.
+
+Les identifiants du builder, dans le Secret `kuberpack-builder` du namespace `kuberpack-build` :
+
+| clé | portée |
+|---|---|
+| `git-token` (ou `kuberpack-builder-git-token`) | lecture seule sur les dépôts des applications |
+| `registry-token` (ou `kuberpack-builder-registry-token`) | `write:package` sur le registre, rien d’autre |
+
+Sur GitHub, un jeton fin (*fine-grained*) porte ces deux portées : l’un sur les dépôts des applications, en lecture ; l’autre sur le paquet du registre, en écriture. Le control plane garde, lui, un jeton qui écrit **uniquement** sur le dépôt GitOps.
+
 Le Secret est monté dans le Job sous `/secrets`. Les fichiers sont nommés d’après les clés du Secret : le builder accepte `git-token` **ou** `kuberpack-builder-git-token`, et `registry-token` **ou** `kuberpack-builder-registry-token` (idem `builds-token` pour l’archive). Un Secret qui n’expose aucune de ces clés fait échouer le build sur `auth`.
 
 Archive de builds : `KUBERPACK_BUILDS_GIT_URL` (dépôt dédié, jamais une source Flux). Secret Flux vers Kuberpack : `KUBERPACK_FLUX_WEBHOOK_SECRET`. Previews : `KUBERPACK_PREVIEW_DOMAIN` (défaut `preview.host.bzh`). DNS apps : `KUBERPACK_DNS_TARGET` IPv6 seulement (AAAA). Une IPv4 dans cette variable est ignorée.
