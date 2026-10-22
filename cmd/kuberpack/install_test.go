@@ -1,6 +1,13 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
+)
 
 // The installation must be doable with two tokens and the URL of the
 // GitOps repository: everything else is deduced from it.
@@ -67,5 +74,50 @@ func TestTheForgeOfAnUnreadableURLIsEmpty(t *testing.T) {
 	}
 	if got, user := registryOf("", ""); got != "" || user != "" {
 		t.Errorf("registryOf(\"\", \"\") = %q, %q, want empty", got, user)
+	}
+}
+
+// The installation is run again on a cluster that is already prepared: the
+// type of the Secrets must not change. Kubernetes refuses it, and the
+// installation would fail on a cluster that works.
+func TestTheSecretKeepsItsTypeWhenTheInstallationRunsAgain(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewSimpleClientset(&corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "kuberpack-builder-pull", Namespace: "kuberpack-build"},
+		Type:       corev1.SecretTypeDockerConfigJson,
+		Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte("{}")},
+	})
+	if err := ensureSecret(ctx, client, "kuberpack-build", "kuberpack-builder-pull", map[string][]byte{
+		corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`),
+	}); err != nil {
+		t.Fatalf("ensureSecret: %v", err)
+	}
+	secret, err := client.CoreV1().Secrets("kuberpack-build").Get(ctx, "kuberpack-builder-pull", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if secret.Type != corev1.SecretTypeDockerConfigJson {
+		t.Errorf("type = %q, want %q", secret.Type, corev1.SecretTypeDockerConfigJson)
+	}
+	if got := string(secret.Data[corev1.DockerConfigJsonKey]); got != `{"auths":{}}` {
+		t.Errorf("data = %q, want the new content", got)
+	}
+}
+
+// A Secret that is created must have the type its data demands.
+func TestASecretThatPullsImagesHasTheTypeOfADockerConfig(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewSimpleClientset()
+	if err := ensureSecret(ctx, client, "kuberpack-build", "kuberpack-builder-pull", map[string][]byte{
+		corev1.DockerConfigJsonKey: []byte("{}"),
+	}); err != nil {
+		t.Fatalf("ensureSecret: %v", err)
+	}
+	secret, err := client.CoreV1().Secrets("kuberpack-build").Get(ctx, "kuberpack-builder-pull", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if secret.Type != corev1.SecretTypeDockerConfigJson {
+		t.Errorf("type = %q, want %q", secret.Type, corev1.SecretTypeDockerConfigJson)
 	}
 }

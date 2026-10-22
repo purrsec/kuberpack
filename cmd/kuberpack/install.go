@@ -260,10 +260,15 @@ func ensureNamespace(ctx context.Context, client kubernetes.Interface, name stri
 }
 
 // ensureSecret creates a secret, or replaces its content.
+//
+// The type of a Secret is immutable. A Secret that is already there keeps
+// the type it has: a pull secret is a docker config, and Kubernetes refuses
+// the change of type. The type of a Secret that is created is deduced from
+// its data, for the same reason.
 func ensureSecret(ctx context.Context, client kubernetes.Interface, namespace, name string, data map[string][]byte) error {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
-		Type:       corev1.SecretTypeOpaque,
+		Type:       secretTypeFor(data),
 		Data:       data,
 	}
 	_, err := client.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
@@ -273,8 +278,22 @@ func ensureSecret(ctx context.Context, client kubernetes.Interface, namespace, n
 	if !apierrors.IsAlreadyExists(err) {
 		return err
 	}
+	existing, err := client.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	secret.Type = existing.Type
+	secret.ResourceVersion = existing.ResourceVersion
 	_, err = client.CoreV1().Secrets(namespace).Update(ctx, secret, metav1.UpdateOptions{})
 	return err
+}
+
+// secretTypeFor returns the type a Secret with this data must have.
+func secretTypeFor(data map[string][]byte) corev1.SecretType {
+	if _, ok := data[corev1.DockerConfigJsonKey]; ok {
+		return corev1.SecretTypeDockerConfigJson
+	}
+	return corev1.SecretTypeOpaque
 }
 
 // dockerConfigJSON is the content of a pull secret.
