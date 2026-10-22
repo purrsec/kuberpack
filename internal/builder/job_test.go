@@ -247,3 +247,25 @@ func TestDeliveryLabelHoldsTheNameOfTheDelivery(t *testing.T) {
 		t.Fatal("a build without delivery has no label")
 	}
 }
+
+// The volumes of a build follow the disk of the node: a build on a small
+// node gets small volumes.
+func TestTheVolumesOfABuildFollowTheNode(t *testing.T) {
+	runner := &JobRunner{NodeDisk: "20Gi"}
+	work, cache, tmp := runner.volumeSizes()
+	if work.Value() > 3<<30 {
+		t.Errorf("the work volume is %v, it must follow the disk of the node", work)
+	}
+	if cache.Value() > 2<<30 {
+		t.Errorf("the cache volume is %v, it must follow the disk of the node", cache)
+	}
+	if tmp.Value() > 1<<30 {
+		t.Errorf("the tmp volume is %v, it must follow the disk of the node", tmp)
+	}
+	// A node whose size is not known keeps the default volumes.
+	unknown := &JobRunner{}
+	work, cache, tmp = unknown.volumeSizes()
+	if work.String() != "3Gi" || cache.String() != "2Gi" || tmp.String() != "1Gi" {
+		t.Errorf("the default volumes are %v, %v, %v", work, cache, tmp)
+	}
+}

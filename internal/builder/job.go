@@ -88,6 +88,11 @@ type JobRunner struct {
 	// of the builder follow it: a build that asks for more than the
 	// machine can give does not fail, it takes the node down.
 	NodeMemory string
+	// NodeDisk is the size of the disk of the node the builds run on. The
+	// volumes of a build follow it: a build that writes more than the
+	// node can hold evicts itself, and the kubelet evicts the pods that
+	// write the most.
+	NodeDisk string
 	// BuildkitCache is the room of the cache of BuildKit, in megabytes:
 	// "Reserved,Free,Maximum". BuildKit deletes the oldest entries of
 	// the cache when it grows past the maximum. Without a limit, the
@@ -158,8 +163,30 @@ func (r *JobRunner) memoryLimits() (builder, buildkit string) {
 // The work holds the source, the cache of BuildKit and the database of
 // the vulnerabilities. They are bounded: a build must not fill the
 // disk of the node.
+//
+// The bounds follow the size of the disk of the node: a build on a small
+// node gets small volumes, and a build on a big node gets room. The
+// limits are a declaration: the kubelet does not always apply them, and
+// the builder measures the disk before it starts.
 func (r *JobRunner) volumeSizes() (work, cache, tmp resource.Quantity) {
-	return resource.MustParse("3Gi"), resource.MustParse("2Gi"), resource.MustParse("1Gi")
+	total, err := resource.ParseQuantity(strings.TrimSpace(r.NodeDisk))
+	if err != nil || total.IsZero() {
+		return resource.MustParse("3Gi"), resource.MustParse("2Gi"), resource.MustParse("1Gi")
+	}
+	workSize := total.Value() * 12 / 100
+	cacheSize := total.Value() * 8 / 100
+	tmpSize := total.Value() * 3 / 100
+	return resource.MustParse(fmt.Sprintf("%d", maxInt64(workSize, 1<<30))),
+		resource.MustParse(fmt.Sprintf("%d", maxInt64(cacheSize, 1<<30))),
+		resource.MustParse(fmt.Sprintf("%d", maxInt64(tmpSize, 256<<20)))
+}
+
+// maxInt64 returns the bigger of the two numbers.
+func maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // resourceQuantity reads a quantity, with a default.
@@ -390,6 +417,9 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 		{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
 		{Name: "TMPDIR", Value: "/work"},
 		{Name: "TRIVY_CACHE_DIR", Value: "/work/trivy-cache"},
+		// The space the build writes. The builder refuses to start
+		// when the node cannot hold it.
+		{Name: "KUBERPACK_BUILD_DISK_NEED", Value: strconv.FormatInt(workSize.Value()+cacheSize.Value()+tmpSize.Value(), 10)},
 	}
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{

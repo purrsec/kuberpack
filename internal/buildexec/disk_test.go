@@ -73,3 +73,38 @@ func TestFreeSpace(t *testing.T) {
 		t.Error("the disk of the machine cannot be full")
 	}
 }
+
+// A build that asks for more than the node can give is refused before it
+// starts, and the message says what is missing.
+func TestRequireDiskRefusesANodeThatCannotHoldTheBuild(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("KUBERPACK_MIN_FREE_DISK", "1000000000000")
+	t.Setenv("KUBERPACK_BUILD_DISK_NEED", "0")
+	err := requireDisk(dir)
+	if err == nil {
+		t.Fatal("a build that does not fit must be refused")
+	}
+	if !strings.Contains(err.Error(), "free") {
+		t.Fatalf("the message must say what is missing:\n%v", err)
+	}
+}
+
+// The space the kubelet keeps for itself is a share of the disk: below it,
+// the kubelet evicts the pods that write the most.
+func TestTheEvictionSpaceIsAShareOfTheDisk(t *testing.T) {
+	dir := t.TempDir()
+	reserved := evictionSpace(dir)
+	if reserved == 0 {
+		t.Fatal("the space the kubelet keeps must be known")
+	}
+	total, err := diskTotal(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reserved > total {
+		t.Fatalf("the kubelet cannot keep %d bytes of a disk of %d", reserved, total)
+	}
+	if reserved < total*evictionThreshold/100 {
+		t.Fatalf("the kubelet keeps %d bytes, it must keep at least %d", reserved, total*evictionThreshold/100)
+	}
+}

@@ -67,6 +67,9 @@ func runServe(args []string) error {
 		runner.Namespace = getenv("KUBERPACK_BUILDER_NAMESPACE", "kuberpack-build")
 		// The bounds of the builder follow the node it runs on.
 		runner.NodeMemory = getenv("KUBERPACK_NODE_MEMORY", "")
+		// The size of the disk of the node: the volumes of a build
+		// follow it, so that a build never fills the node.
+		runner.NodeDisk = getenv("KUBERPACK_NODE_DISK", "")
 		runner.SecretName = getenv("KUBERPACK_BUILDER_SECRET", "kuberpack-builder")
 		runner.PullSecretName = getenv("KUBERPACK_BUILDER_PULL_SECRET", "kuberpack-builder-pull")
 		runner.BuildkitImage = strings.TrimSpace(os.Getenv("KUBERPACK_BUILDKIT_IMAGE"))
