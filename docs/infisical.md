@@ -140,6 +140,171 @@ helm upgrade --install infisical-operator infisical-helm-charts/secrets-operator
 L'opérateur installe les CRD, dont `InfisicalStaticSecret` — celui que la
 plateforme génère pour les applications qui déclarent des secrets.
 
+## L'identité machine et l'opérateur
+
+L'opérateur ne lit pas le jeton de l'identité machine : il présente un
+jeton de service account du cluster, et Infisical le valide en
+interrogeant l'API Kubernetes (TokenReview).
+
+```bash
+# Le service account que l'opérateur présente
+kubectl apply -f - <<'EOF'
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: infisical-service-account
+  namespace: infisical
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: infisical-token-reviewer
+  namespace: infisical
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: infisical-token-reviewer-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: infisical-token-reviewer
+    namespace: infisical
+EOF
+```
+
+Le jeton de confiance, celui dont Infisical se sert pour interroger
+TokenReview, est un jeton de service account à durée de vie longue :
+
+```bash
+kubectl -n infisical create token infisical-token-reviewer --duration=8760h
+```
+
+La méthode d'authentification Kubernetes se crée sur l'identité machine.
+Elle dit à Infisical qui a le droit de se présenter :
+
+| Champ | Valeur |
+| --- | --- |
+| `kubernetesHost` | l'URL de l'API server, joignable **depuis l'instance** |
+| `caCert` | le CA du cluster, pour valider le certificat de l'API |
+| `tokenReviewerJwt` | le jeton du service account `infisical-token-reviewer` |
+| `allowedNamespaces` | les namespaces des service accounts acceptés |
+| `allowedNames` | les noms des service accounts acceptés |
+
+L'API se pilote par `POST /api/v1/auth/kubernetes-auth/identities/{id}`.
+Les routes d'identités machine ne sont pas toutes au même endroit selon
+la version : la spécification OpenAPI de l'instance, à
+`/api/docs/json`, fait foi.
+
+## La connexion et l'authentification
+
+Trois objets, dans le namespace `infisical` :
+
+```yaml
+apiVersion: secrets.infisical.com/v1beta1
+kind: InfisicalConnection
+metadata:
+  name: infisical-connection
+  namespace: infisical
+spec:
+  # L'adresse de base, sans le "/api" : l'opérateur ajoute le chemin
+  # lui-meme. Une adresse qui finit par "/api" donne "/api/api/...".
+  address: https://infisical.exemple.org
+---
+apiVersion: secrets.infisical.com/v1beta1
+kind: InfisicalAuth
+metadata:
+  name: contabo-vps
+  namespace: infisical
+spec:
+  infisicalConnectionRef:
+    name: infisical-connection
+    namespace: infisical
+  method: kubernetes
+  kubernetes:
+    identityIdRef:
+      name: kubernetes-credentials
+      namespace: infisical
+      key: identityId
+    serviceAccountRef:
+      name: infisical-service-account
+      namespace: infisical
+```
+
+`kubernetes-credentials` est un Secret ordinaire qui porte l'identifiant
+de la machine :
+
+```bash
+kubectl -n infisical create secret generic kubernetes-credentials \
+  --from-literal=identityId="$IDENTITY_ID"
+```
+
+Les deux objets doivent être `Ready` avant qu'un secret ne se synchronise :
+
+```bash
+kubectl -n infisical get infisicalconnection,infisicalauth
+```
+
+## La synchronisation
+
+```yaml
+apiVersion: secrets.infisical.com/v1beta1
+kind: InfisicalStaticSecret
+metadata:
+  name: app-demo
+  namespace: infisical
+spec:
+  infisicalAuthRef:
+    name: contabo-vps
+    namespace: infisical
+  syncOptions:
+    refreshInterval: 1m
+  sources:
+    - projectId: 22fe98db-b31b-4f2e-b412-8d1823a79a78
+      environmentSlug: prod
+      secretPath: /
+  targets:
+    - kind: Secret
+      name: app-demo
+      namespace: infisical
+      creationPolicy: Owner
+```
+
+La colonne `SYNCED` passe à `True` quand la synchronisation a eu lieu.
+Une source doit nommer **exactement** `projectId` ou `projectSlug` : les
+deux, ou aucun, et la reconciliation échoue.
+
+## Le CLI
+
+Le CLI d'Infisical parle à l'instance auto-hébergée comme à n'importe
+quelle autre. C'est l'outil le plus direct pour écrire et lire un secret.
+
+```bash
+export INFISICAL_DOMAIN="https://infisical.exemple.org"
+export INFISICAL_TOKEN="$(kubectl -n infisical get secret \
+  infisical-bootstrap-secret -o jsonpath='{.data.token}' | base64 -d)"
+
+# Ecrire un secret
+infisical secrets set "MOT_DE_PASSE=une valeur" --projectId=... --env=prod
+
+# Lire tous les secrets d'un environnement
+infisical export --projectId=... --env=prod
+```
+
+Le CLI sait aussi s'authentifier comme l'opérateur, avec la méthode
+Kubernetes :
+
+```bash
+kubectl -n infisical create token infisical-service-account --duration=10m > /tmp/sa.jwt
+infisical login --method kubernetes \
+  --machine-identity-id="$IDENTITY_ID" \
+  --service-account-token-path=/tmp/sa.jwt \
+  --domain="$INFISICAL_DOMAIN" --plain
+```
+
 ## Ce que la plateforme attend
 
 La plateforme écrit un `InfisicalStaticSecret` par application, dans
