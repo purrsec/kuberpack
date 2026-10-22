@@ -36,6 +36,8 @@ func runInstall(args []string) error {
 	registryURL := fs.String("registry-url", "", "OCI registry the images are pushed to")
 	registryUser := fs.String("registry-user", "", "namespace of the images in the registry")
 	registryToken := fs.String("registry-token", os.Getenv("KUBERPACK_REGISTRY_TOKEN"), "token that pushes the images")
+	clusterServices := fs.Bool("cluster-services", true, "install the services of the cluster the platform needs (cert-manager, the operator of the databases)")
+	dryRun := fs.Bool("dry-run", false, "say what would be done, and do nothing")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -47,6 +49,19 @@ func runInstall(args []string) error {
 	}
 	if *apiToken == "" {
 		*apiToken = *gitToken
+	}
+
+	// The services of the cluster are installed first: they are what the
+	// platform needs, and they do not need the platform.
+	if *clusterServices {
+		if err := installClusterServices(context.Background(), *dryRun); err != nil {
+			return err
+		}
+	}
+	if *dryRun {
+		fmt.Printf("kuberpack would be prepared in the namespace %s\n", *namespace)
+		fmt.Printf("  services   %s\n", clusterServicesSummary())
+		return nil
 	}
 
 	config, err := kubeConfig()

@@ -76,6 +76,43 @@ d'aucun service particulier : Flux s'installe à côté, et le `Kustomization`
 qui pointe vers `kubernetes/vps/projects` est la seule ligne à ajouter à la
 main.
 
+## La commande `kuberpack install`
+
+Une installation qui demande quatre étapes n'est pas une installation. La
+commande prépare le cluster :
+
+```bash
+kuberpack install \
+  --git-url https://api.github.com \
+  --gitops-url https://github.com/vous/deploiement.git \
+  --git-token <jeton de lecture> \
+  --registry-url ghcr.io --registry-user vous \
+  --registry-token <jeton de build>
+```
+
+Elle fait trois choses :
+
+| | |
+| --- | --- |
+| les services du cluster | cert-manager (les certificats), l'opérateur CloudNativePG (les bases), son plugin barman (les sauvegardes) — épinglés, et idempotents : un service déjà là est mis à la version de la plateforme |
+| les secrets | le jeton de lecture, celui de l'API, celui du builder, celui du registre, et les identifiants du dépôt GitOps |
+| les ressources Flux | la source qui surveille le dépôt GitOps, et le `Kustomization` qui applique les projets |
+
+`--dry-run` dit ce qui serait fait, et ne touche à rien. Les services du
+cluster se refusent avec `--cluster-services=false` quand le cluster les a
+déjà (un opérateur installé à la main, un ingress déjà en place).
+
+Les services du cluster sont ceux que la plateforme attend :
+
+| Service | Version | Pourquoi |
+| --- | --- | --- |
+| cert-manager | v1.18.2 | les certificats TLS des applications |
+| cloudnative-pg | 0.29.1 (l'opérateur 1.30.1) | les bases PostgreSQL des add-ons |
+| plugin-barman-cloud | 0.8.1 | les sauvegardes des bases, vers le stockage objet du projet |
+
+L'ingress et le stockage ne sont pas installés : ils sont propres au cluster,
+et l'opérateur choisit les siens.
+
 ## Ce que Kuberpack ne fait pas
 
 - Il ne crée pas vos dépôts applicatifs.
