@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -174,13 +175,25 @@ func (s *Server) Start(ctx context.Context) {
 // application that did not change is not built again.
 func (s *Server) reconcileLoop(ctx context.Context) {
 	for {
-		s.reconcileManifests(ctx)
+		s.reconcileSafely(ctx)
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(s.cfg.ReconcileInterval):
 		}
 	}
+}
+
+// reconcileSafely applies the manifests. A panic in the reconciliation
+// must not take the platform down: the loop goes on, and the platform
+// serves the API while it tries again.
+func (s *Server) reconcileSafely(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("kuberpack reconcile: panic: %v\n%s", r, debug.Stack())
+		}
+	}()
+	s.reconcileManifests(ctx)
 }
 
 // reconcileManifests reads the manifests of every project and applies them.
