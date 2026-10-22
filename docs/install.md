@@ -113,6 +113,17 @@ Les services du cluster sont ceux que la plateforme attend :
 L'ingress et le stockage ne sont pas installés : ils sont propres au cluster,
 et l'opérateur choisit les siens.
 
+## Les secrets : Infisical
+
+Les secrets des applications ne passent pas par Kuberpack. Quand une
+application déclare `secrets:`, la plateforme génère un objet
+`InfisicalStaticSecret` qui synchronise les valeurs depuis l'instance
+Infisical vers un Secret Kubernetes. Les valeurs ne sont ni dans le dépôt
+Git, ni dans la base SQLite, ni dans le control plane.
+
+L'installation d'Infisical sur le cluster est décrite dans
+[infisical.md](infisical.md).
+
 ## Ce que Kuberpack ne fait pas
 
 - Il ne crée pas vos dépôts applicatifs.

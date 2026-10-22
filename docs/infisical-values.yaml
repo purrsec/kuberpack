@@ -1,0 +1,91 @@
+# Installation d'Infisical sur le cluster Kubernetes, selon la notice
+# officielle : https://infisical.com/docs/self-hosting/deployment-options/kubernetes-helm
+#
+# Le cluster a deja Traefik et cert-manager : le chart embarque son propre
+# ingress-nginx, on le desactive et on branches sur les services du cluster.
+# Le noeud a 4 CPU et 12 Go de RAM, et la plateforme partage la machine :
+# les ressources sont posees a la main, pas those par defaut.
+infisical:
+  replicaCount: 1
+  image:
+    repository: infisical/infisical
+    tag: "v0.167.0"
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      # Les migrations de schema du premier demarrage consomment plus
+      # de 700 Mio : avec cette limite, le pod se faisait tuer par le
+      # OOM killer du cgroupe, redemarrait en boucle, et la boucle
+      # saturait le disque au point de geler l'API server.
+      memory: 1500Mi
+    requests:
+      cpu: 200m
+      memory: 512Mi
+  kubeSecretRef: "infisical-secrets"
+  # L'amorcage automatique : le chart cree l'instance, l'organisation et
+  # l'identite machine d'administration, et depose son jeton dans un
+  # Secret du cluster. C'est la voie documentee du chart
+  # (https://infisical.com/docs/self-hosting/guides/automated-bootstrapping).
+  autoBootstrap:
+    enabled: true
+    organization: "kuberpack"
+    secretTemplate: '{"data":{"token":"{{.Identity.Credentials.Token}}","identityId":"{{.Identity.ID}}","organizationId":"{{.Organization.ID}}","email":"{{.User.Email}}"}}'
+    secretDestination:
+      name: "infisical-bootstrap-secret"
+      namespace: ""
+    credentialSecret:
+      name: "infisical-bootstrap-credentials"
+
+ingress:
+  enabled: true
+  hostName: "infisical.151.115.39.23.nip.io"
+  # Le cluster a Traefik : on n'installe pas le nginx embarque.
+  ingressClassName: traefik
+  nginx:
+    enabled: false
+  # Pas de middleware de buffering : Traefik v3 ne limite pas la taille
+  # du corps d'une requete par defaut, et son provider Kubernetes refuse
+  # les references a un middleware d'un autre namespace.
+  tls:
+    - secretName: infisical-tls
+      hosts:
+        - infisical.151.115.39.23.nip.io
+
+postgresql:
+  enabled: true
+  name: "postgresql"
+  image:
+    registry: mirror.gcr.io
+    repository: bitnamilegacy/postgresql
+  auth:
+    username: infisical
+    password: root
+    database: infisicalDB
+  primary:
+    resources:
+      limits:
+        cpu: 500m
+        memory: 768Mi
+      requests:
+        cpu: 100m
+        memory: 256Mi
+    persistence:
+      size: 2Gi
+
+redis:
+  enabled: true
+  name: "redis"
+  image:
+    registry: mirror.gcr.io
+    repository: bitnamilegacy/redis
+  auth:
+    usePassword: true
+    password: "mysecretpassword"
+  master:
+    resources:
+      limits:
+        cpu: 300m
+        memory: 384Mi
+      requests:
+        cpu: 50m
+        memory: 128Mi
