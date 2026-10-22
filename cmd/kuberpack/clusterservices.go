@@ -98,7 +98,7 @@ func clusterServices() []clusterService {
 // version of the platform. With dryRun, nothing is written: the operator
 // sees what would be done.
 func installClusterServices(ctx context.Context, dryRun bool) error {
-	settings := cli.New()
+	settings := helmSettings()
 	for _, service := range clusterServices() {
 		if dryRun {
 			fmt.Printf("would install %s (%s %s) in the namespace %s\n",

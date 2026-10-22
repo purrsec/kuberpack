@@ -37,6 +37,9 @@ func runInstall(args []string) error {
 	registryUser := fs.String("registry-user", "", "namespace of the images in the registry")
 	registryToken := fs.String("registry-token", os.Getenv("KUBERPACK_REGISTRY_TOKEN"), "token that pushes the images")
 	clusterServices := fs.Bool("cluster-services", true, "install the services of the cluster the platform needs (cert-manager, the operator of the databases)")
+	infisical := fs.Bool("infisical", true, "install Infisical and its operator, where the secrets of the applications live")
+	infisicalDomain := fs.String("infisical-domain", "", "domain of Infisical (default: infisical.<the domain of the platform>)")
+	infisicalEmail := fs.String("infisical-email", "admin@kuberpack.local", "email of the administrator of Infisical")
 	dryRun := fs.Bool("dry-run", false, "say what would be done, and do nothing")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -61,6 +64,9 @@ func runInstall(args []string) error {
 	if *dryRun {
 		fmt.Printf("kuberpack would be prepared in the namespace %s\n", *namespace)
 		fmt.Printf("  services   %s\n", clusterServicesSummary())
+		if *infisical {
+			fmt.Printf("  secrets    %s\n", installInfisicalSummary())
+		}
 		return nil
 	}
 
@@ -117,6 +123,17 @@ func runInstall(args []string) error {
 			"password": []byte(*gitToken),
 		}); err != nil {
 			return err
+		}
+	}
+	// Infisical : l'instance, l'operateur, et tout ce qui les relie.
+	// L'operateur ne cree aucun YAML : c'est la commande qui ecrit.
+	if *infisical {
+		domain := strings.TrimSpace(*infisicalDomain)
+		if domain == "" {
+			domain = "infisical." + platformDomain()
+		}
+		if err := installInfisical(ctx, config, client, domain, *infisicalEmail, false); err != nil {
+			return fmt.Errorf("Infisical: %w", err)
 		}
 	}
 	// The Flux resources that watch the GitOps repository.

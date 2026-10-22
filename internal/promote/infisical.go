@@ -26,6 +26,13 @@ func ensureSecretCR(work string, spec AppSpec, p Platform) ([]string, bool, erro
 		return nil, false, err
 	}
 
+	// The root kustomization of the repository must list the directory of
+	// the Infisical objects: Flux applies the root, and the objects would
+	// stay in the repository without ever reaching the cluster.
+	if err := ensureInfisicalInRootKustomization(work, p); err != nil {
+		return nil, false, err
+	}
+
 	parentPath := filepath.Join(work, filepath.FromSlash(parentRel))
 	raw, err := os.ReadFile(parentPath)
 	if os.IsNotExist(err) {
@@ -47,6 +54,31 @@ func ensureSecretCR(work string, spec AppSpec, p Platform) ([]string, bool, erro
 		return nil, false, err
 	}
 	return []string{crRel, parentRel}, true, nil
+}
+
+// ensureInfisicalInRootKustomization lists the directory of the Infisical
+// objects in the root kustomization of the repository.
+//
+// The root kustomization is the bootstrap of the platform: it is written by
+// hand. The directory of the Infisical objects, on the other hand, is
+// created by the platform, and Flux only applies what the root lists.
+func ensureInfisicalInRootKustomization(work string, p Platform) error {
+	p = p.withDefaults()
+	rootPath := filepath.Join(work, "kustomization.yaml")
+	raw, err := os.ReadFile(rootPath)
+	if err != nil {
+		// No root kustomization: the repository is not the one of the
+		// platform, there is nothing to list.
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	entry := filepath.ToSlash(p.InfisicalDir)
+	if listedInKustomization(raw, entry) {
+		return nil
+	}
+	return os.WriteFile(rootPath, appendKustomizationResource(raw, entry), 0o644)
 }
 
 // removeSecretCR deletes the app's InfisicalStaticSecret and its parent entry.

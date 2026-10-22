@@ -22,10 +22,10 @@ func runProject(args []string) error {
 		return fmt.Errorf("usage: kuberpack project create|apply|delete [flags]")
 	}
 	switch args[0] {
-	case "create":
+	case "create", "init":
 		return runProjectCreate(args[1:])
-	case "apply":
-		return runProjectApply(args[1:])
+	case "compile", "apply":
+		return runProjectCompile(args[1:])
 	case "delete":
 		return runProjectDelete(args[1:])
 	default:
@@ -236,16 +236,16 @@ func sanitizeCLI(s string) string {
 // The manifest is the source of truth: it is written in the GitOps
 // repository by hand, and the platform compiles it. This command is the
 // shortest path from a file to a running application.
-func runProjectApply(args []string) error {
-	fs := flag.NewFlagSet("project apply", flag.ContinueOnError)
-	file := fs.String("f", "", "manifest file (- for the standard input)")
-	dryRun := fs.Bool("dry-run", false, "print what would be applied, without writing")
+func runProjectCompile(args []string) error {
+	fs := flag.NewFlagSet("project compile", flag.ContinueOnError)
+	file := fs.String("f", "", "manifest file (default: kuberpack.yaml in the current directory)")
+	dryRun := fs.Bool("dry-run", false, "print what would be compiled, without writing")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	name := strings.TrimSpace(*file)
 	if name == "" {
-		return fmt.Errorf("the manifest file is required (-f)")
+		name = "kuberpack.yaml"
 	}
 	var raw []byte
 	var err error
@@ -255,6 +255,9 @@ func runProjectApply(args []string) error {
 		raw, err = os.ReadFile(name)
 	}
 	if err != nil {
+		if os.IsNotExist(err) && name == "kuberpack.yaml" {
+			return fmt.Errorf("no kuberpack.yaml in the current directory: write one, or run 'kuberpack project init'")
+		}
 		return err
 	}
 	text := string(raw)
