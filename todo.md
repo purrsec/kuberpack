@@ -201,6 +201,12 @@ Les dimensions du **noeud** sont bornées par la plateforme :
 Le seuil de disque est configurable (`KUBERPACK_MIN_FREE_DISK`, `minFreeDisk`
 du chart) : un petit noeud l’accepte plus bas qu’un grand.
 
+**Les pods de l'application portent les etiquettes de la plateforme.** La
+NetworkPolicy d'un addon selectionne les applications qui peuvent
+l'atteindre par leurs etiquettes. Un pod sans elles est refuse par sa
+propre base de donnees : l'erreur est « connection refused », et elle ne
+dit pas pourquoi.
+
 **Une application ne doit pas affamer la plateforme.** Un JVM lancé sur un
 noeud de trois coeurs a pris les coeurs du control plane : l’API a
 repondu « timeout » pendant que l’application demarrait. Le manifeste peut
