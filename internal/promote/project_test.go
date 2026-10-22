@@ -204,3 +204,35 @@ func TestDeleteProjectRefusesToDropADatabase(t *testing.T) {
 		t.Fatalf("the forced removal must work: %v", err)
 	}
 }
+
+// The image of a published application belongs to the manifest: the
+// compiler resolves it and pins it. The image of a built application
+// belongs to the control plane.
+func TestTheImageOfAPublishedApplicationIsPinnedByTheCompiler(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "values.yaml")
+	spec := AppSpec{Name: "app", Port: 8080, Image: "docker.io/vaultwarden/server@sha256:abc"}
+	p := Platform{}
+	if err := writeServiceValues(path, spec, p); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "docker.io/vaultwarden/server@sha256:abc") {
+		t.Fatalf("the image of the application is not pinned with its repository:\n%s", raw)
+	}
+	// The digest of a built application is kept.
+	built := AppSpec{Name: "app", Port: 8080}
+	if err := writeServiceValues(path, built, p); err != nil {
+		t.Fatal(err)
+	}
+	raw, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "docker.io/vaultwarden/server@sha256:") {
+		t.Fatalf("the compiler must not touch the digest of a built application:\n%s", raw)
+	}
+}

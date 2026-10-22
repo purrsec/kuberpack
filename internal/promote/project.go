@@ -699,14 +699,17 @@ func projectApp(p Platform, project, service string, svc Service, namespace stri
 }
 
 // writeServiceValues writes the values file of a service from the manifest.
-// The image and the track that the control plane pinned are preserved: the
-// manifest owns the runtime, the control plane owns the digest.
+//
+// The image of a published application belongs to the manifest: the
+// compiler resolves its tag and pins it. The image of a built application
+// belongs to the control plane: it is the digest of the build, and the
+// compiler must not touch it. The track belongs to the control plane too.
 func writeServiceValues(path string, spec AppSpec, p Platform) error {
 	content := []byte(valuesYAML(spec, p))
 	raw, err := os.ReadFile(path)
 	if err == nil {
 		image, track := pinnedValues(raw)
-		if image != "" {
+		if image != "" && strings.TrimSpace(spec.Image) == "" {
 			patched, perr := PatchImage(content, image)
 			if perr != nil {
 				return perr
