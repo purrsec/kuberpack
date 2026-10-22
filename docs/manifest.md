@@ -233,9 +233,16 @@ référencés et jamais écrits.
 > remplit `includePlugins` dans sa configuration). Une valeur que
 > l'opérateur n'arrive pas à lire est **silencieusement ignorée** : la
 > configuration reste vide et le plugin est « inconnu », sans autre
-> message. C'est le format exact de la valeur qui reste à établir — un
-> nom seul ne suffit pas, il faut dire à l'opérateur de quelle image il
-> s'agit.
+> message.
+>
+> État du chantier : le nom seul (`barman-cloud-backup.cloudnative-pg.io`)
+> est chargé par l'opérateur, mais le plugin reste « inconnu » et le pod
+> de l'instance ne reçoit pas de conteneur de plugin. Le format
+> `nom=image` ne change rien. L'opérateur attend une spécification de
+> plugin complète, et il la cherche dans un conteneur supplémentaire du
+> pod (le plugin est identifié par un **label**, « plugin name label is
+> empty »). La documentation du chart de l'opérateur n'expose pas cette
+> partie : elle se trouve dans le code de `internal/cnpi/plugin/client`.
 >
 > C'est le dernier maillon de `backup.s3`, et il dépend de la version de
 > l'opérateur que la plateforme installe : la plateforme doit déclarer
