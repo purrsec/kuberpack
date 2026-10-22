@@ -62,6 +62,14 @@ type Config struct {
 	GitOpsURL    string
 	GitOpsBranch string
 	ChartPath    string
+	// SelfChartPath is the chart of the control plane itself, on the disk
+	// of the control plane. The platform writes it in the GitOps
+	// repository: the deployment of the platform must never drift from
+	// the image that runs it.
+	SelfChartPath string
+	// SelfChartRef is where the chart of the control plane lives in the
+	// GitOps repository, the way the HelmRelease references it.
+	SelfChartRef string
 	Platform     promote.Platform
 	Wait         time.Duration
 	PreviewTTL   time.Duration

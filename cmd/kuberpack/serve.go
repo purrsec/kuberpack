@@ -108,10 +108,15 @@ func runServe(args []string) error {
 		GitOpsURL:        *gitopsURL,
 		GitOpsBranch:     *gitopsBranch,
 		ChartPath:        *chartPath,
-		Platform:         platformFromEnv(),
-		Wait:             *waitFor,
-		BuildsGitURL:     strings.TrimSpace(os.Getenv("KUBERPACK_BUILDS_GIT_URL")),
-		FluxSecret:       strings.TrimSpace(os.Getenv("KUBERPACK_FLUX_WEBHOOK_SECRET")),
+		// The chart of the control plane itself. The platform writes it in
+		// the GitOps repository: the deployment of the platform follows
+		// the image that runs it.
+		SelfChartPath: getenv("KUBERPACK_SELF_CHART", "/opt/kuberpack/charts/kuberpack"),
+		SelfChartRef:  getenv("KUBERPACK_SELF_CHART_REF", "kubernetes/vps/charts/kuberpack"),
+		Platform:      platformFromEnv(),
+		Wait:          *waitFor,
+		BuildsGitURL:  strings.TrimSpace(os.Getenv("KUBERPACK_BUILDS_GIT_URL")),
+		FluxSecret:    strings.TrimSpace(os.Getenv("KUBERPACK_FLUX_WEBHOOK_SECRET")),
 	})
 	srv.Start(ctx)
 

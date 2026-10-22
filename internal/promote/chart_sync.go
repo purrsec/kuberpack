@@ -11,7 +11,18 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/fetch"
 )
 
-// ChartRequest syncs the chart of the control plane into the GitOps
+// ChartSpec is one chart to write in the GitOps repository.
+type ChartSpec struct {
+	// Path is the chart on the disk of the control plane.
+	Path string
+	// Ref is where the chart lives in the GitOps repository, the way the
+	// HelmRelease references it.
+	Ref string
+	// Name is the name of the chart in the message of the commit.
+	Name string
+}
+
+// ChartRequest syncs the charts of the control plane into the GitOps
 // repository.
 type ChartRequest struct {
 	GitOpsURL    string
@@ -29,6 +40,8 @@ type ChartRequest struct {
 	// ChartRef is where the chart lives in the GitOps repository, the way
 	// the HelmRelease references it.
 	ChartRef string
+	// Charts are the other charts to write in the same commit.
+	Charts   []ChartSpec
 	Platform Platform
 }
 
@@ -58,20 +71,32 @@ type ChartResult struct {
 //
 // The sync is idempotent: an unchanged chart produces no commit.
 func EnsureChart(ctx context.Context, req ChartRequest) (ChartResult, error) {
+	return EnsureCharts(ctx, req)
+}
+
+// EnsureCharts writes the charts of the platform in the GitOps repository.
+//
+// The chart of the applications and the chart of the control plane itself
+// are written in the same commit: the deployment of the platform must
+// never drift from the image that runs it.
+//
+// The sync is idempotent: unchanged charts produce no commit.
+func EnsureCharts(ctx context.Context, req ChartRequest) (ChartResult, error) {
 	var result ChartResult
 	if req.GitOpsURL == "" {
 		return result, fmt.Errorf("gitops URL is empty")
 	}
-	local := strings.TrimSpace(req.ChartPath)
-	if local == "" {
-		return result, fmt.Errorf("chart path is empty")
-	}
-	target := chartRepoPath(req.ChartRef)
-	if target == "" {
-		return result, fmt.Errorf("chart reference is empty")
-	}
-	if _, err := os.Stat(local); err != nil {
-		return result, fmt.Errorf("chart %s: %w", local, err)
+	charts := req.chartSpecs()
+	for _, chart := range charts {
+		if chart.Path == "" {
+			return result, fmt.Errorf("chart path is empty")
+		}
+		if chartRepoPath(chart.Ref) == "" {
+			return result, fmt.Errorf("chart reference is empty")
+		}
+		if _, err := os.Stat(chart.Path); err != nil {
+			return result, fmt.Errorf("chart %s: %w", chart.Path, err)
+		}
 	}
 	if req.MaxAttempts <= 0 {
 		req.MaxAttempts = defaultAttempts
@@ -96,17 +121,22 @@ func EnsureChart(ctx context.Context, req ChartRequest) (ChartResult, error) {
 			"clone", "--branch", req.GitOpsBranch, "--single-branch", req.GitOpsURL, work)...); err != nil {
 			return result, err
 		}
-		dest := filepath.Join(work, filepath.FromSlash(target))
-		if err := os.RemoveAll(dest); err != nil {
-			return result, err
+		targets := make([]string, 0, len(charts))
+		for _, chart := range charts {
+			target := chartRepoPath(chart.Ref)
+			dest := filepath.Join(work, filepath.FromSlash(target))
+			if err := os.RemoveAll(dest); err != nil {
+				return result, err
+			}
+			if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+				return result, err
+			}
+			if err := copyTree(chart.Path, dest); err != nil {
+				return result, fmt.Errorf("copy chart: %w", err)
+			}
+			targets = append(targets, target)
 		}
-		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-			return result, err
-		}
-		if err := copyTree(local, dest); err != nil {
-			return result, fmt.Errorf("copy chart: %w", err)
-		}
-		status, err := runGit(ctx, work, "status", "--porcelain", "--", target)
+		status, err := runGit(ctx, work, append([]string{"status", "--porcelain", "--"}, targets...)...)
 		if err != nil {
 			return result, err
 		}
@@ -118,10 +148,10 @@ func EnsureChart(ctx context.Context, req ChartRequest) (ChartResult, error) {
 			result.CommitSHA = sha
 			return result, nil
 		}
-		if _, err := runGit(ctx, work, gitConfig("add", "-A", "--", target)...); err != nil {
+		if _, err := runGit(ctx, work, gitConfig(append([]string{"add", "-A", "--"}, targets...)...)...); err != nil {
 			return result, err
 		}
-		if _, err := runGit(ctx, work, gitConfig("commit", "-m", "chart: update the stateless chart")...); err != nil {
+		if _, err := runGit(ctx, work, gitConfig("commit", "-m", "chart: update "+strings.Join(chartNames(charts), ", "))...); err != nil {
 			return result, err
 		}
 		if _, err := runGit(ctx, work, append(req.authArgs(),
@@ -149,6 +179,43 @@ func EnsureChart(ctx context.Context, req ChartRequest) (ChartResult, error) {
 		lastErr = fmt.Errorf("gitops conflict on %s after %d attempts", req.GitOpsBranch, req.MaxAttempts)
 	}
 	return result, fmt.Errorf("gitops conflict on %s after %d attempts: %w", req.GitOpsBranch, req.MaxAttempts, lastErr)
+}
+
+// chartSpecs lists the charts to write: the chart of the applications and
+// the charts the request adds.
+func (req ChartRequest) chartSpecs() []ChartSpec {
+	charts := make([]ChartSpec, 0, 1+len(req.Charts))
+	if strings.TrimSpace(req.ChartPath) != "" {
+		charts = append(charts, ChartSpec{
+			Path: strings.TrimSpace(req.ChartPath),
+			Ref:  req.ChartRef,
+			Name: chartName(req.ChartRef),
+		})
+	}
+	charts = append(charts, req.Charts...)
+	return charts
+}
+
+// chartName is the name of a chart, for the message of the commit.
+func chartName(ref string) string {
+	name := filepath.Base(strings.TrimSuffix(strings.TrimSpace(ref), "/"))
+	if name == "" || name == "." {
+		return "chart"
+	}
+	return name
+}
+
+// chartNames lists the names of the charts, for the message of the commit.
+func chartNames(charts []ChartSpec) []string {
+	names := make([]string, 0, len(charts))
+	for _, chart := range charts {
+		name := strings.TrimSpace(chart.Name)
+		if name == "" {
+			name = chartName(chart.Ref)
+		}
+		names = append(names, name)
+	}
+	return names
 }
 
 // chartRepoPath is the path of the chart in the GitOps repository.

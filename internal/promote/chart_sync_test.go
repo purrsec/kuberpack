@@ -82,3 +82,46 @@ func TestChartRefInARegistryIsNotWritten(t *testing.T) {
 		t.Fatalf("chart path: %q", got)
 	}
 }
+
+func TestEnsureChartsWritesTheChartOfThePlatformItself(t *testing.T) {
+	bare := setupAppsGitOps(t)
+	local := t.TempDir()
+	if err := os.WriteFile(filepath.Join(local, "Chart.yaml"), []byte("name: stateless\nversion: 0.1.3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	self := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(self, "templates"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(self, "Chart.yaml"), []byte("name: kuberpack\nversion: 0.1.3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(self, "templates", "pvc.yaml"), []byte("kind: PersistentVolumeClaim\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := EnsureCharts(context.Background(), ChartRequest{
+		GitOpsURL:    bare,
+		GitOpsBranch: "main",
+		ChartPath:    local,
+		ChartRef:     "./kubernetes/vps/charts/stateless",
+		Charts: []ChartSpec{{
+			Path: self,
+			Ref:  "kubernetes/vps/charts/kuberpack",
+			Name: "kuberpack",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Changed {
+		t.Fatal("the charts must be written")
+	}
+	clone := readRemoteTree(t, bare)
+	if !strings.Contains(readFile(t, clone, "kubernetes/vps/charts/stateless/Chart.yaml"), "0.1.3") {
+		t.Fatal("the chart of the applications must be written")
+	}
+	if !strings.Contains(readFile(t, clone, "kubernetes/vps/charts/kuberpack/templates/pvc.yaml"), "PersistentVolumeClaim") {
+		t.Fatal("the chart of the platform must be written")
+	}
+}

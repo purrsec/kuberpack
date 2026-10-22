@@ -49,6 +49,9 @@ COPY --from=railpack --chmod=755 /railpack /usr/bin/railpack
 COPY --from=buildkit --chmod=755 /usr/bin/buildctl /usr/bin/buildctl
 COPY --from=uv --chmod=755 /uv /usr/bin/uv
 COPY charts/stateless /opt/kuberpack/charts/stateless
+# The chart of the control plane itself: the platform writes it in the
+# GitOps repository, so the deployment follows the image that runs it.
+COPY charts/kuberpack /opt/kuberpack/charts/kuberpack
 WORKDIR /var/lib/kuberpack
 RUN printf '[safe]\n\tdirectory = *\n' > /etc/gitconfig
 

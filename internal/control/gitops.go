@@ -255,17 +255,27 @@ func (s *Server) resolveRegistry(ctx context.Context) {
 }
 
 // ensureChart writes the chart of the control plane in the GitOps repository.
+//
+// The chart of the applications and the chart of the control plane itself
+// are written in the same commit. A platform that deploys itself with an
+// old chart is a platform that drifts: the volume of the cache of the
+// builder, for instance, would not exist.
 func (s *Server) ensureChart(ctx context.Context) error {
 	if s.cfg.GitOpsURL == "" || strings.TrimSpace(s.cfg.ChartPath) == "" {
 		return nil
 	}
-	result, err := promote.EnsureChart(ctx, promote.ChartRequest{
+	var charts []promote.ChartSpec
+	if path := strings.TrimSpace(s.cfg.SelfChartPath); path != "" && strings.TrimSpace(s.cfg.SelfChartRef) != "" {
+		charts = append(charts, promote.ChartSpec{Path: path, Ref: s.cfg.SelfChartRef, Name: "kuberpack"})
+	}
+	result, err := promote.EnsureCharts(ctx, promote.ChartRequest{
 		GitOpsURL:    s.cfg.GitOpsURL,
 		GitOpsBranch: s.cfg.GitOpsBranch,
 		HTTPToken:    s.cfg.Token,
 		AuthArgs:     s.cfg.Provider.CloneAuth(s.cfg.Token),
 		ChartPath:    s.cfg.ChartPath,
 		ChartRef:     s.cfg.Platform.ChartRef,
+		Charts:       charts,
 		Platform:     s.cfg.Platform,
 	})
 	if err != nil {
