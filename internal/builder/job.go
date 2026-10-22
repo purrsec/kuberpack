@@ -95,6 +95,24 @@ type JobRunner struct {
 	BuildkitCache string
 }
 
+// DeliveryLabel is the value of the label that names the delivery of a
+// build.
+//
+// A label holds 63 characters at most. The name of a delivery is longer
+// when the delivery is a redeploy: the label holds a fingerprint of it, and
+// the platform looks the pod of a build up the same way.
+func DeliveryLabel(deliveryID string) string {
+	id := strings.TrimSpace(deliveryID)
+	if id == "" {
+		return ""
+	}
+	if len(id) <= 63 {
+		return id
+	}
+	sum := sha256.Sum256([]byte(id))
+	return "d-" + hex.EncodeToString(sum[:])[:32]
+}
+
 // buildkitCacheLimit is the room of the cache of BuildKit.
 //
 // The cache holds the layers of the dependencies and of the images of the
@@ -382,7 +400,7 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 				"kuberpack.dev/commit":   req.CommitSHA,
 				// The delivery names the build. The platform finds the
 				// pod of a build by it, to read its logs.
-				"kuberpack.dev/delivery": req.DeliveryID,
+				"kuberpack.dev/delivery": DeliveryLabel(req.DeliveryID),
 			},
 			Annotations: map[string]string{"kuberpack.dev/build-id": fmt.Sprint(req.BuildID), "kuberpack.dev/request": hex.EncodeToString(requestDigest[:])},
 		},
@@ -396,7 +414,7 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 					// The pod carries the delivery and the commit: the
 					// platform finds the pod of a build by them, to
 					// read its logs.
-					"kuberpack.dev/delivery": req.DeliveryID,
+					"kuberpack.dev/delivery": DeliveryLabel(req.DeliveryID),
 					"kuberpack.dev/commit":   req.CommitSHA,
 				}},
 				Spec: corev1.PodSpec{

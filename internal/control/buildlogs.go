@@ -7,6 +7,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"git.host.bzh/pepe/kuberpack/internal/builder"
 )
 
 // The output of a build is kept in a bounded extract: a build that fails
@@ -36,7 +38,7 @@ func (s *Server) buildLogs(ctx context.Context, deliveryID string) string {
 		namespace = "kuberpack-build"
 	}
 	pods, err := s.cfg.Kube.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "kuberpack.dev/delivery=" + deliveryID,
+		LabelSelector: "kuberpack.dev/delivery=" + builder.DeliveryLabel(deliveryID),
 	})
 	if err != nil || len(pods.Items) == 0 {
 		return ""

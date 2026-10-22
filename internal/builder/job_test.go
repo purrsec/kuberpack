@@ -223,3 +223,27 @@ func TestBuildkitCacheIsBounded(t *testing.T) {
 		t.Errorf("the room of the cache of the operator must be used: %v", job.Spec.Template.Spec.InitContainers[0].Args)
 	}
 }
+
+func TestDeliveryLabelHoldsTheNameOfTheDelivery(t *testing.T) {
+	short := "redeploy-comptoir-comptoir-0c74b39e-1de3d640"
+	if got := DeliveryLabel(short); got != short {
+		t.Fatalf("the name of a delivery that fits must be kept: %q", got)
+	}
+	long := "redeploy-comptoir-comptoir-0c74b39ef0f22cfa3bc09d0e2ab92acfa4c221b3-1de3d640f4071ecc"
+	got := DeliveryLabel(long)
+	if len(got) > 63 {
+		t.Fatalf("a label holds 63 characters at most: %q", got)
+	}
+	if got == long {
+		t.Fatal("a name that is too long must be shortened")
+	}
+	if got != DeliveryLabel(long) {
+		t.Fatal("the same delivery must always give the same label")
+	}
+	if DeliveryLabel(long) == DeliveryLabel(long+"x") {
+		t.Fatal("two deliveries must not share their label")
+	}
+	if DeliveryLabel("") != "" {
+		t.Fatal("a build without delivery has no label")
+	}
+}
