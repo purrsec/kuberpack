@@ -6,9 +6,9 @@ le travail tombe, et ce qui vaut dire « fait ».
 
 | # | Chantier | Statut |
 | --- | --- | --- |
-| 1 | [Logs de build](#1-logs-de-build) | à faire |
-| 2 | [Dimensionnement CPU/RAM](#2-dimensionnement-cpuram) | à faire |
-| 3 | [CLI de pilotage](#3-cli-de-pilotage) | à faire |
+| 1 | [Logs de build](#1-logs-de-build) | fait |
+| 2 | [Dimensionnement CPU/RAM](#2-dimensionnement-cpuram) | fait |
+| 3 | [CLI de pilotage](#3-cli-de-pilotage) | fait |
 | 4 | [Le manifeste pilote le déploiement](#4-le-manifeste-pilote-le-déploiement) | fait |
 | 5 | [Les addons](#5-les-addons) | fait |
 
@@ -69,6 +69,35 @@ un droit RBAC à ajouter au chart (`pods/log`).
 - `GET …/builds/{id}/logs` renvoie la sortie du builder, en cours ou après ;
 - l’extrait de log et la SBOM sont archivés par défaut, sans configuration
   supplémentaire.
+
+### Étape 6 — les logs de build (fait)
+
+La cause d’un échec est lisible, et la sortie du builder est gardée.
+
+| Élément | Emplacement |
+| --- | --- |
+| Sortie du build | `internal/control/buildlogs.go` (log du pod `builder`, extrait borné à 200 Ko) |
+| Persistance | `internal/store` (colonne `builds.logs`, migration `ALTER TABLE builds ADD COLUMN logs`) |
+| API | `GET /api/v1/apps/{name}/builds/{id}/logs`, `…/builds/{id}` (raison lisible) |
+| CLI | `kuberpack app logs <app>` (en direct ou stocké), `kuberpack app builds <app>` |
+
+Un build qui échoue dit pourquoi : `disk: le noeud a 1.4 GiB libres, un
+build en demande 2.0 GiB`, `trivy: CVE-2026-59873 in tar`, `push: …`. Le
+log complet est dans l’archive du dépôt des builds quand il est configuré.
+
+**Pièges évités** :
+
+- **Le label de la livraison est trop long.** Un redemarrage a un nom de
+  livraison de plus de 63 caractères, et Kubernetes refuse un label plus
+  long : le build échouait avant de commencer. Le label porte une empreinte
+  (`internal/builder.DeliveryLabel`), et la plateforme cherche le pod du
+  build de la même façon.
+- **Le nom du Job est stable par livraison.** Un redemarrage du même commit
+  retrouve le Job précédent ; le Job qui a échoué est supprimé puis recréé.
+- **Le disque du noeud est une dimension.** Un build écrit l’image de
+  l’application, ses couches et la base de Trivy. Le builder mesure le
+  disque et refuse le build **avant** qu’il ne démarre, en disant l’espace
+  qui manque (`internal/buildexec/disk.go`).
 
 ### Étape 5 — le manifeste est recompilé par un push (fait)
 
@@ -153,6 +182,25 @@ conditionne le Service, pas seulement le Deployment.
 - la valeur par défaut reste celle du chart : une app sans `resources`
   déclarées se comporte comme aujourd’hui.
 
+### Étape 6 — la taille suit le noeud (fait)
+
+L’enregistrement des apps a disparu avec le manifeste (étape 3 du point 4) :
+la taille se déclare dans `kuberpack.yaml`, et elle est rendue telle quelle
+dans le `values.yaml` (`resources`, `replicas`).
+
+Les dimensions du **noeud** sont bornées par la plateforme :
+
+| Dimension | Règle | Emplacement |
+| --- | --- | --- |
+| Mémoire du builder | un quart du noeud chacun, builder et BuildKit | `internal/builder/job.go` (`memoryLimits`) |
+| Mémoire déclarée | `KUBERPACK_NODE_MEMORY` : le compilateur refuse un projet qui ne tient pas | `internal/promote/capacity.go` |
+| Cache de BuildKit | borné : BuildKit supprime les entrées les plus anciennes | `--oci-worker-gc-keepstorage` |
+| Disque du noeud | un build qui ne tient pas est refusé, avec l’espace qui manque | `internal/buildexec/disk.go` |
+| Volume de build | le travail, le cache et le Scratch sont bornés | `internal/builder/job.go` (`volumeSizes`) |
+
+Le seuil de disque est configurable (`KUBERPACK_MIN_FREE_DISK`, `minFreeDisk`
+du chart) : un petit noeud l’accepte plus bas qu’un grand.
+
 ### Étape 5 — le manifeste est recompilé par un push (fait)
 
 Le manifeste vivait dans le dépôt GitOps, mais seul `POST /api/v1/projects`
@@ -228,6 +276,20 @@ fonctionner depuis un poste, sans kubeconfig.
 - `apps`, `app`, `builds` et `redeploy` fonctionnent contre l’API ;
 - la sortie est lisible sans `jq` (tableau par défaut, `--json` disponible) ;
 - les codes de sortie sont exploitables dans un script.
+
+### Étape 6 — le CLI de pilotage (fait)
+
+| Commande | Ce qu’elle fait |
+| --- | --- |
+| `kuberpack apps` | les applications, leur projet, leur source, leur hote |
+| `kuberpack app builds <app>` | l’historique des builds, avec la raison de l’échec |
+| `kuberpack app logs <app>` | la sortie du builder : en direct pendant le build, stockée après |
+| `kuberpack app redeploy <app>` | relance le build du commit courant |
+| `kuberpack project apply -f kuberpack.yaml` | compile et applique un manifeste |
+| `kuberpack project create --image …` | crée un projet depuis une image publique |
+
+Le client parle à l’API (`KUBERPACK_API_URL`, `KUBERPACK_API_TOKEN`) et
+n jamais à Kubernetes : il marche depuis un poste, sans kubeconfig.
 
 ### Étape 5 — le manifeste est recompilé par un push (fait)
 
