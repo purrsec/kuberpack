@@ -29,6 +29,12 @@ rules:
   - apiGroups: [""]
     resources: [pods/log]
     verbs: [get]
+  # The platform creates the volume that holds the cache of the builder:
+  # the database of the vulnerabilities of Trivy. It is a cache: the
+  # platform never deletes it, and it never changes its size.
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims]
+    verbs: [get, list, watch, create]
 ---
 # The platform writes the secret that pulls the images of its registry, in
 # the namespace of every application. That right is granted by the

@@ -89,6 +89,11 @@ type Config struct {
 	// BuilderNamespace is the namespace where the build Jobs run. It is
 	// where the logs of a build are.
 	BuilderNamespace string
+	// BuilderCacheName is the volume that holds the cache of the builder:
+	// the database of the vulnerabilities of Trivy.
+	BuilderCacheName string
+	// BuilderCacheSize is the size of that volume.
+	BuilderCacheSize string
 }
 
 type Server struct {
@@ -145,6 +150,11 @@ func (s *Server) Start(ctx context.Context) {
 	// is compiled.
 	if err := s.ensureChart(ctx); err != nil {
 		log.Printf("kuberpack chart: %v", err)
+	}
+	// The cache of the builder must exist before the first build: a build
+	// that finds no volume waits for one that never comes.
+	if err := s.ensureBuilderCache(ctx); err != nil {
+		log.Printf("kuberpack builder cache: %v", err)
 	}
 	// The manifest lives in the GitOps repository: the webhook on that
 	// repository is what makes it drive the deployment.
@@ -402,6 +412,12 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 
 	track := s.trackFor(ctx, app)
 	skipPromote := !track.FollowsMain() && !track.MatchesCommit(d.CommitSHA)
+
+	// The cache of the builder is created before the build: a build that
+	// finds no volume waits for one that never comes.
+	if err := s.ensureBuilderCache(ctx); err != nil {
+		log.Printf("kuberpack builder cache: %v", err)
+	}
 
 	result, runErr := s.cfg.Run(ctx, release.Request{
 		Builder:       s.cfg.Builder,

@@ -96,6 +96,10 @@ func runServe(args []string) error {
 	srv := control.New(control.Config{
 		Kube:             kubeClient,
 		BuilderNamespace: getenv("KUBERPACK_BUILDER_NAMESPACE", "kuberpack-build"),
+		// The volume of the cache of the builder: the database of the
+		// vulnerabilities of Trivy. The platform creates it.
+		BuilderCacheName: getenv("KUBERPACK_BUILDER_CACHE_NAME", "kuberpack-builder-cache"),
+		BuilderCacheSize: getenv("KUBERPACK_BUILDER_CACHE_SIZE", "2Gi"),
 		Builder:          jobBuilder,
 		Store:            db,
 		Secrets:          store.SecretsDir(filepath.Join(*dataDir, "secrets")),
