@@ -38,7 +38,7 @@ func (s *Server) syncAppValues(ctx context.Context, app store.App, namespace str
 	if namespace == "" {
 		return nil
 	}
-	values, err := s.cfg.GitOpsFile(ctx, app)
+	values, err := s.gitOpsValues(ctx, app)
 	if err != nil {
 		return fmt.Errorf("read the values of %s: %w", app.Name, err)
 	}
