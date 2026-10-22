@@ -14,6 +14,12 @@ operator: cnpg
 # would then run something else than what was reviewed.
 image: ghcr.io/cloudnative-pg/postgresql:16.10-minimal-trixie@sha256:294fd7631f8d66fa54bf6ffa2948af685a20fb695fe748a6bafa71c42f1233b7
 plans:
+  tiny:
+    instances: 1
+    storage: 1Gi
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 500m, memory: 256Mi }
   small:
     instances: 1
     storage: 1Gi

@@ -6,6 +6,12 @@ kind: valkey
 port: 6379
 image: docker.io/valkey/valkey@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507
 plans:
+  tiny:
+    instances: 1
+    storage: 1Gi
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 500m, memory: 256Mi }
   small:
     instances: 1
     # A cache without storage is a cache that forgets: it is the default,

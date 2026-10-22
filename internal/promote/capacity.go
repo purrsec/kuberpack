@@ -63,11 +63,20 @@ func projectMemoryLimit(m ProjectManifest) float64 {
 		if service.Resources == nil {
 			continue
 		}
+		// A service that is not running does not take memory. It is
+		// declared, and it waits for a node that can hold it.
+		replicas := 1
+		if service.Replicas != nil {
+			replicas = *service.Replicas
+		}
+		if replicas <= 0 {
+			continue
+		}
 		value, err := parseQuantity(service.Resources.Limits.Memory)
 		if err != nil {
 			continue
 		}
-		total += value
+		total += value * float64(replicas)
 	}
 	for _, addon := range m.Addons {
 		entry, ok := AddonCatalogEntryForEngine(addon.Engine)
@@ -96,11 +105,18 @@ func projectCPULimit(m ProjectManifest) float64 {
 		if service.Resources == nil {
 			continue
 		}
+		replicas := 1
+		if service.Replicas != nil {
+			replicas = *service.Replicas
+		}
+		if replicas <= 0 {
+			continue
+		}
 		value, err := parseCPUs(service.Resources.Limits.CPU)
 		if err != nil {
 			continue
 		}
-		total += value
+		total += value * float64(replicas)
 	}
 	for _, addon := range m.Addons {
 		entry, ok := AddonCatalogEntryForEngine(addon.Engine)
