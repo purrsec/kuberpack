@@ -12,10 +12,10 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "stateless.selectorLabels" . | nindent 8 }}
         # The pods of the application carry the labels of the platform:
         # the NetworkPolicy of an addon selects the applications that may
         # reach it. Without them, the application is refused by the addon.
+        # The labels of the platform hold the labels of the selector.
         {{- include "stateless.labels" . | nindent 8 }}
     spec:
       automountServiceAccountToken: false
