@@ -82,17 +82,26 @@ func requireDisk(path string) error {
 	if err != nil {
 		return nil
 	}
-	need := minFreeDiskBytes() + buildNeedBytes()
+	// The space a build needs is the space it writes. The floor of the
+	// platform is there for the operators who know their node better
+	// than the platform does.
+	need := minFreeDiskBytes()
+	if written := buildNeedBytes(); written > need {
+		need = written
+	}
+	// The kubelet keeps a share of the disk for itself. A build that
+	// crosses that line is evicted in the middle, without a reason the
+	// reader can understand.
 	reserved := evictionSpace(path)
 	if reserved > 0 && free < reserved {
 		return fmt.Errorf("the node has %s free, and the kubelet keeps %s of the disk for itself: free the disk of the node, or run the builds on another node",
 			humanBytes(free), humanBytes(reserved))
 	}
-	if free >= need {
+	if free >= need+reserved {
 		return nil
 	}
-	return fmt.Errorf("the node has %s free, a build needs %s: free the disk of the node, or run the builds on another node",
-		humanBytes(free), humanBytes(need))
+	return fmt.Errorf("the node has %s free, a build needs %s and the kubelet keeps %s for itself: free the disk of the node, or run the builds on another node",
+		humanBytes(free), humanBytes(need), humanBytes(reserved))
 }
 
 // buildNeedBytes is the space the build writes: its volumes. The platform
