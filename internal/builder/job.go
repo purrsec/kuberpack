@@ -104,10 +104,13 @@ func (r *JobRunner) memoryLimits() (builder, buildkit string) {
 	if err != nil {
 		return "2Gi", "2Gi"
 	}
-	half := quantity.Value() / 2
-	if half < 256*1024*1024 {
-		half = 256 * 1024 * 1024
+	// The two run together: they take a quarter of the node each, and
+	// the other half is left to the platform and to the applications.
+	quarter := quantity.Value() / 4
+	if quarter < 256*1024*1024 {
+		quarter = 256 * 1024 * 1024
 	}
+	half := quarter
 	limit := strconv.FormatInt(half, 10)
 	return limit, limit
 }
