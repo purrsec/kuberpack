@@ -371,7 +371,14 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 			ActiveDeadlineSeconds:   &deadline,
 			TTLSecondsAfterFinished: &ttl,
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app.kubernetes.io/name": "kuberpack-build"}},
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{
+					"app.kubernetes.io/name": "kuberpack-build",
+					// The pod carries the delivery and the commit: the
+					// platform finds the pod of a build by them, to
+					// read its logs.
+					"kuberpack.dev/delivery": req.DeliveryID,
+					"kuberpack.dev/commit":   req.CommitSHA,
+				}},
 				Spec: corev1.PodSpec{
 					RestartPolicy:                corev1.RestartPolicyNever,
 					NodeSelector:                 map[string]string{"kubernetes.io/arch": "amd64"},
