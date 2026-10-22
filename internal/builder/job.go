@@ -401,7 +401,7 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 						Env:             env,
 						WorkingDir:      "/work",
 						SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: &noEscalation, RunAsNonRoot: &allowEscalation, RunAsUser: &uid, RunAsGroup: &uid, ReadOnlyRootFilesystem: &readOnly, Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},
-						VolumeMounts:    []corev1.VolumeMount{{Name: "buildkit-socket", MountPath: "/run/buildkit"}, {Name: "work", MountPath: "/work"}, {Name: "tmp", MountPath: "/tmp"}, {Name: "tmp", MountPath: "/var/tmp"}, {Name: "secrets", MountPath: "/secrets", ReadOnly: true}},
+						VolumeMounts:    []corev1.VolumeMount{{Name: "buildkit-socket", MountPath: "/run/buildkit"}, {Name: "work", MountPath: "/work"}, {Name: "tmp", MountPath: "/tmp"}, {Name: "tmp", MountPath: "/var/tmp"}, {Name: "secrets", MountPath: "/secrets", ReadOnly: true}, {Name: "trivy-cache", MountPath: "/work/trivy-cache"}},
 						Resources:       corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("128Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: builderCPU, corev1.ResourceMemory: builderMemory}},
 					}},
 					Volumes: []corev1.Volume{
@@ -410,6 +410,14 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 						{Name: "work", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: &workSize}}},
 						{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: &tmpSize}}},
 						{Name: "secrets", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: secret}}},
+						// The database of the vulnerabilities is a cache, not
+						// data: it is downloaded once and kept on the node.
+						// Downloading it at every build fills the disk of the
+						// node, and the build fails for lack of space.
+						{Name: "trivy-cache", VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{
+							Path: "/var/lib/kuberpack/trivy-cache",
+							Type: func() *corev1.HostPathType { v := corev1.HostPathDirectoryOrCreate; return &v }(),
+						}}},
 					},
 				},
 			},
