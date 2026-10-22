@@ -411,12 +411,13 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 						{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: &tmpSize}}},
 						{Name: "secrets", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: secret}}},
 						// The database of the vulnerabilities is a cache, not
-						// data: it is downloaded once and kept on the node.
-						// Downloading it at every build fills the disk of the
-						// node, and the build fails for lack of space.
-						{Name: "trivy-cache", VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{
-							Path: "/var/lib/kuberpack/trivy-cache",
-							Type: func() *corev1.HostPathType { v := corev1.HostPathDirectoryOrCreate; return &v }(),
+						// data: it is downloaded once and kept. Downloading
+						// it at every build fills the disk of the node, and
+						// the build fails for lack of space. The volume is a
+						// claim of the chart: the group of the pod owns it,
+						// and the builder may write in it.
+						{Name: "trivy-cache", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: "kuberpack-builder-cache",
 						}}},
 					},
 				},
