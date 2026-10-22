@@ -76,8 +76,9 @@ func (volumeEngine) Render(dir string, spec AddonSpec, platform Platform) (Addon
 	}); err != nil {
 		return AddonResult{}, err
 	}
+	// A volume has no pods, no port and no network: it is a disk. It
+	// gives the applications a volume, nothing else.
 	return AddonResult{
-		Kind:   entry.Kind,
 		Mounts: []AddonMount{mount},
 	}, nil
 }

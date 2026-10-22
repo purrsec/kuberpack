@@ -322,3 +322,31 @@ func TestTheCommandOfTheManifestReachesTheContainer(t *testing.T) {
 		t.Fatalf("the command of the manifest is not in the values:\n%s", values)
 	}
 }
+
+// Un addon sans port ne doit pas produire un port invalide dans la
+// politique reseau : Kubernetes refuse un port zero, et le projet entier
+// ne se deploie plus.
+func TestTheNetworkPolicyOfAProjectWithAVolumeAddonIsValid(t *testing.T) {
+	bare := setupGitOps(t, "")
+	manifest := ProjectManifest{
+		Project:   "shop",
+		Namespace: "shop",
+		Addons: map[string]Addon{
+			"data": {Engine: "volume", Path: "/data"},
+		},
+		Services: map[string]Service{
+			"app": {Type: "stateless", Image: "example.org/app@sha256:abc", Port: 8080,
+				Hostname: "app.shop.bzh", Addons: []string{"data"}},
+		},
+	}
+	if _, err := EnsureProject(context.Background(), ProjectRequest{
+		GitOpsURL: bare, GitOpsBranch: "main", Manifest: manifest, Platform: Platform{NetworkPolicy: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	clone := readRemoteTree(t, bare)
+	values := readFile(t, clone, "kubernetes/vps/projects/shop/app/values.yaml")
+	if strings.Contains(values, "port: 0") {
+		t.Fatalf("the values must not hold a port of zero:\n%s", values)
+	}
+}

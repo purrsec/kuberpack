@@ -82,8 +82,10 @@ spec:
               kuberpack.io/addon-name: {{ . | quote }}
               {{- end }}
               kuberpack.io/for: {{ .for | quote }}
+      {{- with .port }}
       ports:
-        - { protocol: TCP, port: {{ .port }} }
+        - { protocol: TCP, port: {{ . }} }
+      {{- end }}
     {{- end }}
 ---
 # Helm test pods share default-deny. Without this they cannot reach the app
