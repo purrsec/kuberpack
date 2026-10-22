@@ -531,3 +531,33 @@ kuberpack project create --dry-run
 # Supprime proprement un projet (retrait du parent Flux, suppression des dossiers et pruning)
 kuberpack project delete --project mitame
 ```
+
+## L'image d'un service tiers
+
+Un service peut nommer une image publiée au lieu d'un dépôt à compiler.
+C'est ainsi qu'une application de quelqu'un d'autre est déployée : la
+plateforme n'écrit jamais dans le dépôt de ses auteurs, et ne compile
+jamais ce qu'ils publient.
+
+L'image peut être nommée par son tag. La plateforme la résout au moment
+de la compilation : le service du registre donne un jeton, le manifeste
+est lu, et son digest est écrit dans le fichier généré.
+
+```yaml
+services:
+  stirling:
+    type: stateless
+    image: docker.io/stirlingtools/stirling-pdf:1.0.1
+```
+
+Le manifeste garde le tag : c'est la source de vérité, elle n'est jamais
+réécrite. Le digest vit dans le fichier généré, comme le digest d'une
+image construite. La plateforme n'échappe que ce qu'elle sait résoudre :
+une image qu'elle ne trouve pas fait échouer la compilation, elle n'est
+jamais devinée.
+
+```bash
+kuberpack project create --project stirling \
+  --image docker.io/stirlingtools/stirling-pdf:1.0.1 \
+  --port 8080 --hostname stirling.example.org
+```
