@@ -105,6 +105,13 @@ func (s *Server) reconcileApp(ctx context.Context, project string, desc promote.
 		}
 	}
 
+	// The values of the application are written in the cluster, and its
+	// release is asked to reconcile: the manifest is applied when it
+	// changes, not in the interval of the controller.
+	if err := s.syncAppValues(ctx, app, desc.Namespace); err != nil {
+		log.Printf("kuberpack app %s: the values: %v", app.Name, err)
+	}
+
 	// A new app is built right away. An app whose build parameters changed
 	// is built again: the manifest asked for something else.
 	// An application that runs a published image is not built.

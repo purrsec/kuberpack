@@ -88,13 +88,21 @@ func runServe(args []string) error {
 
 	// The platform writes in the cluster the secret that pulls the images of
 	// its registry: a credential never goes to a Git repository.
-	kubeClient, err := clusterClient()
+	kubeConfig, err := kubeConfig()
 	if err != nil {
 		log.Printf("kuberpack: the cluster is not reachable: %v", err)
+	}
+	var kubeClient kubernetes.Interface
+	if kubeConfig != nil {
+		kubeClient, err = kubernetes.NewForConfig(kubeConfig)
+		if err != nil {
+			log.Printf("kuberpack: the cluster is not reachable: %v", err)
+		}
 	}
 
 	srv := control.New(control.Config{
 		Kube:             kubeClient,
+		KubeConfig:       kubeConfig,
 		BuilderNamespace: getenv("KUBERPACK_BUILDER_NAMESPACE", "kuberpack-build"),
 		// The volume of the cache of the builder: the database of the
 		// vulnerabilities of Trivy. The platform creates it.

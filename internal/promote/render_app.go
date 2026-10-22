@@ -45,15 +45,24 @@ func RenderRegistryRBAC(spec AppSpec, p Platform) string {
 	if name == "" || spec.Namespace == "" {
 		return ""
 	}
-	return "apiVersion: rbac.authorization.k8s.io/v1\nkind: Role\nmetadata:\n  name: " + name +
+	role := spec.Name + "-kuberpack"
+	return "apiVersion: rbac.authorization.k8s.io/v1\nkind: Role\nmetadata:\n  name: " + role +
 		"\n  namespace: " + spec.Namespace +
 		"\nrules:\n  - apiGroups: [\"\"]\n    resources: [secrets]\n    verbs: [create]\n" +
 		"  - apiGroups: [\"\"]\n    resources: [secrets]\n    resourceNames: [" + name +
 		"]\n    verbs: [update, patch]\n" +
-		"---\napiVersion: rbac.authorization.k8s.io/v1\nkind: RoleBinding\nmetadata:\n  name: " + name +
+		// The values of the application travel in a ConfigMap: the
+		// platform writes it, so that a change of the manifest is
+		// applied at once and not in the interval of the controller.
+		"  - apiGroups: [\"\"]\n    resources: [configmaps]\n    verbs: [create, update, patch]\n" +
+		// The release of the application is asked to reconcile: the
+		// platform does not change it, it only asks for a reconcile.
+		"  - apiGroups: [\"helm.toolkit.fluxcd.io\"]\n    resources: [helmreleases]\n    resourceNames: [" + spec.Name +
+		"]\n    verbs: [get, patch]\n" +
+		"---\napiVersion: rbac.authorization.k8s.io/v1\nkind: RoleBinding\nmetadata:\n  name: " + role +
 		"\n  namespace: " + spec.Namespace +
 		"\nsubjects:\n  - kind: ServiceAccount\n    name: kuberpack\n    namespace: " + p.ControlPlaneNamespace +
-		"\nroleRef:\n  apiGroup: rbac.authorization.k8s.io\n  kind: Role\n  name: " + name + "\n"
+		"\nroleRef:\n  apiGroup: rbac.authorization.k8s.io\n  kind: Role\n  name: " + role + "\n"
 }
 
 // RenderCertificate renders the certificate of an application. The platform

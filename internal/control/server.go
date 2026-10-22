@@ -24,6 +24,7 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/release"
 	"git.host.bzh/pepe/kuberpack/internal/store"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 // deliveryNonce returns a short random suffix for a delivery id. An explicit
@@ -86,6 +87,9 @@ type Config struct {
 	// there what must not be written in the GitOps repository: the secret
 	// that pulls the images of the registry.
 	Kube kubernetes.Interface
+	// KubeConfig is the configuration of the cluster. The platform needs it
+	// to reach the resources that have no Go type, the releases of Flux.
+	KubeConfig *rest.Config
 	// BuilderNamespace is the namespace where the build Jobs run. It is
 	// where the logs of a build are.
 	BuilderNamespace string
