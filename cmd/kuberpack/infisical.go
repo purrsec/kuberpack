@@ -38,6 +38,10 @@ const (
 	// expects: it is written in the InfisicalStaticSecret of every
 	// application that declares secrets.
 	infisicalAuthName = "contabo-vps"
+	// infisicalInternalAddress is where the secrets operator talks to
+	// Infisical: the service of the chart, inside the cluster. The public
+	// address is only for the browser.
+	infisicalInternalAddress = "http://infisical-infisical-standalone-infisical." + infisicalNamespace + ".svc.cluster.local:8080"
 )
 
 // infisicalService is one of the charts of the Infisical installation.
@@ -336,11 +340,16 @@ func ensureInfisicalObjects(ctx context.Context, config *rest.Config, client kub
 		return err
 	}
 	// La connexion : ou est l'instance.
+	//
+	// L'operateur parle a Infisical par le service du chart, dans le
+	// cluster. L'adresse publique est celle du navigateur : si l'operateur
+	// passait par elle, un incident de DNS ou de certificat arreterait la
+	// synchronisation de tous les secrets du cluster.
 	connection := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "secrets.infisical.com/v1beta1",
 		"kind":       "InfisicalConnection",
 		"metadata":   map[string]any{"name": "infisical-connection", "namespace": infisicalNamespace},
-		"spec":       map[string]any{"address": "https://" + domain},
+		"spec":       map[string]any{"address": infisicalInternalAddress},
 	}}
 	if err := applyUnstructured(ctx, dyn, config, connection); err != nil {
 		return err

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -32,7 +33,7 @@ func runInstall(args []string) error {
 	gitopsPath := fs.String("gitops-path", "./kubernetes/vps/projects", "path of the projects in the GitOps repository")
 	gitopsSource := fs.String("gitops-source", "gitops", "name of the Flux GitRepository")
 	gitToken := fs.String("git-token", os.Getenv("KUBERPACK_GIT_TOKEN"), "token that reads the repositories")
-	apiToken := fs.String("api-token", "", "token of the API of Kuberpack (the git token by default)")
+	apiToken := fs.String("api-token", "", "token of the API of Kuberpack (the platform generates one, and says it once)")
 	registryURL := fs.String("registry-url", "", "OCI registry the images are pushed to")
 	registryUser := fs.String("registry-user", "", "namespace of the images in the registry")
 	registryToken := fs.String("registry-token", os.Getenv("KUBERPACK_REGISTRY_TOKEN"), "token that pushes the images")
@@ -50,8 +51,31 @@ func runInstall(args []string) error {
 	if strings.TrimSpace(*gitopsURL) == "" {
 		return fmt.Errorf("--gitops-url is required")
 	}
-	if *apiToken == "" {
-		*apiToken = *gitToken
+	// What the URL of the GitOps repository says about the forge is taken
+	// as the truth: the repository of the user is on the forge of its URL.
+	// The user only has to give the URL of the repository and the two
+	// tokens.
+	if strings.TrimSpace(*gitURL) == "" {
+		*gitURL = forgeBaseURL(*gitopsURL)
+	}
+	if strings.TrimSpace(*gitUser) == "" {
+		*gitUser = forgeUser(*gitopsURL)
+	}
+	if strings.TrimSpace(*registryURL) == "" || strings.TrimSpace(*registryUser) == "" {
+		registry, user := registryOf(*gitURL, *gitUser)
+		if strings.TrimSpace(*registryURL) == "" {
+			*registryURL = registry
+		}
+		if strings.TrimSpace(*registryUser) == "" {
+			*registryUser = user
+		}
+	}
+	// The API of the platform has its own token: the token of the git is
+	// for the git. The platform generates it, and says it once.
+	generatedToken := false
+	if strings.TrimSpace(*apiToken) == "" {
+		*apiToken = "kp_" + randomSecret(24)
+		generatedToken = true
 	}
 
 	// The services of the cluster are installed first: they are what the
@@ -63,6 +87,9 @@ func runInstall(args []string) error {
 	}
 	if *dryRun {
 		fmt.Printf("kuberpack would be prepared in the namespace %s\n", *namespace)
+		fmt.Printf("  forge      %s\n", *gitURL)
+		fmt.Printf("  gitops     %s\n", *gitopsURL)
+		fmt.Printf("  registry   %s (%s)\n", *registryURL, *registryUser)
 		fmt.Printf("  services   %s\n", clusterServicesSummary())
 		if *infisical {
 			fmt.Printf("  secrets    %s\n", installInfisicalSummary())
@@ -148,8 +175,53 @@ func runInstall(args []string) error {
 	fmt.Printf("  forge      %s\n", *gitURL)
 	fmt.Printf("  gitops     %s\n", *gitopsURL)
 	fmt.Printf("  registry   %s (%s)\n", *registryURL, *registryUser)
+	if generatedToken {
+		fmt.Printf("  api token  %s\n", *apiToken)
+		fmt.Println("  this token is shown once: keep it for the CLI (KUBERPACK_API_TOKEN)")
+	}
 	fmt.Println("the control plane itself is deployed by the chart: helm install kuberpack ./charts/kuberpack --namespace " + *namespace)
 	return nil
+}
+
+// forgeBaseURL returns the URL of the forge that hosts the repository. The
+// repository of the user lives on the forge of its URL.
+func forgeBaseURL(repositoryURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(repositoryURL))
+	if err != nil || parsed.Hostname() == "" {
+		return ""
+	}
+	scheme := parsed.Scheme
+	if scheme == "" {
+		scheme = "https"
+	}
+	return scheme + "://" + parsed.Host
+}
+
+// forgeUser returns the user of the repository: the first segment of the
+// path.
+func forgeUser(repositoryURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(repositoryURL))
+	if err != nil {
+		return ""
+	}
+	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(segments) == 0 || segments[0] == "" {
+		return ""
+	}
+	return segments[0]
+}
+
+// registryOf returns the OCI registry the images are pushed to, and the
+// namespace of the images in it. GitHub keeps them in ghcr.io; a self
+// hosted forge keeps them where it is.
+func registryOf(forgeURL, user string) (registryURL, registryUser string) {
+	if strings.TrimSpace(forgeURL) == "" {
+		return "", ""
+	}
+	if strings.Contains(forgeURL, "github.com") {
+		return "ghcr.io", user
+	}
+	return forgeURL, user
 }
 
 const fluxInstallHint = "kubectl apply -f https://github.com/fluxcd/flux2/releases/latest/download/install.yaml"

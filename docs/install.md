@@ -83,12 +83,28 @@ commande prépare le cluster :
 
 ```bash
 kuberpack install \
-  --git-url https://api.github.com \
   --gitops-url https://github.com/vous/deploiement.git \
   --git-token <jeton de lecture> \
-  --registry-url ghcr.io --registry-user vous \
   --registry-token <jeton de build>
 ```
+
+C'est tout ce qu'il faut : l'URL du dépôt GitOps dit à la commande où est la
+forge, qui vous êtes, et où sont vos images.
+
+| Ce que l'URL dit | La commande en déduit |
+| --- | --- |
+| `https://github.com/vous/deploiement.git` | forge `https://github.com`, utilisateur `vous`, registre `ghcr.io` (`vous`) |
+| `https://gitlab.com/groupe/equipe/deploiement.git` | forge `https://gitlab.com`, utilisateur `groupe`, registre `gitlab.com` (`groupe`) |
+| `https://git.exemple.org/equipe/deploiement.git` | forge `https://git.exemple.org`, utilisateur `equipe`, registre `git.exemple.org` (`equipe`) |
+
+Le jeton de l'API de la plateforme, lui, n'est pas demandé : la commande en
+génère un (`kp_…`) et ne l'affiche qu'une fois, à la fin. Les jetons de la
+forge, eux, ne sont jamais écrits dans la sortie : ils vont droit dans les
+Secrets du cluster.
+
+`--git-url`, `--registry-url` et `--registry-user` existent toujours, pour les
+forges que l'URL ne dit pas (un registre ailleurs que la forge, un groupe
+GitLab imbriqué). Ils ne sont plus nécessaires dans le cas courant.
 
 Elle fait trois choses :
 
@@ -128,7 +144,10 @@ L'installation d'Infisical sur le cluster est décrite dans
 Le parcours complet, du cluster vide à l'application qui tourne :
 
 ```bash
-kuberpack install --git-token ... --gitops-url ... --registry-token ...
+kuberpack install \
+  --gitops-url https://github.com/vous/deploiement.git \
+  --git-token <jeton de lecture> \
+  --registry-token <jeton de build>
 kuberpack project init          # écrit kuberpack.yaml, ou l'utilisateur l'écrit
 kuberpack project compile       # compile le manifeste et pousse
 ```
