@@ -175,7 +175,8 @@ func TestTheObjectStorageHasItsCredentialsBornInTheCluster(t *testing.T) {
 	// creates it, with the credentials of the storage.
 	bucketJob := readFile(t, tree, "kubernetes/vps/projects/demo/addons/postgres/bucket-job.yaml")
 	for _, want := range []string{
-		"kind: Job",
+		"kind: CronJob",
+		"schedule:",
 		"create_bucket",
 		"demo-rustfs-app",
 		"kuberpack.io/for: demo",
