@@ -512,4 +512,4 @@ Décisions prises, pour ne pas les rediscuter à chaque fois :
 | --- | --- |
 | Logs de l’application | hors rôle de Kuberpack : le cluster de production a ses propres logs |
 | Rollback | géré par Git (`revert` du commit de pin) ; Helm a déjà son `remediation.rollback` |
-| Environnements / secrets | plus tard, avec Infisical ; `prod` + preview de PR suffisent aujourd’hui |
+| Environnements / secrets | Infisical est installé et branché : le manifeste déclare ses secrets, la plateforme écrit l'`InfisicalStaticSecret` et l'opérateur synchronise le Secret Kubernetes. `prod` + preview de PR restent les seuls environnements |

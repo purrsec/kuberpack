@@ -403,6 +403,41 @@ Kuberpack ne résout pas les dépendances Python d'un dépôt tiers : le build
 résout lui-même ce qui manque (comme le fait `npm install`). Le verrou de
 votre dépôt, s'il existe, est utilisé tel quel.
 
+### Une image publiée, sans code du tout
+
+Une application tierce peut aussi n'être qu'une image déjà publiée. Le
+manifeste suffit alors, sans dépôt et sans build :
+
+```yaml
+project: ntfy
+namespace: ntfy
+
+addons:
+  data:
+    engine: volume
+    path: /var/lib/ntfy
+
+services:
+  ntfy:
+    type: stateless
+    image: docker.io/binwiederhier/ntfy:v2.32.0
+    command: ["/usr/bin/ntfy", "serve"]
+    port: 80
+    hostname: ntfy.example.org
+    healthcheck: /v1/health
+```
+
+Trois détails comptent :
+
+- `command` est la commande **complète** : le premier élément est le
+  binaire, les suivants ses arguments. Une image dont l'entrée par défaut
+  ne convient pas se lance ainsi.
+- `engine: volume` monte un disque à l'endroit où l'application écrit son
+  fichier. C'est la façon de déployer une base qui est un fichier (SQLite)
+  sans base à installer.
+- `healthcheck` est le chemin interrogé par l'ingress : l'application n'est
+  servie qu'une fois qu'elle répond.
+
 ### Le dépôt applicatif est une source de code
 
 Le code d'un projet **ne vit pas dans le dépôt GitOps**. Le dépôt GitOps (le

@@ -34,6 +34,6 @@ Les autres pages de `docs/` décrivent **le produit visé**. Cette page décrit 
 
 ## Pas fait / hors ce dépôt
 
-- CLI/UI au-delà de HTTP (phase 5).
+- UI web : le CLI (`kuberpack apps`, `app`, `builds`, `logs`, `redeploy`, `project`) couvre le pilotage courant ; une interface web reste à faire.
 - `wattchman.fr` est encore Railway (hors kuberpack).
 - UI de logs sur `serve` : hors produit.
