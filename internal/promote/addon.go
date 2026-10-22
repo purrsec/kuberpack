@@ -183,6 +183,11 @@ func addonNetworkPolicy(name, namespace, kind, addonName, project string, ports 
 	b.WriteString("        - podSelector:\n")
 	b.WriteString("            matchLabels:\n")
 	b.WriteString("              app.kubernetes.io/part-of: kuberpack\n")
+	// The other addons of the project: the sidecar of the backup plugin
+	// lives in the pod of the database, and it has to reach the storage.
+	b.WriteString("        - podSelector:\n")
+	b.WriteString("            matchLabels:\n")
+	b.WriteString("              kuberpack.io/for: " + project + "\n")
 	if operatorNamespace != "" {
 		b.WriteString("        - namespaceSelector:\n")
 		b.WriteString("            matchLabels:\n")
