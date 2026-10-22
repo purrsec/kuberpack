@@ -103,9 +103,40 @@ DELETE /api/v1/projects/{name}   # retire du parent, supprime le dossier, prune
 ## CLI
 
 ```bash
+kuberpack apps             # ce qui est déployé, d'où il vient, où il répond
+kuberpack app redeploy <nom>   # rebuild et redéploiement
+
 kuberpack project create   # wizard : pose les questions, POST /api/v1/projects
 kuberpack project create --dry-run   # affiche le manifeste sans écrire
+kuberpack project apply -f kuberpack.yaml   # applique un manifeste
 kuberpack project delete --project <nom>
 ```
 
 Le wizard n'utilise **aucune UI** : prompts texte, validation, puis POST.
+
+### Un projet, avec ses add-ons
+
+```bash
+kuberpack project create \
+  --project boutique \
+  --repository user345679/boutique \
+  --database postgres \
+  --cache valkey \
+  --object-storage rustfs \
+  --backup \
+  --dry-run
+```
+
+`--backup` sauvegarde la base dans le stockage objet. Il faut les deux :
+sans `--object-storage`, la commande refuse.
+
+### Le manifeste reste le point de contrôle
+
+`project apply` **applique** un manifeste, il ne l'écrit jamais. Le
+manifeste reste la source de vérité, écrit à la main dans le dépôt
+GitOps. C'est ce qui permet de relire, de comparer et de rejouer un
+déploiement.
+
+Les questions du wizard et les en-têtes du mode `--dry-run` vont sur la
+sortie d'erreur : la sortie standard ne porte que le résultat, et une
+redirection n'emporte pas les questions avec elle.
