@@ -27,6 +27,13 @@ import (
 
 const frontend = "ghcr.io/railwayapp/railpack-frontend:v0.39.0@sha256:db24dc37640b6887c3d455b40876ea30f75182964479670cba6e4cde7ffef103"
 
+// The registry serves the manifest of a tag a moment after the push. The
+// digest is read again until the registry knows the image.
+const (
+	digestAttempts   = 8
+	digestRetryDelay = 2 * time.Second
+)
+
 var shaPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
 
 type Request struct {
@@ -251,17 +258,53 @@ func Run(ctx context.Context, req Request) (digest string, err error) {
 	if err = commandLogged(ctx, &logBuf, "skopeo", "copy", "--authfile", authFile, "oci:"+ociDir, "docker://"+image); err != nil {
 		return "", fail.Stage(fail.Push, err)
 	}
-	cmd := exec.CommandContext(ctx, "skopeo", "inspect", "--authfile", authFile, "--format", "{{.Digest}}", "docker://"+image)
-	output, err := cmd.Output()
+	digest, err = readDigest(ctx, authFile, image)
 	if err != nil {
 		return "", fail.Stage(fail.Push, err)
 	}
-	digest = strings.TrimSpace(string(output))
-	if !strings.HasPrefix(digest, "sha256:") {
-		return "", fail.Text(fail.Push, "invalid digest")
-	}
 	fmt.Printf("published %s@%s (Trivy passed; Syft SBOM generated)\n", image, digest)
 	return digest, nil
+}
+
+// readDigest reads the digest of an image from the registry.
+//
+// The registry serves the manifest of a tag a moment after the push: the
+// first read says "manifest unknown". The digest is read again, a few
+// times, until the registry knows the image.
+//
+// The digest comes from the registry: it is the identity of what the
+// registry holds, and it is what the cluster must pull.
+func readDigest(ctx context.Context, authFile, image string) (string, error) {
+	var lastErr error
+	for attempt := 0; attempt < digestAttempts; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(digestRetryDelay):
+			}
+		}
+		cmd := exec.CommandContext(ctx, "skopeo", "inspect", "--authfile", authFile, "--format", "{{.Digest}}", "docker://"+image)
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		output, err := cmd.Output()
+		if err != nil {
+			detail := strings.TrimSpace(stderr.String())
+			if detail != "" {
+				lastErr = fmt.Errorf("read the digest of %s: %s", image, detail)
+			} else {
+				lastErr = fmt.Errorf("read the digest of %s: %w", image, err)
+			}
+			continue
+		}
+		digest := strings.TrimSpace(string(output))
+		if !strings.HasPrefix(digest, "sha256:") {
+			lastErr = fmt.Errorf("the registry returned an invalid digest for %s: %q", image, digest)
+			continue
+		}
+		return digest, nil
+	}
+	return "", lastErr
 }
 
 func validateScanReport(path string) error {
