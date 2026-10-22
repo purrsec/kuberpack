@@ -61,6 +61,16 @@ buildkitResources:
   cpu: "3"
   memory: 4Gi
 
+# The room of the cache of BuildKit, in megabytes: "Reserved,Free,Maximum".
+# BuildKit deletes the oldest entries of the cache when it grows past the
+# maximum. Empty means the default of the platform.
+buildkitCache: ""
+
+# The space a build needs on the node. A build that does not fit is refused
+# before it starts: it says the space that is missing. Empty means the
+# default of the platform.
+minFreeDisk: ""
+
 # Resource quota of the build namespace. It must leave room for one build Job
 # (builder + rootless BuildKit sidecar).
 buildQuota:

@@ -94,6 +94,20 @@ spec:
             - name: KUBERPACK_BUILDKIT_MEMORY
               value: {{ .memory | quote }}
             {{- end }}
+            {{- with .Values.buildkitCache }}
+            # The room of the cache of BuildKit, in megabytes:
+            # "Reserved,Free,Maximum". BuildKit deletes the oldest entries
+            # of the cache when it grows past the maximum.
+            - name: KUBERPACK_BUILDKIT_CACHE
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.minFreeDisk }}
+            # The space a build needs on the node. A build that does not
+            # fit is refused before it starts, with the space that is
+            # missing.
+            - name: KUBERPACK_MIN_FREE_DISK
+              value: {{ . | quote }}
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
