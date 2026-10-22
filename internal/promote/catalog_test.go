@@ -142,12 +142,39 @@ func TestTheObjectStorageHasItsCredentialsBornInTheCluster(t *testing.T) {
 		t.Errorf("the role of the bootstrap is wrong:\n%s", rbac)
 	}
 
-	// The database is backed up to the storage, with references.
+	// The database is backed up to the storage, through the plugin: since
+	// CloudNativePG 1.27, the operator refuses the in-tree configuration
+	// and a plugin at the same time.
 	db := readFile(t, tree, "kubernetes/vps/projects/demo/addons/postgres/database.yaml")
-	for _, want := range []string{"barmanObjectStore", "demo-rustfs-app", "retentionPolicy: 30d"} {
+	for _, want := range []string{
+		"barman-cloud.cloudnative-pg.io",
+		"isWALArchiver: true",
+		"barmanObjectName: demo-postgres-store",
+	} {
 		if !strings.Contains(db, want) {
 			t.Errorf("the backup does not carry %q:\n%s", want, db)
 		}
+	}
+	if strings.Contains(db, "barmanObjectStore") {
+		t.Errorf("the in-tree configuration must not be there any more:\n%s", db)
+	}
+	// The destination is a resource of its own, and the credentials are
+	// references.
+	store := readFile(t, tree, "kubernetes/vps/projects/demo/addons/postgres/objectstore.yaml")
+	for _, want := range []string{
+		"kind: ObjectStore",
+		"retentionPolicy: 30d",
+		"demo-rustfs-app",
+		"destinationPath: s3://postgres/",
+	} {
+		if !strings.Contains(store, want) {
+			t.Errorf("the object store does not carry %q:\n%s", want, store)
+		}
+	}
+	// The scheduled backup goes through the plugin too.
+	scheduled := readFile(t, tree, "kubernetes/vps/projects/demo/addons/postgres/scheduledbackup.yaml")
+	if !strings.Contains(scheduled, "method: plugin") {
+		t.Errorf("the scheduled backup does not go through the plugin:\n%s", scheduled)
 	}
 }
 
