@@ -317,8 +317,14 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:    namespace,
 			GenerateName: "kuberpack-build-",
-			Labels:       map[string]string{"app.kubernetes.io/name": "kuberpack-build", "kuberpack.dev/commit": req.CommitSHA},
-			Annotations:  map[string]string{"kuberpack.dev/build-id": fmt.Sprint(req.BuildID), "kuberpack.dev/request": hex.EncodeToString(requestDigest[:])},
+			Labels: map[string]string{
+				"app.kubernetes.io/name": "kuberpack-build",
+				"kuberpack.dev/commit":   req.CommitSHA,
+				// The delivery names the build. The platform finds the
+				// pod of a build by it, to read its logs.
+				"kuberpack.dev/delivery": req.DeliveryID,
+			},
+			Annotations: map[string]string{"kuberpack.dev/build-id": fmt.Sprint(req.BuildID), "kuberpack.dev/request": hex.EncodeToString(requestDigest[:])},
 		},
 		Spec: batchv1.JobSpec{
 			BackoffLimit:            &backoff,

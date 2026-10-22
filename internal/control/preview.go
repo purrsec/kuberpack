@@ -115,6 +115,7 @@ func (s *Server) processPreview(ctx context.Context, d store.Delivery) {
 		Log:                 func(format string, args ...any) { log.Printf(format, args...) },
 	})
 	finished := store.Build{Status: "succeeded", ArchiveURL: archiveURL(s.cfg.BuildsGitURL, name, d.CommitSHA)}
+	finished.Logs = s.buildLogs(ctx, d.ID)
 	if runErr != nil {
 		finished.Status = "failed"
 		finished.Error = runErr.Error()

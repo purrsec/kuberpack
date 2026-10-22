@@ -78,9 +78,12 @@ type Build struct {
 	InfraCommitSHA  string
 	Status          string
 	Error           string
-	ArchiveURL      string
-	CreatedAt       time.Time
-	FinishedAt      time.Time
+	// Logs is the tail of the output of the builder. It is bounded: a
+	// build that fails can write megabytes.
+	Logs       string
+	ArchiveURL string
+	CreatedAt  time.Time
+	FinishedAt time.Time
 }
 
 type Preview struct {
@@ -166,6 +169,7 @@ CREATE TABLE IF NOT EXISTS builds (
   infra_commit_sha TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL,
   error TEXT NOT NULL DEFAULT '',
+  logs TEXT NOT NULL DEFAULT '',
   archive_url TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   finished_at TEXT NOT NULL DEFAULT ''
@@ -187,6 +191,7 @@ CREATE TABLE IF NOT EXISTS previews (
 	for _, stmt := range []string{
 		`ALTER TABLE webhook_deliveries ADD COLUMN pull_request INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE builds ADD COLUMN archive_url TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE builds ADD COLUMN logs TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE apps ADD COLUMN internet INTEGER NOT NULL DEFAULT 1`,
 		`ALTER TABLE apps ADD COLUMN project TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE apps ADD COLUMN values_path TEXT NOT NULL DEFAULT ''`,
@@ -433,9 +438,9 @@ ORDER BY finished_at DESC LIMIT 1`, appID, sha, sha+"%")
 func (s *Store) InsertBuild(ctx context.Context, b Build) (int64, error) {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	res, err := s.db.ExecContext(ctx, `
-INSERT INTO builds (app_id, delivery_id, environment, commit_sha, image_repository, image_tag, image_digest, infra_commit_sha, status, error, archive_url, created_at, finished_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		b.AppID, b.DeliveryID, b.Environment, b.CommitSHA, b.ImageRepository, b.ImageTag, b.ImageDigest, b.InfraCommitSHA, b.Status, b.Error, b.ArchiveURL, now, "",
+INSERT INTO builds (app_id, delivery_id, environment, commit_sha, image_repository, image_tag, image_digest, infra_commit_sha, status, error, logs, archive_url, created_at, finished_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		b.AppID, b.DeliveryID, b.Environment, b.CommitSHA, b.ImageRepository, b.ImageTag, b.ImageDigest, b.InfraCommitSHA, b.Status, b.Error, b.Logs, b.ArchiveURL, now, "",
 	)
 	if err != nil {
 		return 0, err
@@ -446,16 +451,35 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 func (s *Store) FinishBuild(ctx context.Context, id int64, b Build) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	_, err := s.db.ExecContext(ctx, `
-UPDATE builds SET image_repository=?, image_tag=?, image_digest=?, infra_commit_sha=?, status=?, error=?, archive_url=?, finished_at=?
+UPDATE builds SET image_repository=?, image_tag=?, image_digest=?, infra_commit_sha=?, status=?, error=?, logs=?, archive_url=?, finished_at=?
 WHERE id=?`,
-		b.ImageRepository, b.ImageTag, b.ImageDigest, b.InfraCommitSHA, b.Status, b.Error, b.ArchiveURL, now, id,
+		b.ImageRepository, b.ImageTag, b.ImageDigest, b.InfraCommitSHA, b.Status, b.Error, b.Logs, b.ArchiveURL, now, id,
 	)
 	return err
 }
 
+// BuildByID returns one build of an application.
+func (s *Store) BuildByID(ctx context.Context, appID, id int64) (Build, error) {
+	row := s.db.QueryRowContext(ctx, `
+SELECT id, app_id, delivery_id, environment, commit_sha, image_repository, image_tag, image_digest, infra_commit_sha, status, error, logs, archive_url, created_at, finished_at
+FROM builds WHERE app_id = ? AND id = ?`, appID, id)
+	var b Build
+	var created, finished string
+	err := row.Scan(&b.ID, &b.AppID, &b.DeliveryID, &b.Environment, &b.CommitSHA, &b.ImageRepository, &b.ImageTag, &b.ImageDigest, &b.InfraCommitSHA, &b.Status, &b.Error, &b.Logs, &b.ArchiveURL, &created, &finished)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Build{}, ErrNotFound
+	}
+	if err != nil {
+		return Build{}, err
+	}
+	b.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+	b.FinishedAt, _ = time.Parse(time.RFC3339Nano, finished)
+	return b, nil
+}
+
 func (s *Store) ListBuilds(ctx context.Context, appID int64) ([]Build, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, app_id, delivery_id, environment, commit_sha, image_repository, image_tag, image_digest, infra_commit_sha, status, error, archive_url, created_at, finished_at
+SELECT id, app_id, delivery_id, environment, commit_sha, image_repository, image_tag, image_digest, infra_commit_sha, status, error, logs, archive_url, created_at, finished_at
 FROM builds WHERE app_id = ? ORDER BY id DESC`, appID)
 	if err != nil {
 		return nil, err
@@ -465,7 +489,7 @@ FROM builds WHERE app_id = ? ORDER BY id DESC`, appID)
 	for rows.Next() {
 		var b Build
 		var created, finished string
-		if err := rows.Scan(&b.ID, &b.AppID, &b.DeliveryID, &b.Environment, &b.CommitSHA, &b.ImageRepository, &b.ImageTag, &b.ImageDigest, &b.InfraCommitSHA, &b.Status, &b.Error, &b.ArchiveURL, &created, &finished); err != nil {
+		if err := rows.Scan(&b.ID, &b.AppID, &b.DeliveryID, &b.Environment, &b.CommitSHA, &b.ImageRepository, &b.ImageTag, &b.ImageDigest, &b.InfraCommitSHA, &b.Status, &b.Error, &b.Logs, &b.ArchiveURL, &created, &finished); err != nil {
 			return nil, err
 		}
 		b.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)

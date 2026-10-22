@@ -78,6 +78,9 @@ type Config struct {
 	// there what must not be written in the GitOps repository: the secret
 	// that pulls the images of the registry.
 	Kube kubernetes.Interface
+	// BuilderNamespace is the namespace where the build Jobs run. It is
+	// where the logs of a build are.
+	BuilderNamespace string
 }
 
 type Server struct {
@@ -109,6 +112,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/apps", s.withAPI(s.listApps))
 	mux.HandleFunc("GET /api/v1/apps/{name}", s.withAPI(s.getApp))
 	mux.HandleFunc("GET /api/v1/apps/{name}/builds", s.withAPI(s.listBuilds))
+	mux.HandleFunc("GET /api/v1/apps/{name}/builds/{id}", s.withAPI(s.getBuild))
+	mux.HandleFunc("GET /api/v1/apps/{name}/builds/{id}/logs", s.withAPI(s.getBuildLogs))
 	mux.HandleFunc("POST /api/v1/apps/{name}/redeploy", s.withAPI(s.redeployApp))
 	mux.HandleFunc("POST /api/v1/projects", s.withAPI(s.createProject))
 	mux.HandleFunc("GET /api/v1/projects", s.withAPI(s.listProjects))
@@ -426,6 +431,10 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 		Log:                 func(format string, args ...any) { log.Printf(format, args...) },
 	})
 	finished := store.Build{Status: "succeeded", ArchiveURL: archiveURL(s.cfg.BuildsGitURL, name, d.CommitSHA)}
+	// The output of the build is kept with it. A build that fails must
+	// say why: the reason is in the output, not in the status of a
+	// container.
+	finished.Logs = s.buildLogs(ctx, d.ID)
 	if runErr != nil {
 		finished.Status = "failed"
 		finished.Error = runErr.Error()

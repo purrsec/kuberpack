@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"git.host.bzh/pepe/kuberpack/internal/git"
@@ -29,19 +30,7 @@ func (s *Server) listBuilds(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]any, 0, len(builds))
 	for _, b := range builds {
-		out = append(out, map[string]any{
-			"id":           b.ID,
-			"environment":  b.Environment,
-			"commit_sha":   b.CommitSHA,
-			"image":        strings.TrimSpace(strings.TrimSuffix(b.ImageRepository+":"+b.ImageTag, ":")),
-			"digest":       b.ImageDigest,
-			"infra_commit": b.InfraCommitSHA,
-			"status":       b.Status,
-			"error":        b.Error,
-			"archive_url":  b.ArchiveURL,
-			"created_at":   b.CreatedAt,
-			"finished_at":  b.FinishedAt,
-		})
+		out = append(out, buildJSON(b))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"builds": out})
 }
@@ -150,4 +139,93 @@ func (s *Server) fluxHook(w http.ResponseWriter, r *http.Request) {
 		s.publishStatus(r.Context(), provider, owner, name, b.CommitSHA, git.StatusWarning, "rolled_back: "+msg, git.ProductionContext, appTargetURL(app))
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "rolled_back"})
+}
+
+// getBuild returns one build of an application.
+//
+// The reason of a failure is in the build: it is what the platform knows
+// about it, and the logs are next to it.
+func (s *Server) getBuild(w http.ResponseWriter, r *http.Request) {
+	app, err := s.cfg.Store.AppByName(r.Context(), r.PathValue("name"))
+	if errors.Is(err, store.ErrNotFound) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "the build id must be a number", http.StatusBadRequest)
+		return
+	}
+	build, err := s.cfg.Store.BuildByID(r.Context(), app.ID, id)
+	if errors.Is(err, store.ErrNotFound) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, buildJSON(build))
+}
+
+// getBuildLogs returns the output of the builder of a build.
+//
+// The output of a build that is over is kept with it. The output of a
+// build that runs is read from the pod, so that the client can follow
+// it.
+func (s *Server) getBuildLogs(w http.ResponseWriter, r *http.Request) {
+	app, err := s.cfg.Store.AppByName(r.Context(), r.PathValue("name"))
+	if errors.Is(err, store.ErrNotFound) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "the build id must be a number", http.StatusBadRequest)
+		return
+	}
+	build, err := s.cfg.Store.BuildByID(r.Context(), app.ID, id)
+	if errors.Is(err, store.ErrNotFound) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	logs := build.Logs
+	if strings.TrimSpace(logs) == "" {
+		// The build may still be running: its output is then read from
+		// the pod of the build.
+		logs = s.buildLogs(r.Context(), build.DeliveryID)
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(logs))
+}
+
+// buildJSON is the representation of a build.
+func buildJSON(b store.Build) map[string]any {
+	return map[string]any{
+		"id":           b.ID,
+		"environment":  b.Environment,
+		"commit_sha":   b.CommitSHA,
+		"image":        strings.TrimSpace(strings.TrimSuffix(b.ImageRepository+":"+b.ImageTag, ":")),
+		"digest":       b.ImageDigest,
+		"infra_commit": b.InfraCommitSHA,
+		"status":       b.Status,
+		"error":        b.Error,
+		"archive_url":  b.ArchiveURL,
+		"created_at":   b.CreatedAt,
+		"finished_at":  b.FinishedAt,
+		"has_logs":     strings.TrimSpace(b.Logs) != "",
+	}
 }

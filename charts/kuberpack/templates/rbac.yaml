@@ -23,6 +23,12 @@ rules:
   - apiGroups: [""]
     resources: [pods]
     verbs: [get, list]
+  # The platform reads the output of a build, so that a failure says
+  # why. It reads the logs of the pods it dispatches, in the namespace
+  # where it dispatches them, and nothing else.
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
 ---
 # The platform writes the secret that pulls the images of its registry, in
 # the namespace of every application. That right is granted by the

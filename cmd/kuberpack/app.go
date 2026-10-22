@@ -63,9 +63,105 @@ func runApp(args []string) error {
 	switch args[0] {
 	case "redeploy":
 		return runAppRedeploy(args[1:])
+	case "logs":
+		return runAppLogs(args[1:])
+	case "builds":
+		return runAppBuilds(args[1:])
 	default:
-		return fmt.Errorf("unknown app command %q (redeploy)", args[0])
+		return fmt.Errorf("unknown app command %q (redeploy, logs, builds)", args[0])
 	}
+}
+
+// runAppLogs prints the output of the builder of a build.
+//
+// The output of a build that is over is kept with it. The output of a
+// build that runs is read live: the command can be run twice, and the
+// second time shows more.
+func runAppLogs(args []string) error {
+	fs := flag.NewFlagSet("app logs", flag.ContinueOnError)
+	build := fs.Int64("build", 0, "build number (the last one by default)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	name := strings.TrimSpace(fs.Arg(0))
+	if name == "" {
+		return fmt.Errorf("the name of the application is required")
+	}
+	id := *build
+	if id == 0 {
+		builds, err := appBuilds(name)
+		if err != nil {
+			return err
+		}
+		if len(builds) == 0 {
+			return fmt.Errorf("the application %s has no build yet", name)
+		}
+		id = builds[0].ID
+	}
+	body, err := apiGet(fmt.Sprintf("/api/v1/apps/%s/builds/%d/logs", name, id))
+	if err != nil {
+		return err
+	}
+	if len(body) == 0 {
+		fmt.Printf("the build %d of %s has no output yet\n", id, name)
+		return nil
+	}
+	fmt.Print(string(body))
+	return nil
+}
+
+// runAppBuilds lists the builds of an application.
+func runAppBuilds(args []string) error {
+	fs := flag.NewFlagSet("app builds", flag.ContinueOnError)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	name := strings.TrimSpace(fs.Arg(0))
+	if name == "" {
+		return fmt.Errorf("the name of the application is required")
+	}
+	builds, err := appBuilds(name)
+	if err != nil {
+		return err
+	}
+	if len(builds) == 0 {
+		fmt.Printf("the application %s has no build yet\n", name)
+		return nil
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "BUILD\tSTATUS\tCOMMIT\tERROR")
+	for _, b := range builds {
+		reason := b.Error
+		if len(reason) > 80 {
+			reason = reason[:80] + "…"
+		}
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", b.ID, b.Status, b.CommitSHA[:min(8, len(b.CommitSHA))], reason)
+	}
+	return w.Flush()
+}
+
+// appBuilds lists the builds of an application, the last one first.
+func appBuilds(name string) ([]buildSummary, error) {
+	body, err := apiGet("/api/v1/apps/" + name + "/builds")
+	if err != nil {
+		return nil, err
+	}
+	var out struct {
+		Builds []buildSummary `json:"builds"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("the platform answered something unexpected: %w", err)
+	}
+	return out.Builds, nil
+}
+
+// buildSummary is what the list of the builds says.
+type buildSummary struct {
+	ID        int64  `json:"id"`
+	Status    string `json:"status"`
+	CommitSHA string `json:"commit_sha"`
+	Error     string `json:"error"`
+	HasLogs   bool   `json:"has_logs"`
 }
 
 // runAppRedeploy builds and deploys an application again.
