@@ -350,3 +350,35 @@ func TestTheNetworkPolicyOfAProjectWithAVolumeAddonIsValid(t *testing.T) {
 		t.Fatalf("the values must not hold a port of zero:\n%s", values)
 	}
 }
+
+// Un service qui declare des secrets doit obtenir un
+// InfisicalStaticSecret : c'est l'operateur qui synchronise les valeurs
+// depuis Infisical vers un Secret du namespace.
+func TestTheProjectWithSecretsGeneratesTheInfisicalSecret(t *testing.T) {
+	bare := setupGitOps(t, "")
+	manifest := ProjectManifest{
+		Project:   "shop",
+		Namespace: "shop",
+		Services: map[string]Service{
+			"app": {Type: "stateless", Image: "example.org/app@sha256:abc", Port: 8080,
+				Hostname: "app.shop.bzh", Secrets: []string{"MOT_DE_PASSE"}, SecretEnv: "prod"},
+		},
+	}
+	if _, err := EnsureProject(context.Background(), ProjectRequest{
+		GitOpsURL: bare, GitOpsBranch: "main", Manifest: manifest,
+		Platform: Platform{NetworkPolicy: true, InfisicalProjectID: "proj-123"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	clone := readRemoteTree(t, bare)
+	cr := readFile(t, clone, "kubernetes/vps/infisical/app-shop-app.yaml")
+	if !strings.Contains(cr, "kind: InfisicalStaticSecret") {
+		t.Fatalf("the Infisical secret is not generated:\n%s", cr)
+	}
+	if !strings.Contains(cr, "projectId: proj-123") {
+		t.Fatalf("the secret does not name the project:\n%s", cr)
+	}
+	if !strings.Contains(cr, "MOT_DE_PASSE") {
+		t.Fatalf("the secret does not name the key:\n%s", cr)
+	}
+}

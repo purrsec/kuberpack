@@ -181,7 +181,9 @@ func (p Platform) InfisicalEnabled() bool {
 }
 
 func (p Platform) InfisicalCRPath(name string) string {
-	return filepath.ToSlash(filepath.Join(p.withDefaults().InfisicalDir, "app-"+sanitizeName(name)+".yaml"))
+	// The name is already the name of the object, prefix included: the
+	// file must carry it tel quel, sans un second prefix.
+	return filepath.ToSlash(filepath.Join(p.withDefaults().InfisicalDir, sanitizeName(name)+".yaml"))
 }
 
 func (p Platform) InfisicalParentPath() string {

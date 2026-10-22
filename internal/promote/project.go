@@ -416,7 +416,17 @@ func EnsureProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 
 		rel := req.Platform.ProjectDir(project)
 		parentRel := req.Platform.ProjectsParentPath()
-		status, err := runGit(ctx, work, "status", "--porcelain", "--", rel, parentRel)
+		// The Infisical objects live in their own directory, beside the
+		// projects. They are part of the commit: a secret declared by the
+		// manifest must reach the cluster, or the application starts
+		// without its secret.
+		watched := []string{rel, parentRel}
+		platform := req.Platform.withDefaults()
+		if platform.InfisicalEnabled() {
+			watched = append(watched, platform.InfisicalDir)
+		}
+		statusArgs := append([]string{"status", "--porcelain", "--"}, watched...)
+		status, err := runGit(ctx, work, statusArgs...)
 		if err != nil {
 			return ProjectResult{}, err
 		}
@@ -428,7 +438,8 @@ func EnsureProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 			result.InfraCommitSHA = sha
 			return result, nil
 		}
-		if _, err := runGit(ctx, work, gitConfig("add", "--", rel, parentRel)...); err != nil {
+		addArgs := append(gitConfig("add", "--"), watched...)
+		if _, err := runGit(ctx, work, addArgs...); err != nil {
 			return ProjectResult{}, err
 		}
 		msg := fmt.Sprintf("project %s: %d services, %d addons", project, len(services), len(adds))
@@ -590,6 +601,12 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 			return nil, nil, nil, err
 		}
 		if err := writeFile(filepath.Join(dir, "kustomization.yaml"), RenderAppKustomization(spec, p)); err != nil {
+			return nil, nil, nil, err
+		}
+		// A service that declares secrets gets an InfisicalStaticSecret:
+		// the operator synchronises the values from Infisical into a
+		// Secret of the namespace. The values never transit by Kuberpack.
+		if _, _, err := ensureSecretCR(work, spec, p); err != nil {
 			return nil, nil, nil, err
 		}
 		// A volume with a size is a disk: the claim is written with the
