@@ -80,7 +80,18 @@ func RenderSecretCR(spec AppSpec, p Platform) string { return infisicalCRContent
 // outlives the pod: it is what a database that is a file lives on.
 func RenderVolumeClaim(volume Volume, spec AppSpec, p Platform) string {
 	p = p.withDefaults()
-	return "apiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  name: " + volume.Name +
+	return "apiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  name: " + volumeClaimName(spec, volume) +
 		"\n  namespace: " + releaseNamespace(spec, p) +
 		"\nspec:\n  accessModes: [\"ReadWriteOnce\"]\n  resources:\n    requests:\n      storage: " + volume.Size + "\n"
+}
+
+// volumeClaimName is the name of the claim of a volume. It carries the name
+// of the application: two applications of the same namespace do not share
+// their disks.
+func volumeClaimName(spec AppSpec, volume Volume) string {
+	name := strings.TrimSpace(spec.Name)
+	if name == "" {
+		return volume.Name
+	}
+	return name + "-" + volume.Name
 }

@@ -30,20 +30,32 @@ volumes:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "kind: PersistentVolumeClaim") {
-		t.Fatalf("the claim of the volume is missing:\n%s", out)
-	}
-	if !strings.Contains(out, "name: web-toolbox") {
-		t.Fatalf("the claim must be named after the release and the volume:\n%s", out)
-	}
-	if !strings.Contains(out, "storage: \"1Gi\"") {
-		t.Fatalf("the size of the volume is missing:\n%s", out)
-	}
+	// The chart does not create the claim: the platform renders it, in the
+	// manifest of the application. The chart only mounts it.
 	if !strings.Contains(out, "claimName: web-toolbox") {
-		t.Fatalf("the pod must mount the claim:\n%s", out)
+		t.Fatalf("the pod must mount the claim of the volume:\n%s", out)
 	}
 	// A volume without a size stays a temporary directory.
-	if strings.Contains(out, "name: web-cache") {
+	if strings.Contains(out, "claimName: web-cache") {
 		t.Fatalf("a volume without a size must not have a claim:\n%s", out)
+	}
+	if strings.Contains(out, "kind: PersistentVolumeClaim") {
+		t.Fatalf("the chart must not create the claim of a volume:\n%s", out)
+	}
+}
+
+// The claim of a volume carries the name of the application: two
+// applications of the same namespace do not share their disks.
+func TestRenderVolumeClaimCarriesTheNameOfTheApplication(t *testing.T) {
+	spec := AppSpec{Name: "stirling", Namespace: "stirling"}
+	out := RenderVolumeClaim(Volume{Name: "toolbox", Path: "/usr/local/bin", Size: "1Gi"}, spec, Platform{})
+	if !strings.Contains(out, "name: stirling-toolbox") {
+		t.Fatalf("the claim must carry the name of the application:\n%s", out)
+	}
+	if !strings.Contains(out, "namespace: stirling") {
+		t.Fatalf("the claim must be in the namespace of the application:\n%s", out)
+	}
+	if !strings.Contains(out, "storage: 1Gi") {
+		t.Fatalf("the size of the volume is missing:\n%s", out)
 	}
 }
