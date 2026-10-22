@@ -173,15 +173,15 @@ func TestTheObjectStorageHasItsCredentialsBornInTheCluster(t *testing.T) {
 	}
 	// The bucket of the backups must exist before the first backup: a Job
 	// creates it, with the credentials of the storage.
-	job := readFile(t, tree, "kubernetes/vps/projects/demo/addons/postgres/bucket-job.yaml")
+	bucketJob := readFile(t, tree, "kubernetes/vps/projects/demo/addons/postgres/bucket-job.yaml")
 	for _, want := range []string{
 		"kind: Job",
 		"create_bucket",
 		"demo-rustfs-app",
 		"kuberpack.io/for: demo",
 	} {
-		if !strings.Contains(job, want) {
-			t.Errorf("the bucket job does not carry %q:\n%s", want, job)
+		if !strings.Contains(bucketJob, want) {
+			t.Errorf("the bucket job does not carry %q:\n%s", want, bucketJob)
 		}
 	}
 	// The scheduled backup goes through the plugin too.
