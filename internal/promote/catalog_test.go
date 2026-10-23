@@ -96,7 +96,8 @@ func TestTheAddonPodsAreIsolated(t *testing.T) {
 		t.Fatal("the type postgres is not in the catalogue")
 	}
 	policy := addonNetworkPolicy("boutique-postgres", "boutique", entry.Kind, "postgres", "boutique",
-		[]int{5432}, "cnpg-system", AddonSpec{ServiceClients: []string{"web"}})
+		[]int{5432}, addonEgress{OperatorNamespace: "cnpg-system", ReplicaPorts: []int{5432}},
+		AddonSpec{ServiceClients: []string{"web"}})
 	for _, want := range []string{
 		"kind: NetworkPolicy",
 		"kuberpack.io/addon: postgres",

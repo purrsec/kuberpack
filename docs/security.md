@@ -89,10 +89,25 @@ la dépendance déclarée. Un voisin appartient nécessairement au même manifes
 `defaultDeny: false` est refusé. Ingress et test Helm propre au service ont des
 autorisations spécifiques ; il n’y a plus d’ingress général entre apps.
 
-Un refus d’entrée de namespace protège aussi les helpers. **L’egress des addons
-et helpers n’est pas encore fermé au niveau du namespace** : les flux vers
-l’API, les opérateurs et les sauvegardes doivent être bornés par moteur. Leur
-ingress est limité aux consommateurs et dépendances déclarés et à la réplication.
+Un refus d’entrée de namespace protège aussi les helpers. Les pods des addons
+déclarent leur **egress** dans leur propre policy : DNS ; API Kubernetes et
+namespace de l’opérateur du moteur quand il en existe un (`cnpg-system` pour
+CloudNativePG) ; réplication entre instances du même addon sur le port du
+moteur ; et, si `backup.s3` est déclaré, le stockage S3 du projet uniquement.
+Un moteur sans besoin sortant n’a que le DNS : aucune règle n’ouvre
+`0.0.0.0/0` ni ne dépend d’un namespace qui n’existe pas.
+
+Les helpers (`bootstrap`, `dump`, `bucket`) ont une policy distincte : le
+bootstrap ne joint que l’API et le DNS, le dump la base et le DNS, le bucket
+le stockage et le DNS. Le refus d’entrée du namespace reste `Ingress` seul :
+il ne coupe ni les charts gérés à la main ni l’egress des services
+applicatifs, qui ont leur propre policy.
+
+Limites natives : une NetworkPolicy ne filtre pas un nom de domaine, donc un
+S3 **externe** nécessiterait un proxy ou une liste de CIDR (le S3 d’un projet
+reste l’addon du même namespace). Si l’API du cluster est un endpoint hors du
+réseau des pods, la règle basée sur `kube-system` peut ne pas la couvrir
+selon le CNI ; ce point doit être validé sur EKS/GKE.
 
 Les policies sont additives et exigent un CNI qui les applique réellement.
 Le banc Docker valide k3s/kube-router ; EKS/GKE nécessitent leur propre validation.

@@ -118,9 +118,11 @@ func addonDependencyClients(m ProjectManifest, target string) []string {
 	return clients
 }
 
-// Isolate ingress even for helper pods and hand-managed charts. Workload
-// policies additionally isolate application egress. Addon operators retain
-// their documented control-plane egress until engine-specific rules exist.
+// Isole l'ingress, même pour les helpers et les charts gérés à la main. Les
+// policies des workloads isolent en plus l'egress des applications. Les pods
+// des addons et leurs helpers portent leur propre policy d'egress : ce
+// default deny reste Ingress seul pour ne jamais couper un chart géré à la
+// main, ni une application qui n'a pas de policy d'egress générée.
 func RenderProjectDefaultDeny(namespace string) string {
 	return "apiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: kuberpack-default-deny\n  namespace: " + namespace + "\nspec:\n  podSelector: {}\n  policyTypes: [Ingress]\n  ingress: []\n"
 }

@@ -131,7 +131,7 @@ func (mongoEngine) Render(dir string, spec AddonSpec, platform Platform) (AddonR
 	service.WriteString("      port: " + strconv.Itoa(entry.Port) + "\n")
 	service.WriteString("      targetPort: mongo\n")
 
-	job, rbac := addonBootstrap(name, namespace, bootstrapImage, secret, entry.Bootstrap.Keys)
+	job, rbac := addonBootstrap(name, namespace, sanitizeName(spec.Project), aname, bootstrapImage, secret, entry.Bootstrap.Keys)
 
 	if err := writeAddonFiles(dir,
 		addonFile{name: "mongo.yaml", content: stateful.String()},
@@ -139,13 +139,16 @@ func (mongoEngine) Render(dir string, spec AddonSpec, platform Platform) (AddonR
 		addonFile{name: "bootstrap-job.yaml", content: job},
 		addonFile{name: "rbac.yaml", content: rbac},
 		addonFile{name: "networkpolicy.yaml", content: addonNetworkPolicy(name, namespace, entry.Kind, aname,
-			sanitizeName(spec.Project), []int{entry.Port}, "", spec)},
+			sanitizeName(spec.Project), []int{entry.Port},
+			addonEgress{ReplicaPorts: []int{entry.Port}}, spec)},
+		addonFile{name: "helper-networkpolicy.yaml", content: addonHelperNetworkPolicy(name, namespace,
+			sanitizeName(spec.Project), aname, "bootstrap", true, nil)},
 	); err != nil {
 		return AddonResult{}, err
 	}
 	if err := writeAddonFiles(dir, addonFile{
 		name:    "kustomization.yaml",
-		content: addonKustomization("mongo.yaml", "service.yaml", "bootstrap-job.yaml", "rbac.yaml", "networkpolicy.yaml"),
+		content: addonKustomization("mongo.yaml", "service.yaml", "bootstrap-job.yaml", "rbac.yaml", "networkpolicy.yaml", "helper-networkpolicy.yaml"),
 	}); err != nil {
 		return AddonResult{}, err
 	}

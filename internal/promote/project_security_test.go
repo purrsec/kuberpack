@@ -120,7 +120,8 @@ func TestAddonIngressUsesDeclaredConsumersAndBackupDependencies(t *testing.T) {
 	if !reflect.DeepEqual(clients, []string{"allowed"}) {
 		t.Fatal(clients)
 	}
-	policy := addonNetworkPolicy("cache", "demo", "valkey", "cache", "demo", []int{6379}, "", AddonSpec{ServiceClients: clients})
+	policy := addonNetworkPolicy("cache", "demo", "valkey", "cache", "demo", []int{6379},
+		addonEgress{ReplicaPorts: []int{6379}}, AddonSpec{ServiceClients: clients})
 	if !strings.Contains(policy, "app.kubernetes.io/name: allowed") || strings.Contains(policy, "app.kubernetes.io/name: other") {
 		t.Fatal(policy)
 	}

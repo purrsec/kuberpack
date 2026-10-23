@@ -40,6 +40,17 @@ func (cnpgEngine) Render(dir string, spec AddonSpec, platform Platform) (AddonRe
 	}
 	name := sanitizeName(spec.Project) + "-" + sanitizeName(spec.Name)
 
+	// Les instances parlent à l'API pour publier leur état, et à
+	// l'opérateur qui les pilote. Elles répliquent entre elles sur les
+	// ports du moteur. Le stockage des sauvegardes est ajouté plus bas,
+	// seulement quand le manifeste en déclare un.
+	egress := addonEgress{
+		KubernetesAPI:     true,
+		OperatorNamespace: "cnpg-system",
+		OperatorPorts:     []int{443, 9090},
+		ReplicaPorts:      []int{entry.Port, 8000, 9090},
+	}
+
 	// The image of the operator is the platform's choice; the catalogue
 	// holds the default. The version the manifest asks for is the one
 	// that decides the image: a PostgreSQL 14 and a PostgreSQL 16 do not
@@ -109,6 +120,16 @@ func (cnpgEngine) Render(dir string, spec AddonSpec, platform Platform) (AddonRe
 			secret := sanitizeName(spec.Project) + "-" + sanitizeName(storage) + "-app"
 			endpoint := "http://" + sanitizeName(spec.Project) + "-" + sanitizeName(storage) + "." + namespace + ".svc.cluster.local:9000"
 			store := name + "-store"
+			// Le stockage est un addon du même projet, dans le même
+			// namespace : l'egress va à ses pods, jamais à tout
+			// l'Internet. Une NetworkPolicy native ne filtre pas un nom
+			// de domaine ; un S3 externe exigerait un proxy explicite ou
+			// une liste de CIDR.
+			egress.Peers = append(egress.Peers, addonEgressPeer{
+				Kind:      "s3",
+				AddonName: sanitizeName(storage),
+				Ports:     []int{objectStorePort, 443},
+			})
 			// Since CloudNativePG 1.27, the backups go through the
 			// barman plugin: the destination is an ObjectStore, and the
 			// cluster names the plugin and the store. The operator
@@ -146,7 +167,23 @@ func (cnpgEngine) Render(dir string, spec AddonSpec, platform Platform) (AddonRe
 	if err := writeAddonFiles(dir, addonFile{
 		name: "networkpolicy.yaml",
 		content: addonNetworkPolicy(name, namespace, entry.Kind, sanitizeName(spec.Name),
-			sanitizeName(spec.Project), []int{5432, 8000, 9090}, "cnpg-system", spec),
+			sanitizeName(spec.Project), []int{entry.Port, 8000, 9090}, egress, spec),
+	}); err != nil {
+		return AddonResult{}, err
+	}
+	// Les helpers de la base ont leur propre egress : un dump lit la base
+	// et rien d'autre, le Job du bucket ne joint que le stockage.
+	helperPolicies := []string{addonHelperNetworkPolicy(name, namespace, sanitizeName(spec.Project),
+		sanitizeName(spec.Name), "dump", false,
+		[]addonEgressPeer{{Kind: entry.Kind, AddonName: sanitizeName(spec.Name), Ports: []int{entry.Port}}})}
+	if bucketJob != "" && spec.Backup != nil {
+		helperPolicies = append(helperPolicies, addonHelperNetworkPolicy(name, namespace, sanitizeName(spec.Project),
+			sanitizeName(spec.Name), "bucket", false,
+			[]addonEgressPeer{{Kind: "s3", AddonName: sanitizeName(spec.Backup.S3), Ports: []int{objectStorePort, 443}}}))
+	}
+	if err := writeAddonFiles(dir, addonFile{
+		name:    "helper-networkpolicy.yaml",
+		content: strings.Join(helperPolicies, "---\n"),
 	}); err != nil {
 		return AddonResult{}, err
 	}
@@ -159,16 +196,16 @@ func (cnpgEngine) Render(dir string, spec AddonSpec, platform Platform) (AddonRe
 			return AddonResult{}, err
 		}
 	}
-	kustomization := addonKustomization("database.yaml", "networkpolicy.yaml")
+	resources := []string{"database.yaml", "networkpolicy.yaml", "helper-networkpolicy.yaml"}
 	if scheduled != "" {
-		kustomization = addonKustomization("database.yaml", "networkpolicy.yaml", "scheduledbackup.yaml")
+		resources = append(resources, "scheduledbackup.yaml")
 	}
 	if objectStore != "" {
-		kustomization = addonKustomization("database.yaml", "networkpolicy.yaml", "scheduledbackup.yaml", "objectstore.yaml", "bucket-job.yaml")
+		resources = append(resources, "objectstore.yaml", "bucket-job.yaml")
 	}
 	if err := writeAddonFiles(dir, addonFile{
 		name:    "kustomization.yaml",
-		content: kustomization,
+		content: addonKustomization(resources...),
 	}); err != nil {
 		return AddonResult{}, err
 	}
@@ -220,7 +257,7 @@ func databaseDumpJob(name, namespace, database, image, project, addon string) st
 	b.WriteString("  template:\n")
 	b.WriteString("    metadata:\n")
 	b.WriteString("      labels:\n")
-	b.WriteString("        kuberpack.io/addon: postgres\n")
+	b.WriteString("        kuberpack.io/helper: dump\n")
 	b.WriteString("        kuberpack.io/addon-name: " + addon + "\n")
 	b.WriteString("        kuberpack.io/for: " + project + "\n")
 	b.WriteString("    spec:\n")
@@ -344,6 +381,7 @@ func renderBucketJob(name, namespace, project, bucket, endpoint, secret string) 
 	b.WriteString("          labels:\n")
 	b.WriteString("            kuberpack.io/for: " + project + "\n")
 	b.WriteString("            kuberpack.io/addon-name: " + bucket + "\n")
+	b.WriteString("            kuberpack.io/helper: bucket\n")
 	b.WriteString("        spec:\n")
 	b.WriteString("          restartPolicy: Never\n")
 	b.WriteString("          containers:\n")
@@ -386,3 +424,8 @@ func renderBucketJob(name, namespace, project, bucket, endpoint, secret string) 
 // barmanSidecarImage is the image of the sidecar of the plugin barman.
 // It carries boto3, which creates the bucket of the backups.
 const barmanSidecarImage = "ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar@sha256:2287a793a804db751edd0d07d44cd549e357677e98a800eb12e2cf7c0d53f9b0"
+
+// objectStorePort est le port du stockage objet du projet. Le stockage est
+// un addon du même projet, dans le même namespace : l'egress d'une
+// sauvegarde nomme ses pods, il n'ouvre jamais l'Internet.
+const objectStorePort = 9000

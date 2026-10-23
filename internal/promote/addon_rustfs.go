@@ -135,7 +135,7 @@ func (rustfsEngine) Render(dir string, spec AddonSpec, platform Platform) (Addon
 	service.WriteString("      port: " + strconv.Itoa(entry.Port) + "\n")
 	service.WriteString("      targetPort: s3\n")
 
-	job, rbac := addonBootstrap(name, namespace, bootstrapImage, secret, entry.Bootstrap.Keys)
+	job, rbac := addonBootstrap(name, namespace, sanitizeName(spec.Project), aname, bootstrapImage, secret, entry.Bootstrap.Keys)
 
 	if err := writeAddonFiles(dir,
 		addonFile{name: "rustfs.yaml", content: stateful.String()},
@@ -143,13 +143,16 @@ func (rustfsEngine) Render(dir string, spec AddonSpec, platform Platform) (Addon
 		addonFile{name: "bootstrap-job.yaml", content: job},
 		addonFile{name: "rbac.yaml", content: rbac},
 		addonFile{name: "networkpolicy.yaml", content: addonNetworkPolicy(name, namespace, entry.Kind, aname,
-			sanitizeName(spec.Project), []int{entry.Port}, "", spec)},
+			sanitizeName(spec.Project), []int{entry.Port},
+			addonEgress{ReplicaPorts: []int{entry.Port}}, spec)},
+		addonFile{name: "helper-networkpolicy.yaml", content: addonHelperNetworkPolicy(name, namespace,
+			sanitizeName(spec.Project), aname, "bootstrap", true, nil)},
 	); err != nil {
 		return AddonResult{}, err
 	}
 	if err := writeAddonFiles(dir, addonFile{
 		name:    "kustomization.yaml",
-		content: addonKustomization("rustfs.yaml", "service.yaml", "bootstrap-job.yaml", "rbac.yaml", "networkpolicy.yaml"),
+		content: addonKustomization("rustfs.yaml", "service.yaml", "bootstrap-job.yaml", "rbac.yaml", "networkpolicy.yaml", "helper-networkpolicy.yaml"),
 	}); err != nil {
 		return AddonResult{}, err
 	}

@@ -23,7 +23,7 @@ reprise, une fois les preuves rejouées.
 | Réseau services | Ingress autorisé à toutes les apps du namespace, peers sans port | Voisins dirigés par service, entrée générée sur la cible, sortie limitée au port déclaré et aux labels de projet/service |
 | Réseau projets | Dossier assimilé à une frontière ; namespace partagé possible | Propriété unique du namespace entre manifestes, refus des namespaces réservés et migrations implicites, collisions d’identité globale refusées |
 | Permissions implicites | Internet activé par défaut, isolation désactivable | Internet désactivé par défaut pour les projets ; `defaultDeny: false` refusé |
-| Addons | Toutes les apps/addons du projet admis en entrée | Consommateurs déclarés, réplication et dépendance `backup.s3` identifiés ; helpers de dump/bucket correctement étiquetés |
+| Addons | Toutes les apps/addons du projet admis en entrée ; egress des addons/helpers ouvert | Consommateurs déclarés, réplication et dépendance `backup.s3` identifiés ; helpers de dump/bucket correctement étiquetés ; egress borné par moteur (DNS, API/opérateur, réplication, stockage S3) |
 | Image CP | Shell et outils de build présents | Runtime scratch contenant Kuberpack, Git natif/HTTPS et ses bibliothèques ; hooks Git désactivés |
 | Dispatcher builder | Création de Jobs dans un namespace Pod Security permissif | Admission API pour Jobs, Pods et `pods/ephemeralcontainers`, images/commandes/arguments et volumes bornés ; privilèges, jetons et accès hôte refusés |
 | Credentials | Le PAT GitOps était réellement copié dans le Secret builder | Credential de source privé distinct, registre distinct, séparation bloquante par défaut, absence de repli implicite pour la clé API |
@@ -118,10 +118,13 @@ sont capturées en mémoire et ne sont pas imprimées.
    en production et les scopes effectifs des credentials vérifiés.
 
 5. **Moyen — Réseau des addons/helpers.** Le refus d’entrée du namespace et les
-   policies des services sont actifs ; l’egress des addons/helpers reste ouvert.
-   Chaque moteur doit décrire DNS, API/opérateur et sauvegardes avant de fermer
-   l’egress du namespace. L’option private-build-egress désactive également une
-   protection : préférer ultérieurement une liste privée explicite.
+   policies des services sont actifs ; les pods des addons et leurs helpers
+   (`bootstrap`, `dump`, `bucket`) déclarent maintenant un egress borné par
+   moteur : DNS, API/opérateur, réplication et stockage `backup.s3`. Les limites
+   restantes sont celles du modèle natif : pas de filtrage par nom de domaine
+   pour un S3 externe, et couverture de l’API dépendante du CNI quand elle est
+   hors du réseau des pods. L’option private-build-egress désactive également
+   une protection : préférer ultérieurement une liste privée explicite.
 
 6. **Moyen — Moteur réseau et limites des policies natives.** La présence d’un
    objet NetworkPolicy ne prouve pas son application. Valider EKS/GKE avec leurs

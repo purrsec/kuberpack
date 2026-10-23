@@ -183,16 +183,153 @@ func envYAMLForAddon(envs []AddonEnv) string {
 	return b.String()
 }
 
+// addonEgressPeer est un ensemble de pods qu'un addon, ou l'un de ses
+// helpers, peut joindre, avec les ports TCP qu'il peut utiliser. Les labels
+// sont ceux que Kuberpack écrit sur ses propres pods : une règle ne nomme
+// jamais le pod d'un autre projet.
+type addonEgressPeer struct {
+	// Kind est le label kuberpack.io/addon du pair. Vide : n'importe quel
+	// type d'addon du projet.
+	Kind string
+	// AddonName est le label kuberpack.io/addon-name du pair.
+	AddonName string
+	// Ports sont les ports TCP sur lesquels le pair écoute.
+	Ports []int
+}
+
+// addonEgress décrit les flux sortants d'un addon, ou de l'un de ses
+// helpers.
+//
+// La policy est additive : un champ ajouté ouvre un flux, il n'en ferme
+// aucun. Tout ce qui n'est pas décrit ici est refusé dès qu'un pod est
+// sélectionné par une policy qui déclare Egress.
+type addonEgress struct {
+	// KubernetesAPI autorise l'API du cluster, dans le namespace
+	// kube-system.
+	KubernetesAPI bool
+	// OperatorNamespace est le namespace de l'opérateur du moteur. Il est
+	// vide pour un moteur sans opérateur : aucune règle n'est écrite,
+	// donc la policy ne nomme jamais un namespace qui n'existe pas.
+	OperatorNamespace string
+	// OperatorPorts sont les ports TCP de l'opérateur.
+	OperatorPorts []int
+	// ReplicaPorts sont les ports TCP que les instances du même addon
+	// utilisent entre elles.
+	ReplicaPorts []int
+	// Peers sont les autres addons que les pods peuvent joindre : le
+	// stockage des sauvegardes, ou la base qu'un dump lit.
+	Peers []addonEgressPeer
+}
+
+// sortedTCPPorts rend les ports dans un ordre déterministe, sans doublon :
+// la policy est un fichier généré, deux compilations du même manifeste
+// doivent écrire les mêmes octets.
+func sortedTCPPorts(ports []int) []int {
+	seen := make(map[int]bool, len(ports))
+	out := make([]int, 0, len(ports))
+	for _, port := range ports {
+		if port <= 0 || seen[port] {
+			continue
+		}
+		seen[port] = true
+		out = append(out, port)
+	}
+	sort.Ints(out)
+	return out
+}
+
+// writeTCPPorts écrit les ports d'une règle d'egress. Il n'écrit rien sans
+// port : une règle sans port autoriserait tous les ports du pair.
+func writeTCPPorts(b *strings.Builder, ports []int) bool {
+	ports = sortedTCPPorts(ports)
+	if len(ports) == 0 {
+		return false
+	}
+	b.WriteString("      ports:\n")
+	for _, port := range ports {
+		b.WriteString("        - { protocol: TCP, port: " + strconv.Itoa(port) + " }\n")
+	}
+	return true
+}
+
+// writeAddonDNSEgress écrit la règle qui résout les noms. Elle est toujours
+// là : un pod qui ne résout pas un Service ne joint ni sa base, ni son
+// stockage, ni l'API.
+func writeAddonDNSEgress(b *strings.Builder) {
+	b.WriteString("    - to:\n")
+	b.WriteString("        - namespaceSelector:\n")
+	b.WriteString("            matchLabels:\n")
+	b.WriteString("              kubernetes.io/metadata.name: kube-system\n")
+	b.WriteString("          podSelector:\n")
+	b.WriteString("            matchLabels:\n")
+	b.WriteString("              k8s-app: kube-dns\n")
+	b.WriteString("      ports:\n")
+	b.WriteString("        - { protocol: UDP, port: 53 }\n")
+	b.WriteString("        - { protocol: TCP, port: 53 }\n")
+}
+
+// writeAddonAPIEgress écrit la règle qui joint l'API. L'API n'est pas
+// toujours un pod : la règle nomme le namespace kube-system, qui existe sur
+// chaque cluster, et jamais un namespace de projet.
+func writeAddonAPIEgress(b *strings.Builder) {
+	b.WriteString("    - to:\n")
+	b.WriteString("        - namespaceSelector:\n")
+	b.WriteString("            matchLabels:\n")
+	b.WriteString("              kubernetes.io/metadata.name: kube-system\n")
+	b.WriteString("      ports:\n")
+	b.WriteString("        - { protocol: TCP, port: 443 }\n")
+	b.WriteString("        - { protocol: TCP, port: 6443 }\n")
+}
+
+// writeAddonOperatorEgress écrit la règle qui joint l'opérateur du moteur.
+// Elle n'est écrite que pour un moteur qui a un opérateur : une policy ne
+// doit pas nommer un namespace qui n'existe pas.
+func writeAddonOperatorEgress(b *strings.Builder, namespace string, ports []int) {
+	ports = sortedTCPPorts(ports)
+	if len(ports) == 0 {
+		return
+	}
+	b.WriteString("    - to:\n")
+	b.WriteString("        - namespaceSelector:\n")
+	b.WriteString("            matchLabels:\n")
+	b.WriteString("              kubernetes.io/metadata.name: " + namespace + "\n")
+	writeTCPPorts(b, ports)
+}
+
+// writeAddonPeerEgress écrit une règle vers des pods du même projet,
+// sélectionnés par leurs labels d'addon. Une règle sans port est ignorée :
+// elle autoriserait tous les ports du pair.
+func writeAddonPeerEgress(b *strings.Builder, peer addonEgressPeer, project string) {
+	ports := sortedTCPPorts(peer.Ports)
+	if len(ports) == 0 || strings.TrimSpace(peer.AddonName) == "" {
+		return
+	}
+	b.WriteString("    - to:\n")
+	b.WriteString("        - podSelector:\n")
+	b.WriteString("            matchLabels:\n")
+	if strings.TrimSpace(peer.Kind) != "" {
+		b.WriteString("              kuberpack.io/addon: " + peer.Kind + "\n")
+	}
+	b.WriteString("              kuberpack.io/addon-name: " + peer.AddonName + "\n")
+	b.WriteString("              kuberpack.io/for: " + project + "\n")
+	writeTCPPorts(b, ports)
+}
+
 // addonNetworkPolicy renders the network isolation of the pods of an addon.
 //
 // The pods of an addon are reachable by the applications of their project
 // and by nothing else. Without this policy, a database is reachable by
 // every pod of the cluster.
-func addonNetworkPolicy(name, namespace, kind, addonName, project string, ports []int, operatorNamespace string, clients AddonSpec) string {
+//
+// La même policy ferme l'egress des pods : ils joignent le DNS, l'API et
+// l'opérateur quand le moteur en a besoin, les autres instances du même
+// addon, et le stockage nommé par backup.s3. Une règle qui n'est pas écrite
+// est un flux qui est refusé.
+func addonNetworkPolicy(name, namespace, kind, addonName, project string, ports []int, egress addonEgress, clients AddonSpec) string {
 	var b strings.Builder
 	b.WriteString("# Generated by Kuberpack from the project manifest.\n")
 	b.WriteString("# The pods of the addon are reachable by the applications of the project,\n")
-	b.WriteString("# and by nothing else.\n")
+	b.WriteString("# and by nothing else. They reach only what the engine needs.\n")
 	b.WriteString("apiVersion: networking.k8s.io/v1\n")
 	b.WriteString("kind: NetworkPolicy\n")
 	b.WriteString("metadata:\n")
@@ -204,7 +341,7 @@ func addonNetworkPolicy(name, namespace, kind, addonName, project string, ports 
 	b.WriteString("      kuberpack.io/addon: " + kind + "\n")
 	b.WriteString("      kuberpack.io/addon-name: " + addonName + "\n")
 	b.WriteString("      kuberpack.io/for: " + project + "\n")
-	b.WriteString("  policyTypes: [Ingress]\n")
+	b.WriteString("  policyTypes: [Ingress, Egress]\n")
 	b.WriteString("  ingress:\n")
 	b.WriteString("    - from:\n")
 	for _, client := range clients.ServiceClients {
@@ -221,14 +358,58 @@ func addonNetworkPolicy(name, namespace, kind, addonName, project string, ports 
 		b.WriteString("              kuberpack.io/addon-name: " + client + "\n")
 		b.WriteString("              kuberpack.io/for: " + project + "\n")
 	}
-	if operatorNamespace != "" {
+	if strings.TrimSpace(egress.OperatorNamespace) != "" {
 		b.WriteString("        - namespaceSelector:\n")
 		b.WriteString("            matchLabels:\n")
-		b.WriteString("              kubernetes.io/metadata.name: " + operatorNamespace + "\n")
+		b.WriteString("              kubernetes.io/metadata.name: " + egress.OperatorNamespace + "\n")
 	}
 	b.WriteString("      ports:\n")
 	for _, port := range ports {
 		b.WriteString("        - { protocol: TCP, port: " + strconv.Itoa(port) + " }\n")
+	}
+	b.WriteString("  egress:\n")
+	writeAddonDNSEgress(&b)
+	if egress.KubernetesAPI {
+		writeAddonAPIEgress(&b)
+	}
+	writeAddonOperatorEgress(&b, egress.OperatorNamespace, egress.OperatorPorts)
+	writeAddonPeerEgress(&b, addonEgressPeer{AddonName: addonName, Ports: egress.ReplicaPorts}, project)
+	for _, peer := range egress.Peers {
+		writeAddonPeerEgress(&b, peer, project)
+	}
+	return b.String()
+}
+
+// addonHelperNetworkPolicy écrit l'egress d'un Job helper d'un addon (le
+// bootstrap de ses credentials, le dump de ses données, la création de son
+// bucket).
+//
+// Un helper n'est pas une instance de l'addon : il ne joint que l'API, la
+// base ou le stockage qu'il utilise. Son ingress est déjà refusé par le
+// default deny du namespace.
+func addonHelperNetworkPolicy(name, namespace, project, addonName, helper string, api bool, peers []addonEgressPeer) string {
+	var b strings.Builder
+	b.WriteString("# Generated by Kuberpack from the project manifest.\n")
+	b.WriteString("# A helper Job of the addon reaches only what it uses.\n")
+	b.WriteString("apiVersion: networking.k8s.io/v1\n")
+	b.WriteString("kind: NetworkPolicy\n")
+	b.WriteString("metadata:\n")
+	b.WriteString("  name: " + name + "-" + helper + "\n")
+	b.WriteString("  namespace: " + namespace + "\n")
+	b.WriteString("spec:\n")
+	b.WriteString("  podSelector:\n")
+	b.WriteString("    matchLabels:\n")
+	b.WriteString("      kuberpack.io/helper: " + helper + "\n")
+	b.WriteString("      kuberpack.io/addon-name: " + addonName + "\n")
+	b.WriteString("      kuberpack.io/for: " + project + "\n")
+	b.WriteString("  policyTypes: [Egress]\n")
+	b.WriteString("  egress:\n")
+	writeAddonDNSEgress(&b)
+	if api {
+		writeAddonAPIEgress(&b)
+	}
+	for _, peer := range peers {
+		writeAddonPeerEgress(&b, peer, project)
 	}
 	return b.String()
 }
@@ -240,7 +421,10 @@ func addonNetworkPolicy(name, namespace, kind, addonName, project string, ports 
 // and it is never in the repository. The Job is idempotent: the secret it
 // created is kept, so the password does not change under the feet of the
 // applications.
-func addonBootstrap(name, namespace, image, secret string, keys []string) (job string, rbac string) {
+//
+// Le pod porte les labels d'un helper, pas ceux d'un addon : sa policy
+// d'egress est celle d'un helper, pas celle d'une base.
+func addonBootstrap(name, namespace, project, addonName, image, secret string, keys []string) (job string, rbac string) {
 	script := `set -eu
 SA=/var/run/secrets/kubernetes.io/serviceaccount
 API=https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT_HTTPS:-443}
@@ -277,7 +461,9 @@ echo "the credentials are born"
 	b.WriteString("  template:\n")
 	b.WriteString("    metadata:\n")
 	b.WriteString("      labels:\n")
-	b.WriteString("        kuberpack.io/addon: " + name + "\n")
+	b.WriteString("        kuberpack.io/helper: bootstrap\n")
+	b.WriteString("        kuberpack.io/addon-name: " + addonName + "\n")
+	b.WriteString("        kuberpack.io/for: " + project + "\n")
 	b.WriteString("    spec:\n")
 	b.WriteString("      restartPolicy: Never\n")
 	b.WriteString("      serviceAccountName: " + name + "-bootstrap\n")
