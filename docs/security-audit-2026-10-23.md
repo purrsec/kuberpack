@@ -52,6 +52,8 @@ gérés par un Helmfile indépendant ne sont pas remplacés par cette passe.
 | `doctor network` sur le banc k3s `v1.37.1+k3s1` | Moteur kube-router/k3s détecté ; contrôle positif joignable, puis deny-all bloqué, verdict « appliquée » ; namespace temporaire supprimé. Aucun Secret lu. |
 | Isolation des projets sur le banc Docker | `tenant_isolation=passed` : namespace possédé, ServiceAccount sans jeton, RoleBinding limité à `kuberpack-tenant`, Kustomization Flux par projet, identité autorisée dans son namespace et refusée dans `kube-system`. |
 | Rotation réelle d’un secret Infisical | Pod remplacé par `kuberpack-reloader` après la rotation ; l’empreinte servie par HTTPS correspond à la nouvelle valeur. Le Secret seul ne suffisait pas (`AFFECTED DEPLOYMENTS 0`) : le reloader est requis. |
+| Jetons API de projet sur le banc Docker | Création d’un jeton `project`, liste des apps filtrée à son projet, `404` sur une app d’un autre projet, révocation puis `401`. Le secret n’est affiché qu’à la création et seul son SHA-256 est stocké. |
+| Périmètre Infisical par projet | Rendu de l’`InfisicalStaticSecret` avec le `project_id`, l’`auth_ref` et le `path` déclarés ; validations de paire, chemin absolu et label DNS. Le mode partagé reste le défaut ; la création du projet/identité Infisical est une opération d’administration. |
 
 Le parcours d’installation a été rejoué avec un projet applicatif neuf
 (`security-install-20261023`) : le secret chargé par le CLI Infisical est
