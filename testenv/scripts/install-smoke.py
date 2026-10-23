@@ -151,6 +151,16 @@ def main():
     bootstrap = secret("infisical-bootstrap-secret", "infisical")
     control = secret("kuberpack", "kuberpack")
     project_id = kubectl("get", "configmap", "kuberpack-installation", "-n", "kuberpack")["data"]["infisical.project"]
+    # Strict secret scope derives the per-project auth ref from the project
+    # name. The fixture reuses the shared machine identity but gives it its own
+    # InfisicalAuth object and path, which is what the compiler requires.
+    auth_name = "kuberpack-" + args.project
+    auth = kubectl("get", "infisicalauth", "kuberpack", "-n", "infisical")
+    auth["metadata"]["name"] = auth_name
+    for key in ("uid", "resourceVersion", "creationTimestamp", "generation", "managedFields", "ownerReferences", "finalizers"):
+        auth["metadata"].pop(key, None)
+    auth.pop("status", None)
+    run(["kubectl", "apply", "-f", "-"], ops, quiet=True, input=json.dumps(auth))
     developer = dict(ops, KUBECONFIG="/tmp/no-kubernetes-access", INFISICAL_DOMAIN="https://infisical.172.29.90.11.nip.io", KUBERPACK_API_URL="https://kuberpack.172.29.90.11.nip.io", KUBERPACK_API_TOKEN=control["KUBERPACK_API_TOKEN"], SSL_CERT_FILE=str(ROOT / "testenv/pki/ca-bundle-merged.crt"))
     for key in ("INFISICAL_TOKEN", "KUBERPACK_GIT_TOKEN", "KUBERPACK_REGISTRY_TOKEN", "FORGEJO_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"):
         developer.pop(key, None)
@@ -160,9 +170,13 @@ def main():
     private = workspace / "private.env"
     private.write_text("INSTALL_SMOKE_VALUE=" + value + "\n")
     private.chmod(0o600)
-    run(["infisical", "secrets", "set", "--file", private, "--projectId", project_id, "--env", "prod", "--profile", profile, "--silent"], developer, quiet=True)
+    for folder, parent in (("projects", "/"), (args.project, "/projects")):
+        subprocess.run(["infisical", "secrets", "folders", "create", "--name", folder, "--path", parent, "--env", "prod", "--projectId", project_id, "--profile", profile, "--silent"], env=developer, capture_output=True)
+    run(["infisical", "secrets", "set", "--file", private, "--projectId", project_id, "--env", "prod", "--path", "/projects/" + args.project, "--profile", profile, "--silent"], developer, quiet=True)
     manifest = project_dir / "kuberpack.yaml"
     manifest.write_text('''project: PROJECT_NAME
+infisical:
+  project_id: PROJECT_ID
 services:
   echo:
     image: docker.io/library/busybox:1.37.0
@@ -177,7 +191,7 @@ services:
 policies:
   defaultDeny: true
   internet: false
-'''.replace("PROJECT_NAME", args.project))
+'''.replace("PROJECT_NAME", args.project).replace("PROJECT_ID", project_id))
     run([cli, "project", "compile", "-f", manifest], developer)
     expected = hashlib.sha256(value.encode()).hexdigest()
     for _ in range(240):

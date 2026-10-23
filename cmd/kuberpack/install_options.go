@@ -17,7 +17,7 @@ import (
 type installCredentials struct{ Git, Registry, API, BuilderGit string }
 
 func runInstall(args []string) error {
-	c := setup.Config{Cluster: "default", Namespace: "kuberpack", BuildNamespace: "kuberpack-build", GitOpsBranch: "main", Source: "kuberpack-gitops", Ingress: true, TLS: true, Issuer: "kuberpack-letsencrypt", ClusterServices: true, Infisical: true, Image: "ghcr.io/purrsec/kuberpack:latest", BuilderImage: "ghcr.io/purrsec/kuberpack-builder:latest", Timeout: "15m"}
+	c := setup.Config{Cluster: "default", Namespace: "kuberpack", BuildNamespace: "kuberpack-build", GitOpsBranch: "main", Source: "kuberpack-gitops", Ingress: true, TLS: true, Issuer: "kuberpack-letsencrypt", ClusterServices: true, Infisical: true, RequireProjectSecrets: true, Image: "ghcr.io/purrsec/kuberpack:latest", BuilderImage: "ghcr.io/purrsec/kuberpack-builder:latest", Timeout: "15m"}
 	creds := installCredentials{Git: os.Getenv("KUBERPACK_GIT_TOKEN"), Registry: os.Getenv("KUBERPACK_REGISTRY_TOKEN"), BuilderGit: os.Getenv("KUBERPACK_BUILDER_GIT_TOKEN")}
 	fs := flag.NewFlagSet("install", flag.ContinueOnError)
 	file := fs.String("file", "", "non-secret platform configuration (YAML)")
@@ -64,7 +64,8 @@ func runInstall(args []string) error {
 	fs.StringVar(&c.WebhookURL, "webhook-url", "", "webhook URL reachable by the forge")
 	fs.BoolVar(&c.PrivateBuildEgress, "allow-private-build-egress", false, "allow builds to reach a private forge/registry")
 	fs.BoolVar(&c.ClusterServices, "cluster-services", true, "install missing cert-manager and PostgreSQL operators")
-	fs.BoolVar(&c.RequireProjectSecrets, "require-project-secrets", false, "refuse a project that declares secrets without its own Infisical project")
+	fs.BoolVar(&c.RequireProjectSecrets, "require-project-secrets", c.RequireProjectSecrets, "refuse a project that declares secrets without its own Infisical project")
+	allowShared := fs.Bool("allow-shared-secrets", false, "development escape hatch: allow the shared Infisical project for a project that declares secrets")
 	fs.BoolVar(&c.Infisical, "infisical", true, "install and configure Infisical")
 	fs.StringVar(&c.InfisicalHost, "infisical-domain", "", "Infisical hostname")
 	fs.StringVar(&c.AdminEmail, "infisical-email", "", "initial Infisical administrator email")
@@ -84,6 +85,9 @@ func runInstall(args []string) error {
 		if err := fs.Parse(args); err != nil {
 			return err
 		}
+	}
+	if *allowShared {
+		c.RequireProjectSecrets = false
 	}
 	if *interactive {
 		reader := bufio.NewReader(os.Stdin)

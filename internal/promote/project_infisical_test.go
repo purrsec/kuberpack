@@ -52,7 +52,6 @@ func TestProjectInfisicalScopeOverridesThePlatformScope(t *testing.T) {
 
 func TestProjectInfisicalScopeIsValidated(t *testing.T) {
 	for name, scope := range map[string]*InfisicalScope{
-		"missing auth":  {ProjectID: "project"},
 		"missing id":    {AuthRef: "auth"},
 		"relative path": {ProjectID: "project", AuthRef: "auth", Path: "projects/demo"},
 		"traversal":     {ProjectID: "project", AuthRef: "auth", Path: "/projects/../other"},
@@ -91,5 +90,14 @@ func TestStrictSecretScopeDerivesIdentityAndPath(t *testing.T) {
 	projectID, authRef, secretPath := infisicalScope(AppSpec{Project: "demo", InfisicalProjectID: "project-id"}, Platform{RequireProjectSecrets: true})
 	if projectID != "project-id" || authRef != "kuberpack-demo" || secretPath != "/projects/demo" {
 		t.Fatalf("scope = %q %q %q", projectID, authRef, secretPath)
+	}
+}
+
+func TestStrictSecretScopeRendersTheDerivedIdentity(t *testing.T) {
+	content := infisicalCRContent(AppSpec{Name: "web", Project: "demo", Secrets: []string{"PASSWORD"}, InfisicalProjectID: "project-id"}, Platform{RequireProjectSecrets: true, InfisicalNamespace: "infisical"})
+	for _, want := range []string{"name: kuberpack-demo", "secretPath: /projects/demo"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("CR does not contain %q:\n%s", want, content)
+		}
 	}
 }

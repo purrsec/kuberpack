@@ -1,4 +1,9 @@
 project: stirling-pdf
+# Dedicated Infisical project for this project. The identity and path are
+# derived by Kuberpack (kuberpack-stirling-pdf, /projects/stirling-pdf); the
+# administrator creates the project and the InfisicalAuth.
+infisical:
+  project_id: <uuid-du-projet-infisical>
 services:
   pdf:
     image: docker.io/stirlingtools/stirling-pdf:3.2.0

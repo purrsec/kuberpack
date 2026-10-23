@@ -228,12 +228,10 @@ func infisicalScope(spec AppSpec, p Platform) (projectID, authRef, secretPath st
 		secretPath = value
 	}
 	if p.RequireProjectSecrets {
-		if authRef == "" {
-			authRef = "kuberpack-" + sanitizeName(spec.Project)
-		}
-		if secretPath == "" {
-			secretPath = "/projects/" + sanitizeName(spec.Project)
-		}
+		// withDefaults fills the platform identity and path. In strict mode
+		// they must not leak into a project: derive both from the project.
+		authRef = "kuberpack-" + sanitizeName(spec.Project)
+		secretPath = "/projects/" + sanitizeName(spec.Project)
 	}
 	return projectID, authRef, secretPath
 }

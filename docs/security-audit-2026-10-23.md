@@ -9,12 +9,13 @@ Flux applique chaque projet avec un ServiceAccount de tenant limité à son
 namespace. Un CP compromis ne peut plus atteindre les droits du cluster ni les
 Secrets de la plateforme.
 
-Kuberpack reste **mono-tenant par défaut** : le projet/chemin Infisical est
-partagé tant que l’administrateur n’adopte pas `--require-project-secrets` et
-ne provisionne pas un projet/identité par projet. Les jetons API peuvent être
-limités à un projet, mais le jeton global reste administrateur. Les risques
-restants sont documentés ci-dessous ; ils demandent des décisions
-d’exploitation ou des clusters externes, pas seulement du code.
+Kuberpack est **strict par défaut** : un projet qui déclare des clés doit
+fournir son propre `infisical.project_id`, et l’identité/le chemin sont dérivés
+du projet. L’administrateur doit provisionner le projet et l’identité
+Infisical. `--allow-shared-secrets` reste une échappatoire de développement.
+Les jetons API peuvent être limités à un projet, mais le jeton global reste
+administrateur. Les risques restants demandent des décisions d’exploitation ou
+des clusters externes, pas seulement du code.
 
 Le VPS a été arrêté par l’utilisateur. La validation de cette reprise utilise
 uniquement le Docker local, Forgejo et k3s `v1.37.1+k3s1` à `172.29.90.11`.
@@ -59,7 +60,8 @@ gérés par un Helmfile indépendant ne sont pas remplacés par cette passe.
 | Isolation des projets sur le banc Docker | `tenant_isolation=passed` : namespace possédé, ServiceAccount sans jeton, RoleBinding limité à `kuberpack-tenant`, Kustomization Flux par projet, identité autorisée dans son namespace et refusée dans `kube-system`. |
 | Rotation réelle d’un secret Infisical | Pod remplacé par `kuberpack-reloader` après la rotation ; l’empreinte servie par HTTPS correspond à la nouvelle valeur. Le Secret seul ne suffisait pas (`AFFECTED DEPLOYMENTS 0`) : le reloader est requis. |
 | Jetons API de projet sur le banc Docker | Création d’un jeton `project`, liste des apps filtrée à son projet, `404` sur une app d’un autre projet, révocation puis `401`. Le secret n’est affiché qu’à la création et seul son SHA-256 est stocké. |
-| Périmètre Infisical par projet | Rendu de l’`InfisicalStaticSecret` avec le `project_id`, l’`auth_ref` et le `path` déclarés ; validations de paire, chemin absolu et label DNS. Le mode partagé reste le défaut ; la création du projet/identité Infisical est une opération d’administration. |
+| Périmètre Infisical par projet | Rendu de l’`InfisicalStaticSecret` avec le `project_id`, l’`auth_ref` et le `path` déclarés ; validations de chemin absolu et label DNS. En mode strict, l’identité et le chemin sont dérivés du projet. |
+| Parcours installation en mode strict | `installation=ready`, `reinstall=passed`, `human_secret_upload=passed`, `application_secret_digest=matched`, `compile_idempotence=passed`, `helmfile_coexistence=passed`, `tenant_isolation=passed`. L’`InfisicalStaticSecret` porte `authRef kuberpack-<projet>` et `secretPath /projects/<projet>`. |
 
 Le parcours d’installation a été rejoué avec un projet applicatif neuf
 (`security-install-20261023`) : le secret chargé par le CLI Infisical est
@@ -165,16 +167,15 @@ sont capturées en mémoire et ne sont pas imprimées.
    `infisical.path`; le compilateur génère alors l’`InfisicalStaticSecret` avec
    ces valeurs au lieu du projet/chemin/identité partagés. L’administrateur
    crée le projet et l’identité Infisical et accorde l’opérateur ; Kuberpack ne
-   détient aucun jeton d’administration Infisical. Le mode partagé reste le
-   défaut pour les manifestes existants : une installation qui n’adopte pas ce
-   bloc n’a pas de frontière de secrets entre projets. Un CP compromis peut
-   référencer une autre `auth_ref` déjà existante : l’administrateur doit
-   créer une identité par projet et ne pas laisser d’identité plus large
-   disponible. Le mode `--require-project-secrets` rend cette frontière
-   obligatoire : `infisical.project_id` est requis dès qu’un service déclare
-   des clés, `auth_ref` et `path` sont dérivés du projet, et une référence à
-   l’identité d’un autre projet est refusée. Il reste désactivé par défaut
-   pour les manifestes existants.
+   détient aucun jeton d’administration Infisical. Cette frontière est le
+   **défaut** : `infisical.project_id` est requis dès qu’un service déclare des
+   clés, `auth_ref` et `path` sont dérivés du projet, et une référence à
+   l’identité ou au chemin d’un autre projet est refusée. L’administrateur doit
+   créer le projet et l’identité Infisical ; un CP compromis peut encore
+   référencer une autre `auth_ref` déjà existante, donc l’administrateur ne doit
+   pas laisser d’identité plus large disponible. `--allow-shared-secrets` est
+   une échappatoire de développement qui réautorise le projet partagé ; elle
+   n’est pas destinée à la production.
 
 3. **Élevé — Ownership des namespaces externes.** Le compilateur empêche le
    partage entre projets Kuberpack et protège les namespaces connus/configurés.

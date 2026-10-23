@@ -55,8 +55,8 @@ func validateManifestFields(m ProjectManifest) error {
 		}
 	}
 	if m.Infisical != nil {
-		if (strings.TrimSpace(m.Infisical.ProjectID) == "") != (strings.TrimSpace(m.Infisical.AuthRef) == "") {
-			return fmt.Errorf("infisical: project_id and auth_ref must be set together")
+		if strings.TrimSpace(m.Infisical.ProjectID) == "" && strings.TrimSpace(m.Infisical.AuthRef) != "" {
+			return fmt.Errorf("infisical: auth_ref requires project_id")
 		}
 		for field, value := range map[string]string{"project_id": m.Infisical.ProjectID, "auth_ref": m.Infisical.AuthRef, "path": m.Infisical.Path} {
 			if err := validatePlainScalar("infisical: "+field, value); err != nil {

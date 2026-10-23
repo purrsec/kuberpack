@@ -361,11 +361,13 @@ Ce mode permet une isolation réelle des secrets entre projets. Le mode partagé
 reste le défaut pour ne pas casser les manifestes existants ; il ne protège pas
 un projet d'un autre auteur de manifeste.
 
-Avec `kuberpack install --require-project-secrets`, le bloc devient obligatoire
-dès qu'un service déclare des clés. `auth_ref` et `path` peuvent être omis :
-ils sont dérivés du projet (`kuberpack-<projet>`, `/projects/<projet>`) et un
-manifeste ne peut pas référencer l'identité ou le chemin d'un autre projet.
-L'administrateur doit créer le projet et l'identité Infisical correspondants.
+Le bloc est **obligatoire par défaut** dès qu'un service déclare des clés.
+`auth_ref` et `path` peuvent être omis : ils sont dérivés du projet
+(`kuberpack-<projet>`, `/projects/<projet>`) et un manifeste ne peut pas
+référencer l'identité ou le chemin d'un autre projet. L'administrateur doit
+créer le projet et l'identité Infisical correspondants. Pour un développement
+local uniquement, `kuberpack install --allow-shared-secrets` réautorise le
+projet partagé.
 
 ## 4. Séparation stricte des responsabilités
 
