@@ -81,6 +81,10 @@ type Platform struct {
 	// per-project ServiceAccount. The namespace is then created by the
 	// control plane provisioner, not by the project Kustomization.
 	TenantIsolation bool
+	// RequireProjectSecrets refuses a project that declares secret keys
+	// without its own Infisical project. It makes the per-project secret
+	// boundary enforceable instead of opt-in.
+	RequireProjectSecrets bool
 	// AddonImages holds the image of each addon engine, by engine name.
 	AddonImages map[string]string
 	// PostgresStorage is the size of the volume of the PostgreSQL

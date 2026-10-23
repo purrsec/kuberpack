@@ -169,6 +169,13 @@ ServiceAccount et un RoleBinding par namespace de projet, limité aux Secrets et
 Deployments de ce namespace. Il redémarre le Deployment quand l'etag du Secret
 synchronisé change ; le control plane ne lit aucun Secret.
 
+`--require-project-secrets` rend la frontière Infisical obligatoire : un projet
+qui déclare des clés doit fournir `infisical.project_id`; l'identité et le
+chemin sont alors dérivés du nom du projet (`kuberpack-<projet>`,
+`/projects/<projet>`) et un manifeste ne peut pas pointer vers l'identité d'un
+autre projet. Le mode est désactivé par défaut pour les manifestes existants ;
+il exige que l'administrateur crée le projet et l'identité Infisical.
+
 Sur une installation historique à un seul dépôt, l'ancienne Kustomization
 globale des projets est suspendue, jamais supprimée avec `prune` : la supprimer
 effacerait les namespaces et les workloads de son inventaire. Les projets déjà

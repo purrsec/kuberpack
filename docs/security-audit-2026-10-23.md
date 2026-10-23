@@ -164,7 +164,11 @@ sont capturées en mémoire et ne sont pas imprimées.
    bloc n’a pas de frontière de secrets entre projets. Un CP compromis peut
    référencer une autre `auth_ref` déjà existante : l’administrateur doit
    créer une identité par projet et ne pas laisser d’identité plus large
-   disponible.
+   disponible. Le mode `--require-project-secrets` rend cette frontière
+   obligatoire : `infisical.project_id` est requis dès qu’un service déclare
+   des clés, `auth_ref` et `path` sont dérivés du projet, et une référence à
+   l’identité d’un autre projet est refusée. Il reste désactivé par défaut
+   pour les manifestes existants.
 
 3. **Élevé — Ownership des namespaces externes.** Le compilateur empêche le
    partage entre projets Kuberpack et protège les namespaces connus/configurés.

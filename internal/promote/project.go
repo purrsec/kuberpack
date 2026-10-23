@@ -598,6 +598,9 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 		net = BoolPtr(false)
 	}
 	namespace := projectNamespace(m, project)
+	if err := validateProjectSecretScope(m, p); err != nil {
+		return nil, nil, nil, err
+	}
 	// The NetworkPolicy of the services follows the policy of the project.
 	isolated := m.Policies.defaultDenyEnabled()
 

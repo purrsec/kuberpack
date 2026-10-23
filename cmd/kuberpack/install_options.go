@@ -64,6 +64,7 @@ func runInstall(args []string) error {
 	fs.StringVar(&c.WebhookURL, "webhook-url", "", "webhook URL reachable by the forge")
 	fs.BoolVar(&c.PrivateBuildEgress, "allow-private-build-egress", false, "allow builds to reach a private forge/registry")
 	fs.BoolVar(&c.ClusterServices, "cluster-services", true, "install missing cert-manager and PostgreSQL operators")
+	fs.BoolVar(&c.RequireProjectSecrets, "require-project-secrets", false, "refuse a project that declares secrets without its own Infisical project")
 	fs.BoolVar(&c.Infisical, "infisical", true, "install and configure Infisical")
 	fs.StringVar(&c.InfisicalHost, "infisical-domain", "", "Infisical hostname")
 	fs.StringVar(&c.AdminEmail, "infisical-email", "", "initial Infisical administrator email")

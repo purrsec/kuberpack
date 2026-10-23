@@ -56,16 +56,17 @@ type Config struct {
 	BuilderNodeSelector string `yaml:"builderNodeSelector,omitempty"`
 	// BuilderTolerations est un tableau JSON de tolérances qui permet aux
 	// builds d'occuper le pool tainté. Vide garde le défaut historique.
-	BuilderTolerations string `yaml:"builderTolerations,omitempty"`
-	NodePort           int    `yaml:"nodePort,omitempty"`
-	WebhookURL         string `yaml:"webhookURL,omitempty"`
-	PrivateBuildEgress bool   `yaml:"privateBuildEgress,omitempty"`
-	ClusterServices    bool   `yaml:"clusterServices"`
-	Infisical          bool   `yaml:"infisical"`
-	InfisicalHost      string `yaml:"infisicalHost,omitempty"`
-	AdminEmail         string `yaml:"adminEmail,omitempty"`
-	CAFile             string `yaml:"-"`
-	Timeout            string `yaml:"timeout"`
+	BuilderTolerations    string `yaml:"builderTolerations,omitempty"`
+	NodePort              int    `yaml:"nodePort,omitempty"`
+	WebhookURL            string `yaml:"webhookURL,omitempty"`
+	PrivateBuildEgress    bool   `yaml:"privateBuildEgress,omitempty"`
+	ClusterServices       bool   `yaml:"clusterServices"`
+	RequireProjectSecrets bool   `yaml:"requireProjectSecrets,omitempty"`
+	Infisical             bool   `yaml:"infisical"`
+	InfisicalHost         string `yaml:"infisicalHost,omitempty"`
+	AdminEmail            string `yaml:"adminEmail,omitempty"`
+	CAFile                string `yaml:"-"`
+	Timeout               string `yaml:"timeout"`
 }
 
 // ProjectsPath is where project manifests live in the applications

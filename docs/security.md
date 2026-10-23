@@ -192,8 +192,12 @@ application autonome ne sont pas redémarrées. L’annotation native
 sélection, mais elle ne suffisait pas seule (l’operator mettait à jour le
 Secret sans redémarrer le pod).
 
-Le projet/chemin Infisical reste partagé. Un auteur de manifeste autorisé peut
-y demander les noms de clés d’un autre projet. Une isolation entre développeurs
+Le projet/chemin Infisical reste partagé par défaut. Un manifeste peut déclarer
+son propre `infisical.project_id`/`auth_ref`/`path` ; avec
+`--require-project-secrets`, l’identité et le chemin sont dérivés du projet et
+le manifeste ne peut pas pointer vers un autre. L’administrateur doit créer le
+projet et l’identité Infisical. Sans ce mode, un auteur de manifeste autorisé
+peut demander les noms de clés d’un autre projet. Une isolation entre développeurs
 exige des projets/chemins et identités Infisical séparés, avec migration des
 secrets existants. L’operator partagé garde accès aux projets gérés et au
 namespace Infisical contenant les credentials de bootstrap.

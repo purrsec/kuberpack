@@ -66,3 +66,30 @@ func TestProjectInfisicalScopeIsValidated(t *testing.T) {
 		})
 	}
 }
+
+func TestStrictSecretScopeRequiresTheProjectIdentity(t *testing.T) {
+	m := ProjectManifest{
+		Project: "demo",
+		Services: map[string]Service{
+			"web": {Repository: "demo/app", Secrets: []string{"PASSWORD"}},
+		},
+	}
+	if err := validateProjectSecretScope(m, Platform{RequireProjectSecrets: true}); err == nil {
+		t.Fatal("a project without its own Infisical project must be refused")
+	}
+	m.Infisical = &InfisicalScope{ProjectID: "project-id"}
+	if err := validateProjectSecretScope(m, Platform{RequireProjectSecrets: true}); err != nil {
+		t.Fatalf("a project with its own project id must be accepted: %v", err)
+	}
+	m.Infisical.AuthRef = "another-project"
+	if err := validateProjectSecretScope(m, Platform{RequireProjectSecrets: true}); err == nil {
+		t.Fatal("a project must not point at another project identity")
+	}
+}
+
+func TestStrictSecretScopeDerivesIdentityAndPath(t *testing.T) {
+	projectID, authRef, secretPath := infisicalScope(AppSpec{Project: "demo", InfisicalProjectID: "project-id"}, Platform{RequireProjectSecrets: true})
+	if projectID != "project-id" || authRef != "kuberpack-demo" || secretPath != "/projects/demo" {
+		t.Fatalf("scope = %q %q %q", projectID, authRef, secretPath)
+	}
+}

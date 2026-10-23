@@ -29,6 +29,7 @@ func (i *installation) platformValues(ctx context.Context) (map[string]any, erro
 	add("KUBERPACK_WRITE_CHARTS", strconv.FormatBool(!i.c.SplitApps()))
 	add("KUBERPACK_TENANT_ISOLATION", strconv.FormatBool(i.c.SplitApps()))
 	add("KUBERPACK_RELOADER", strconv.FormatBool(i.c.SplitApps()))
+	add("KUBERPACK_REQUIRE_PROJECT_SECRETS", strconv.FormatBool(i.c.RequireProjectSecrets))
 	add("KUBERPACK_APPS_SOURCE", func() string {
 		if i.c.SplitApps() {
 			return "kuberpack-apps"

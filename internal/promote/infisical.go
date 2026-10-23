@@ -227,7 +227,46 @@ func infisicalScope(spec AppSpec, p Platform) (projectID, authRef, secretPath st
 	if value := strings.TrimSpace(spec.InfisicalPath); value != "" {
 		secretPath = value
 	}
+	if p.RequireProjectSecrets {
+		if authRef == "" {
+			authRef = "kuberpack-" + sanitizeName(spec.Project)
+		}
+		if secretPath == "" {
+			secretPath = "/projects/" + sanitizeName(spec.Project)
+		}
+	}
 	return projectID, authRef, secretPath
+}
+
+// validateProjectSecretScope makes the per-project boundary enforceable when
+// the installation requires it: a service that declares keys must reference its
+// own Infisical project, and cannot point at another project's identity/path.
+func validateProjectSecretScope(m ProjectManifest, p Platform) error {
+	if !p.RequireProjectSecrets {
+		return nil
+	}
+	hasSecrets := false
+	for _, svc := range m.Services {
+		if len(svc.Secrets) > 0 {
+			hasSecrets = true
+			break
+		}
+	}
+	if !hasSecrets {
+		return nil
+	}
+	if m.Infisical == nil || strings.TrimSpace(m.Infisical.ProjectID) == "" {
+		return fmt.Errorf("project %q declares secrets without its own Infisical project; set infisical.project_id (and auth_ref/path if needed)", m.Project)
+	}
+	expectedAuth := "kuberpack-" + sanitizeName(m.Project)
+	expectedPath := "/projects/" + sanitizeName(m.Project)
+	if auth := strings.TrimSpace(m.Infisical.AuthRef); auth != "" && auth != expectedAuth {
+		return fmt.Errorf("project %q must use its own Infisical identity %q, not %q", m.Project, expectedAuth, auth)
+	}
+	if secretPath := strings.TrimSpace(m.Infisical.Path); secretPath != "" && secretPath != expectedPath {
+		return fmt.Errorf("project %q must use its own Infisical path %q, not %q", m.Project, expectedPath, secretPath)
+	}
+	return nil
 }
 
 func secretEnv(spec AppSpec) string {
