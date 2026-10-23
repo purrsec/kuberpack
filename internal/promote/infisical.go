@@ -10,6 +10,30 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// InfisicalAutoReloadAnnotation est l'annotation lue par l'operateur
+// Infisical sur un workload. Quand elle vaut "true", l'operateur pose l'etag
+// du Secret synchronisé sur le Deployment et sur son template de pod : le
+// changement de template déclenche un rollout, donc les pods existants
+// relisent les nouvelles valeurs.
+//
+// C'est la fonctionnalité native de l'operateur (version épinglée 0.11.13) :
+// elle ne demande ni contrôleur supplémentaire, ni droit de lecture des
+// Secrets pour le control plane. L'operateur a déjà, dans les namespaces de
+// projets, le droit de mettre à jour les Deployments.
+const InfisicalAutoReloadAnnotation = "secrets.infisical.com/auto-reload"
+
+// secretRotationEnabled indique si le service doit être redémarré par
+// l'operateur quand son Secret synchronisé change. Seul un service de projet
+// qui déclare des clés consomme un InfisicalStaticSecret : une preview, une
+// application autonome ou un service sans secret ne portent pas
+// l'annotation, et ne sont donc jamais redémarrés par une rotation.
+func secretRotationEnabled(spec AppSpec, p Platform) bool {
+	if spec.Preview || strings.TrimSpace(spec.Project) == "" || len(spec.Secrets) == 0 {
+		return false
+	}
+	return p.InfisicalEnabled()
+}
+
 // ensureSecretCR writes an InfisicalStaticSecret for the app's declared
 // Infisical keys and makes sure the parent kustomization lists it. Returns the
 // paths touched and whether anything changed. No-op when the platform has no

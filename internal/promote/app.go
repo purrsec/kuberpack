@@ -304,6 +304,14 @@ func valuesYAML(spec AppSpec, p Platform) string {
 	b.WriteString("healthcheck: " + strconv.Quote(healthcheck) + "\n")
 	b.WriteString("hostname: " + spec.Hostname + "\n")
 	b.WriteString("replicas: " + strconv.Itoa(replicaCount(spec)) + "\n")
+	// La rotation des secrets : le Deployment porte l'annotation que
+	// l'operateur Infisical lit pour redémarrer les pods lorsque la valeur
+	// synchronisée change. Le control plane n'ajoute aucun droit et ne lit
+	// aucune valeur : l'operateur reste le seul à parler à Infisical.
+	if secretRotationEnabled(spec, p) {
+		b.WriteString("deploymentAnnotations:\n")
+		b.WriteString("  " + InfisicalAutoReloadAnnotation + ": \"true\"\n")
+	}
 	b.WriteString("ingressClassName: " + p.IngressClassName + "\n")
 	if p.IngressNamespace != "" {
 		b.WriteString("ingressNamespace: " + strconv.Quote(p.IngressNamespace) + "\n")

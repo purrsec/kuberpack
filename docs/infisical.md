@@ -316,6 +316,55 @@ La colonne `SYNCED` passe à `True` quand la synchronisation a eu lieu.
 Une source doit nommer **exactement** `projectId` ou `projectSlug` : les
 deux, ou aucun, et la reconciliation échoue.
 
+## La rotation
+
+Un conteneur lit ses variables d'environnement une fois, au démarrage. Une
+nouvelle valeur synchronisée dans le Secret Kubernetes ne change donc rien
+pour un pod déjà lancé. L'operateur Infisical sait redémarrer les workloads
+qui consomment un Secret synchronisé ; Kuberpack active ce comportement.
+
+Quand un service de projet déclare `secrets`, le compilateur écrit dans ses
+valeurs :
+
+```yaml
+deploymentAnnotations:
+  secrets.infisical.com/auto-reload: "true"
+```
+
+Le chart `stateless` (0.1.8 et suivants) reporte cette annotation sur les
+métadonnées du Deployment. À chaque synchronisation qui modifie réellement
+le Secret, l'operateur liste les Deployments du namespace cible, retient
+ceux qui portent l'annotation **et** consomment le Secret par `env`,
+`envFrom` ou volume, puis pose l'etag du Secret sur le Deployment et sur son
+template de pod. Le changement de template déclenche un rollout : les
+nouveaux pods lisent les nouvelles valeurs. L'annotation n'est réécrite que
+si l'etag change : une synchronisation sans modification ne redémarre rien.
+L'implémentation est celle de l'operator épinglé ([auto-reload dans
+`internal/services/infisicalstaticsecret`](https://github.com/Infisical/kubernetes-operator/blob/infisical-k8-operator/v0.11.13/internal/services/infisicalstaticsecret/reconciler.go)).
+
+L'annotation n'est posée que sur un service de projet qui déclare des clés.
+Une preview, une application autonome ou un service sans secret ne la porte
+pas : une rotation ne les redémarre jamais. Le control plane ne gagne aucun
+droit et ne lit aucune valeur ; l'operateur reste le seul composant qui
+parle à Infisical et le seul à écrire le Secret, dans les namespaces que son
+scope GitOps lui donne déjà.
+
+Une installation existante doit recevoir le chart à jour (`kuberpack
+install`, qui recopie `charts/stateless` dans le dépôt GitOps) avant que
+l'annotation ne soit rendue. Vérification :
+
+```bash
+kubectl -n <namespace-projet> get deploy <app> \
+  -o jsonpath='{.metadata.annotations.secrets\.infisical\.com/auto-reload}'
+kubectl -n <namespace-projet> rollout status deploy/<app>
+```
+
+Limites : la rotation automatique suppose que le processus relit ses
+variables au démarrage, ce qui est le cas après le rollout. Renouveler un
+mot de passe de base de données demande toujours d'agir des deux côtés
+(Infisical et le serveur) ; l'isolation des projets/chemins Infisical reste
+le risque distinct décrit dans [security.md](security.md).
+
 ## Le CLI
 
 Le CLI d'Infisical parle à l'instance auto-hébergée comme à n'importe

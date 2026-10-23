@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -174,6 +175,13 @@ func TestInfisicalChartsEnforceScopeAndRuntimeHardening(t *testing.T) {
 						if object.GetNamespace() != "infisical" && object.GetNamespace() != "demo-runtime" {
 							t.Fatal("operator role escaped namespace scope")
 						}
+						// La rotation native de l'operateur réutilise ce
+						// droit : il met à jour le Deployment pour changer
+						// le template de pod et déclencher le rollout.
+						rules, _, _ := unstructured.NestedSlice(object.Object, "rules")
+						if !roleAllows(rules, "apps", "deployments", "update") {
+							t.Fatalf("%s: la rotation des secrets exige deployments/update dans le namespace du projet", name)
+						}
 					}
 				}
 			}
@@ -185,4 +193,18 @@ func TestInfisicalChartsEnforceScopeAndRuntimeHardening(t *testing.T) {
 			t.Fatalf("scoped roles=%d", scopeRoles)
 		}
 	}
+}
+
+// roleAllows indique si un Role accorde un verbe sur une ressource d'un groupe.
+func roleAllows(rules []any, group, resource, verb string) bool {
+	for _, raw := range rules {
+		rule, _ := raw.(map[string]any)
+		groups, _, _ := unstructured.NestedStringSlice(rule, "apiGroups")
+		resources, _, _ := unstructured.NestedStringSlice(rule, "resources")
+		verbs, _, _ := unstructured.NestedStringSlice(rule, "verbs")
+		if slices.Contains(groups, group) && slices.Contains(resources, resource) && slices.Contains(verbs, verb) {
+			return true
+		}
+	}
+	return false
 }

@@ -10,6 +10,12 @@ metadata:
   name: {{ include "stateless.fullname" . }}
   labels:
     {{- include "stateless.labels" . | nindent 4 }}
+  {{- with .Values.deploymentAnnotations }}
+  # L'annotation est portée par le Deployment, pas par le pod : c'est là que
+  # l'operateur Infisical pose l'etag du Secret et déclenche le redémarrage.
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   replicas: {{ .Values.replicas }}
   {{- if $persistent }}

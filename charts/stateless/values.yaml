@@ -3,6 +3,12 @@ port: 8080
 healthcheck: /
 hostname: ""
 replicas: 1
+# Annotations du Deployment (métadonnées du workload, pas du pod). Le
+# compilateur y pose `secrets.infisical.com/auto-reload` quand l'application
+# consomme un Secret synchronisé par l'operateur Infisical : l'operateur
+# redémarre alors les pods quand la valeur change. Vide par défaut : une
+# application qui ne déclare pas de secret n'est jamais redémarrée.
+deploymentAnnotations: {}
 ingressClassName: ""
 ingressPodSelector:
   app.kubernetes.io/name: traefik

@@ -136,6 +136,21 @@ sont capturées en mémoire et ne sont pas imprimées.
    final utilise donc un projet applicatif neuf. Il ne démontre pas une rotation
    automatique des secrets d’un processus existant.
 
+   **Corrigé côté compilation, à revalider sur le banc.** Le compilateur pose
+   désormais `secrets.infisical.com/auto-reload` sur le Deployment d’un service
+   de projet qui déclare des clés, et le chart `stateless` 0.1.8 reporte
+   l’annotation. L’operator Infisical épinglé (0.11.13) pose l’etag du Secret
+   synchronisé sur le Deployment et son template de pod, ce qui déclenche le
+   rollout ; il ne le fait que si le Secret a réellement changé et si le pod
+   consomme le Secret. Aucun composant, ServiceAccount ou droit supplémentaire
+   n’est ajouté, et le control plane ne lit toujours aucune valeur. Une
+   application sans secret, une preview et une application autonome ne portent
+   pas l’annotation. Restent à vérifier sur cluster : le rollout effectif après
+   une rotation Infisical, le comportement d’une application à volume
+   persistant (stratégie `Recreate`), et la conservation de l’etag de l’operator
+   lors des upgrades Helm. La rotation d’un mot de passe côté serveur de bases
+   de données reste une opération manuelle des deux côtés.
+
 8. **Moyen — Résilience API/SSRF.** Les limites ajoutées ne constituent pas une
    politique complète de quotas par utilisateur, d’anti-rejeu ou d’egress du CP.
    Une référence de registre arbitraire mérite une revue SSRF et une politique
