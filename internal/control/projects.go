@@ -1,11 +1,15 @@
 package control
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"git.host.bzh/pepe/kuberpack/internal/promote"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type projectBody struct {
@@ -36,6 +40,9 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		Manifest:     m,
 		Raw:          body.Manifest,
 		Platform:     s.cfg.Platform,
+		NamespaceCheck: func(project, namespace string) error {
+			return s.checkNamespaceOwnership(r.Context(), project, namespace)
+		},
 	})
 	if err != nil {
 		http.Error(w, "compile failed: "+err.Error(), http.StatusBadGateway)
@@ -49,6 +56,37 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, projectJSON(res))
+}
+
+// checkNamespaceOwnership refuses to write a project into a namespace that
+// already exists for somebody else. A GitOps apply would otherwise adopt it,
+// extend the Infisical operator scope to it and expose its Secrets.
+//
+// The generated Namespace carries kuberpack.io/project. An administrator who
+// deliberately wants to adopt an existing namespace annotates it with
+// kuberpack.io/adopt=<project>. The historical layout, where Flux already
+// owns the namespace through the projects Kustomization, stays accepted.
+func (s *Server) checkNamespaceOwnership(ctx context.Context, project, namespace string) error {
+	if s.cfg.Kube == nil {
+		return nil
+	}
+	ns, err := s.cfg.Kube.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read namespace %q: %w", namespace, err)
+	}
+	if ns.Labels["kuberpack.io/project"] == project {
+		return nil
+	}
+	if ns.Annotations["kuberpack.io/adopt"] == project {
+		return nil
+	}
+	if ns.Labels["app.kubernetes.io/part-of"] == "kuberpack" && ns.Labels["kustomize.toolkit.fluxcd.io/name"] == "kuberpack-projects" {
+		return nil
+	}
+	return fmt.Errorf("namespace %q already exists and is not owned by Kuberpack project %q; delete it, choose another namespace, or annotate it kuberpack.io/adopt=%q", namespace, project, project)
 }
 
 func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {

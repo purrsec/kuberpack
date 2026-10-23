@@ -27,6 +27,9 @@ type ReloadRequest struct {
 	// project of the repository.
 	Projects []string
 	Platform Platform
+	// NamespaceCheck refuses the implicit adoption of an existing
+	// namespace before the project is compiled into it.
+	NamespaceCheck func(project, namespace string) error
 }
 
 // ReloadResult is the outcome of a reload.
@@ -116,6 +119,12 @@ func ReloadProjects(ctx context.Context, req ReloadRequest) (ReloadResult, error
 			// The platform must fit in the node. It is the total that
 			// kills a cluster, not one project: the project that tips
 			// the total over is refused, and the others are deployed.
+			if req.NamespaceCheck != nil {
+				if err := req.NamespaceCheck(name, ProjectNamespace(manifest, name)); err != nil {
+					result.Refused = append(result.Refused, name+": "+err.Error())
+					continue
+				}
+			}
 			if err := checkClusterAddition(work, platform, manifest); err != nil {
 				result.Refused = append(result.Refused, name+": "+err.Error())
 				continue

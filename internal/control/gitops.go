@@ -142,6 +142,9 @@ func (s *Server) handleGitOpsPush(ctx context.Context, payload pushPayload) erro
 		AuthArgs:     s.cfg.Provider.CloneAuth(s.cfg.Token),
 		Projects:     projects,
 		Platform:     s.cfg.Platform,
+		NamespaceCheck: func(project, namespace string) error {
+			return s.checkNamespaceOwnership(ctx, project, namespace)
+		},
 	})
 	if err != nil {
 		s.publishStatusOnCommit(ctx, owner, repo, payload.After, git.StatusFailure,

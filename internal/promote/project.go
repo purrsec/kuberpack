@@ -287,6 +287,10 @@ type ProjectRequest struct {
 	// Raw is the caller's exact manifest text; written verbatim so comments
 	// and ordering survive. Falls back to a re-marshal when empty.
 	Raw string
+	// NamespaceCheck is called before any write, with the project and the
+	// namespace it wants. It lets the control plane refuse the implicit
+	// adoption of a namespace that belongs to somebody else.
+	NamespaceCheck func(project, namespace string) error
 }
 
 // authArgs is how the clone of the GitOps repository is authenticated.
@@ -413,6 +417,11 @@ func EnsureProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 	}
 	project := sanitizeName(req.Manifest.Project)
 	result := ProjectResult{Project: project}
+	if req.NamespaceCheck != nil {
+		if err := req.NamespaceCheck(project, ProjectNamespace(req.Manifest, project)); err != nil {
+			return result, err
+		}
+	}
 
 	// The project must fit in the node. A cluster that does not have
 	// enough memory does not fail cleanly: the kernel kills the biggest
@@ -750,7 +759,7 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 	resources = append(resources, addons...)
 	// The namespace of the project is created by the project itself: Flux
 	// applies it with the rest.
-	if err := writeFile(filepath.Join(projectDir, "namespace.yaml"), RenderProjectNamespace(namespace)); err != nil {
+	if err := writeFile(filepath.Join(projectDir, "namespace.yaml"), RenderProjectNamespace(namespace, project)); err != nil {
 		return nil, nil, nil, err
 	}
 	if err := writeFile(filepath.Join(projectDir, "networkpolicy.yaml"), RenderProjectDefaultDeny(namespace)); err != nil {
@@ -864,6 +873,12 @@ func writeServiceValues(path string, spec AppSpec, p Platform) error {
 
 // projectNamespace is the namespace the resources of a project land in. It
 // defaults to the name of the project.
+// ProjectNamespace exposes the namespace a manifest wants, for the
+// preflight ownership check of the control plane.
+func ProjectNamespace(m ProjectManifest, project string) string {
+	return projectNamespace(m, project)
+}
+
 func projectNamespace(m ProjectManifest, project string) string {
 	if ns := strings.TrimSpace(m.Namespace); ns != "" {
 		return sanitizeName(ns)
@@ -890,9 +905,10 @@ func serviceEnv(svc Service) []EnvVar {
 }
 
 // RenderProjectNamespace renders the Namespace object of a project.
-func RenderProjectNamespace(namespace string) string {
+func RenderProjectNamespace(namespace, project string) string {
 	return "apiVersion: v1\nkind: Namespace\nmetadata:\n  name: " + namespace +
-		"\n  labels:\n    app.kubernetes.io/part-of: kuberpack\n    pod-security.kubernetes.io/enforce: baseline\n    pod-security.kubernetes.io/audit: restricted\n    pod-security.kubernetes.io/warn: restricted\n"
+		"\n  labels:\n    app.kubernetes.io/part-of: kuberpack\n    kuberpack.io/project: " + project +
+		"\n    pod-security.kubernetes.io/enforce: baseline\n    pod-security.kubernetes.io/audit: restricted\n    pod-security.kubernetes.io/warn: restricted\n"
 }
 
 // serviceHasPinnedImage reports whether the service already carries a
