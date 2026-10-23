@@ -2,12 +2,14 @@ package builder
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
@@ -267,5 +269,65 @@ func TestTheVolumesOfABuildFollowTheNode(t *testing.T) {
 	work, cache, tmp = unknown.volumeSizes()
 	if work.String() != "3Gi" || cache.String() != "2Gi" || tmp.String() != "1Gi" {
 		t.Errorf("the default volumes are %v, %v, %v", work, cache, tmp)
+	}
+}
+
+func TestEvictedBuildReportsThePodReasonWhenContainerLogsAreGone(t *testing.T) {
+	client := fake.NewSimpleClientset(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "build", Namespace: "builds", Labels: map[string]string{"job-name": "build"}},
+		Status:     corev1.PodStatus{Phase: corev1.PodFailed, Reason: "Evicted", Message: `Usage of EmptyDir volume "buildkit-cache" exceeds the limit "1050M".`},
+	})
+	runner := &JobRunner{Client: client}
+	message := runner.podFailureMessage(context.Background(), &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "build", Namespace: "builds"}})
+	if !strings.Contains(message, "Evicted") || !strings.Contains(message, "buildkit-cache") {
+		t.Fatalf("the failure must preserve the eviction diagnosis: %q", message)
+	}
+}
+
+func TestNativeBuildKitSidecarOOMExplainsTheDisconnectedBuilder(t *testing.T) {
+	for _, restarted := range []bool{false, true} {
+		status := corev1.ContainerStatus{Name: "buildkitd"}
+		termination := &corev1.ContainerStateTerminated{Reason: "OOMKilled", ExitCode: 137}
+		if restarted {
+			status.LastTerminationState.Terminated = termination
+		} else {
+			status.State.Terminated = termination
+		}
+		client := fake.NewSimpleClientset(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "build", Namespace: "builds", Labels: map[string]string{"job-name": "build"}}, Spec: corev1.PodSpec{InitContainers: []corev1.Container{{Name: "buildkitd", Resources: corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("2Gi")}}}}}, Status: corev1.PodStatus{InitContainerStatuses: []corev1.ContainerStatus{status}, ContainerStatuses: []corev1.ContainerStatus{{Name: "builder", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Message: "image: buildctl failed: exit status 1"}}}}}})
+		message := (&JobRunner{Client: client}).podFailureMessage(context.Background(), &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "build", Namespace: "builds"}})
+		for _, part := range []string{"buildkitd", "OOMKilled", "2Gi"} {
+			if !strings.Contains(message, part) {
+				t.Fatalf("sidecar OOM lost: %s", message)
+			}
+		}
+	}
+}
+
+func TestDiskAdmissionIncludesActiveBuildKitLayers(t *testing.T) {
+	runner := &JobRunner{Client: fake.NewSimpleClientset(), Image: "registry.test/builder:1", NodeDisk: "35G"}
+	job, err := runner.NewJob(testRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var required, allocated int64
+	for _, env := range job.Spec.Template.Spec.Containers[0].Env {
+		if env.Name == "KUBERPACK_BUILD_DISK_NEED" {
+			value, err := strconv.ParseInt(env.Value, 10, 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			required = value
+		}
+	}
+	for _, volume := range job.Spec.Template.Spec.Volumes {
+		if volume.EmptyDir != nil && volume.EmptyDir.SizeLimit != nil {
+			allocated += volume.EmptyDir.SizeLimit.Value()
+			if volume.Name == "buildkit-cache" && volume.EmptyDir.SizeLimit.Value() < 2<<30 {
+				t.Fatal("a normal Node build must not be evicted at the old 1050 MB cache limit")
+			}
+		}
+	}
+	if required == 0 || required != allocated {
+		t.Fatalf("disk admission reserves %d bytes for %d bytes of bounded build volumes", required, allocated)
 	}
 }

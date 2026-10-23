@@ -40,7 +40,15 @@ func (s *Server) reconcileApps(ctx context.Context, project string, apps []promo
 
 	var errs []error
 	declared := make(map[string]bool, len(apps))
+	var published []store.App
 	for _, desc := range apps {
+		if desc.Repository == "" {
+			record := appFromManifest(project, desc)
+			record.Image = desc.Image
+			record.Autodeploy = false
+			published = append(published, record)
+			continue
+		}
 		declared[desc.Name] = true
 		if err := s.reconcileApp(ctx, project, desc, previous[desc.Name]); err != nil {
 			errs = append(errs, err)
@@ -53,6 +61,9 @@ func (s *Server) reconcileApps(ctx context.Context, project string, apps []promo
 		if err := s.removeApp(ctx, app); err != nil {
 			errs = append(errs, err)
 		}
+	}
+	if err := s.cfg.Store.SyncImageApps(ctx, project, published); err != nil {
+		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
 }
@@ -139,12 +150,16 @@ func (s *Server) ensurePullSecret(ctx context.Context, namespace string) error {
 	if user == "" {
 		user = "token"
 	}
-	auth := base64.StdEncoding.EncodeToString([]byte(user + ":" + s.cfg.Token))
+	token := s.cfg.RegistryToken
+	if token == "" {
+		token = s.cfg.Token
+	} // compatibility with installations predating separate registry credentials
+	auth := base64.StdEncoding.EncodeToString([]byte(user + ":" + token))
 	payload, err := json.Marshal(map[string]any{
 		"auths": map[string]any{
 			host: map[string]string{
 				"username": user,
-				"password": s.cfg.Token,
+				"password": token,
 				"auth":     auth,
 			},
 		},
@@ -200,6 +215,7 @@ func appFromManifest(project string, desc promote.ProjectApp) store.App {
 	return store.App{
 		Name:              desc.Name,
 		Project:           project,
+		Namespace:         desc.Namespace,
 		ValuesPath:        desc.ValuesPath,
 		ForgejoRepository: desc.Repository,
 		ProductionBranch:  desc.Branch,

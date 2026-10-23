@@ -200,26 +200,13 @@ func TestProjectServiceWithoutReplicasRunsOneInstance(t *testing.T) {
 	}
 }
 
-// defaultDeny: false opts a service out of the NetworkPolicy.
-func TestProjectWithoutDefaultDenyHasNoNetworkPolicy(t *testing.T) {
-	bare := setupAppsGitOps(t)
-	m := ProjectManifest{
-		Project: "demo",
-		Services: map[string]Service{
-			"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "app.example.org"},
-		},
-		Policies: Policy{DefaultDeny: BoolPtr(false)},
-	}
-	if _, err := EnsureProject(context.Background(), ProjectRequest{
-		GitOpsURL: bare, GitOpsBranch: "main", Manifest: m,
-		Platform: Platform{NetworkPolicy: true, AddonOperators: []string{"cnpg"}},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	clone := readRemoteTree(t, bare)
-	values := readFile(t, clone, "kubernetes/vps/projects/demo/app/values.yaml")
-	if !strings.Contains(values, "networkPolicy:\n  enabled: false") {
-		t.Fatalf("networkPolicy:\n%s", values)
+// Project isolation cannot be disabled by the application manifest.
+func TestProjectCannotDisableIsolation(t *testing.T) {
+	m := ProjectManifest{Project: "demo", Services: map[string]Service{
+		"app": {Repository: "demo/app"},
+	}, Policies: Policy{DefaultDeny: BoolPtr(false)}}
+	if err := validateManifest(m); err == nil {
+		t.Fatal("project opted out of its isolation boundary")
 	}
 }
 

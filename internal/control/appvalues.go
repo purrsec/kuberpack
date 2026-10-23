@@ -120,6 +120,9 @@ func (s *Server) forceRelease(ctx context.Context, namespace, name string) error
 // dynamicClient builds a client for the resources of Flux, which have no
 // Go type.
 func (s *Server) dynamicClient() (dynamic.Interface, error) {
+	if s.cfg.KubeDynamic != nil {
+		return s.cfg.KubeDynamic, nil
+	}
 	if s.cfg.KubeConfig == nil {
 		return nil, fmt.Errorf("the cluster is not known")
 	}

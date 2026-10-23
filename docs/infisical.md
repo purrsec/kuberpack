@@ -9,12 +9,19 @@ plane.
 
 L'installation suit la [notice officielle](https://infisical.com/docs/self-hosting/deployment-options/kubernetes-helm).
 
+Le parcours courant passe par [`kuberpack install`](install.md). Il installe
+les charts, crée le projet de secrets, configure une identité Kubernetes de
+lecture dédiée et donne l'accès au compte humain initial. Les clés de
+chiffrement et mots de passe existants sont conservés. Les sections manuelles
+ci-dessous décrivent aussi le déploiement historique sur k3s ; ses valeurs
+Traefik ne sont pas des prérequis universels du produit.
+
 ## Ce qu'il faut
 
 | | |
 | --- | --- |
-| Un cluster Kubernetes | 1.23 ou plus |
-| Helm | 3.11.3 ou plus |
+| Un cluster Kubernetes | compatible avec les versions des composants épinglés ; voir l'installation |
+| Helm | bibliothèque Go embarquée ; CLI Helm uniquement pour le parcours manuel |
 | Le dépôt des charts | `helm repo add infisical-helm-charts 'https://dl.cloudsmith.io/public/infisical/helm-charts/helm/charts/'` |
 
 Deux charts sont installés :
@@ -26,7 +33,9 @@ Deux charts sont installés :
 
 ## Les valeurs
 
-Les valeurs sont dans [`infisical-values.yaml`](infisical-values.yaml).
+Un exemple manuel k3s est dans [`infisical-values.yaml`](infisical-values.yaml).
+L'installateur génère ses propres valeurs et fournit les mots de passe de
+PostgreSQL et Redis par un Secret de valeurs Helm, jamais dans Git.
 Trois points méritent une explication.
 
 **Le chart embarque son propre ingress-nginx.** Le cluster a déjà Traefik :
@@ -44,17 +53,17 @@ notice pour une installation de démonstration. En production, la notice
 demande des bases gérées à l'extérieur ; le cluster a déjà l'opérateur
 CloudNativePG, qui sait faire le même travail.
 
-## L'installation en une commande
+## Ce que prépare la commande install
 
-L'opérateur n'écrit aucun YAML. Une commande pose tout : le namespace,
-les secrets, le certificat, l'instance, l'opérateur, les comptes de
-service, la délégation d'authentification, la connexion et
-l'authentification.
+La commande crée le namespace, les secrets, le certificat, les charts,
+les comptes de service et les objets de connexion de l'opérateur.
+Elle effectue également les étapes API nécessaires au raccordement.
 
 ```bash
 kuberpack install \
   --git-url https://api.github.com \
   --gitops-url https://github.com/vous/deploiement.git \
+  --host kuberpack.exemple.org --acme-email ops@exemple.org \
   --git-token <jeton de lecture> \
   --registry-url ghcr.io --registry-user vous \
   --registry-token <jeton de build> \
@@ -65,16 +74,16 @@ L'identité de la machine n'est pas demandée : le chart amorce l'instance
 et dépose son jeton dans un Secret, la commande le lit et crée les
 objets de l'opérateur avec.
 
-L'installation est idempotente, à une réserve près : un chart dont les
-valeurs changent un champ immuable d'un StatefulSet — le PostgreSQL du
-chart — ne se met pas à jour. Il faut alors le désinstaller, ou garder
-les mêmes valeurs.
+Le bootstrap conserve les identifiants présents et reprend une installation
+initiale interrompue. Il autorise la connexion interne à l'API Kubernetes
+dans Infisical (`ALLOW_INTERNAL_IP_CONNECTIONS=true`). La rotation des
+identifiants et les migrations de stockage restent des opérations explicites.
 
 ### L'installation à la main
 
-Elle n'est plus nécessaire, mais elle reste possible. Voici ce que la
-commande fait, pour qu'on puisse le faire à la main si le cluster n'est
-pas joignable depuis la machine de l'opérateur.
+Les étapes d'installation des charts ci-dessous sont prises en charge par
+la commande. Les étapes API ci-dessous servent de référence technique ;
+l'installateur les effectue pour son projet et son identité dédiés.
 
 ```bash
 export KUBECONFIG=~/.kube/cluster.yaml
@@ -311,6 +320,20 @@ deux, ou aucun, et la reconciliation échoue.
 
 Le CLI d'Infisical parle à l'instance auto-hébergée comme à n'importe
 quelle autre. C'est l'outil le plus direct pour écrire et lire un secret.
+
+Un développeur utilise un **compte humain membre du projet**, avec un rôle
+autorisant la lecture et l'écriture des secrets. Être administrateur de
+l'organisation ne suffit pas à appartenir au projet. Un `403` indiquant
+« not a member of this project » se corrige par ce rattachement.
+
+```bash
+infisical login --domain "$INFISICAL_DOMAIN"
+infisical secrets set --file "$HOME/.config/kuberpack/stirling.env" \
+  --domain "$INFISICAL_DOMAIN" --projectId "$INFISICAL_PROJECT_ID" --env prod
+```
+
+Ce parcours développeur ne demande aucun kubeconfig. Les exemples suivants
+concernent l'automatisation par identité machine côté exploitation :
 
 ```bash
 export INFISICAL_DOMAIN="https://infisical.exemple.org"

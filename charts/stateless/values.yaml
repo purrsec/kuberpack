@@ -4,6 +4,8 @@ healthcheck: /
 hostname: ""
 replicas: 1
 ingressClassName: ""
+ingressPodSelector:
+  app.kubernetes.io/name: traefik
 imagePullSecrets: []
 enableServiceLinks: false
 command: []
@@ -16,6 +18,11 @@ networkPolicy:
   internet: true
   # Other Kuberpack apps (`billing`) or addons (`postgres:web`).
   peers: []
+  # Compiled projects use exact directed neighbours and their declared ports.
+  strictPeers: false
+  project: ""
+  servicePeers: []
+  incomingPeers: []
 resources:
   requests:
     cpu: 50m

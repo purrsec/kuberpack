@@ -1,6 +1,6 @@
 # Architecture
 
-Kuberpack et le builder s’installent sur **k3s**. Le cluster de production est aussi du k3s, mais Kuberpack ne s’y authentifie pas : il n’écrit que Git.
+Kuberpack et le builder s'installent sur un **Kubernetes existant**. k3s est la cible actuellement testée. L'installateur utilise le kubeconfig de l'opérateur ; les développeurs utilisent ensuite l'API Kuberpack. Le déploiement applicatif passe par Git et Flux ; les écritures directes résiduelles du control plane sont détaillées dans l'audit. Les releases Helmfile indépendantes gardent leur propre cycle de vie et leur propre responsabilité.
 
 ```mermaid
 flowchart LR

@@ -179,33 +179,15 @@ func TestProjectManifestChangeUpdatesTheRuntimeAndKeepsTheDigest(t *testing.T) {
 
 // A service without a repository is never built: it stays in the GitOps and
 // it produces no app.
-func TestProjectServiceWithoutRepositoryProducesNoApp(t *testing.T) {
+func TestProjectServiceWithoutASourceIsRefused(t *testing.T) {
 	bare := setupAppsGitOps(t)
-	m := ProjectManifest{
-		Project: "demo",
-		Services: map[string]Service{
+	_, err := EnsureProject(context.Background(), ProjectRequest{
+		GitOpsURL: bare, GitOpsBranch: "main",
+		Manifest: ProjectManifest{Project: "demo", Services: map[string]Service{
 			"site": {Type: "stateless", Port: 8080, Hostname: "site.example.org"},
-		},
-	}
-	res, err := EnsureProject(context.Background(), ProjectRequest{
-		GitOpsURL: bare, GitOpsBranch: "main", Manifest: m,
-		Platform: Platform{NetworkPolicy: true},
+		}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Apps) != 0 {
-		t.Fatalf("a service without a repository must not be built: %+v", res.Apps)
-	}
-	// It is still in the GitOps.
-	clone := readRemoteTree(t, bare)
-	values := readFile(t, clone, "kubernetes/vps/projects/demo/site/values.yaml")
-	if !strings.Contains(values, "hostname: site.example.org") {
-		t.Fatalf("the service must stay in the GitOps:\n%s", values)
-	}
-	// And it is not activated: it has no image yet.
-	parent := readFile(t, clone, "kubernetes/vps/projects/demo/kustomization.yaml")
-	if listedInKustomization([]byte(parent), "site") {
-		t.Fatalf("a service without a pinned image must not be activated:\n%s", parent)
+	if err == nil || !strings.Contains(err.Error(), "repository to build, or an image to run") {
+		t.Fatalf("a source-less service must fail before any commit: %v", err)
 	}
 }

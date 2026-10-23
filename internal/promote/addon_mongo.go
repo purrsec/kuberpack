@@ -139,7 +139,7 @@ func (mongoEngine) Render(dir string, spec AddonSpec, platform Platform) (AddonR
 		addonFile{name: "bootstrap-job.yaml", content: job},
 		addonFile{name: "rbac.yaml", content: rbac},
 		addonFile{name: "networkpolicy.yaml", content: addonNetworkPolicy(name, namespace, entry.Kind, aname,
-			sanitizeName(spec.Project), []int{entry.Port}, "")},
+			sanitizeName(spec.Project), []int{entry.Port}, "", spec)},
 	); err != nil {
 		return AddonResult{}, err
 	}

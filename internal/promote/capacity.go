@@ -60,9 +60,6 @@ func formatBytes(value float64) string {
 func projectMemoryLimit(m ProjectManifest) float64 {
 	total := 0.0
 	for _, service := range m.Services {
-		if service.Resources == nil {
-			continue
-		}
 		// A service that is not running does not take memory. It is
 		// declared, and it waits for a node that can hold it.
 		replicas := 1
@@ -72,7 +69,7 @@ func projectMemoryLimit(m ProjectManifest) float64 {
 		if replicas <= 0 {
 			continue
 		}
-		value, err := parseQuantity(service.Resources.Limits.Memory)
+		value, err := parseQuantity(effectiveServiceResources(service.Resources).Limits.Memory)
 		if err != nil {
 			continue
 		}
@@ -96,15 +93,10 @@ func projectMemoryLimit(m ProjectManifest) float64 {
 	return total
 }
 
-// projectCPULimit returns the cpu the services and the addons of a project
-// ask for. It is the sum of the limits: the node runs them at the same
-// time.
-func projectCPULimit(m ProjectManifest) float64 {
+// CPU is time-shared: admission counts reserved requests, not burst limits.
+func projectCPURequest(m ProjectManifest) float64 {
 	total := 0.0
 	for _, service := range m.Services {
-		if service.Resources == nil {
-			continue
-		}
 		replicas := 1
 		if service.Replicas != nil {
 			replicas = *service.Replicas
@@ -112,7 +104,7 @@ func projectCPULimit(m ProjectManifest) float64 {
 		if replicas <= 0 {
 			continue
 		}
-		value, err := parseCPUs(service.Resources.Limits.CPU)
+		value, err := parseCPUs(effectiveServiceResources(service.Resources).Requests.CPU)
 		if err != nil {
 			continue
 		}
@@ -127,7 +119,7 @@ func projectCPULimit(m ProjectManifest) float64 {
 		if err != nil {
 			continue
 		}
-		value, err := parseCPUs(plan.Resources.Limits.CPU)
+		value, err := parseCPUs(plan.Resources.Requests.CPU)
 		if err != nil {
 			continue
 		}
@@ -209,9 +201,9 @@ func checkCapacity(m ProjectManifest, p Platform) error {
 	}
 	if p.NodeCPU > 0 {
 		cpuBudget := nodeBudget(p.NodeCPU, p.NodeReserve)
-		cpu := projectCPULimit(m)
+		cpu := projectCPURequest(m)
 		if cpu > cpuBudget {
-			return fmt.Errorf("this project asks for %s cpu, and the applications of the platform may take %s of the %s of the node (the platform keeps %s for itself): the platform would stop answering while the application starts",
+			return fmt.Errorf("this project reserves %s, and the applications of the platform may reserve %s of the %s of the node (the platform keeps %s for itself)",
 				formatCPUs(cpu), formatCPUs(cpuBudget), formatCPUs(p.NodeCPU), formatCPUs(p.NodeCPU-cpuBudget))
 		}
 	}
@@ -268,7 +260,7 @@ func checkClusterAddition(work string, p Platform, manifest ProjectManifest) err
 			continue
 		}
 		others += projectMemoryLimit(other)
-		othersCPU += projectCPULimit(other)
+		othersCPU += projectCPURequest(other)
 	}
 	// A project that is already deployed is not refused: it runs, and
 	// refusing it would leave the cluster as it is. The operator decides
@@ -284,9 +276,9 @@ func checkClusterAddition(work string, p Platform, manifest ProjectManifest) err
 	}
 	if p.NodeCPU > 0 {
 		cpuBudget := nodeBudget(p.NodeCPU, p.NodeReserve)
-		cpu := projectCPULimit(manifest)
+		cpu := projectCPURequest(manifest)
 		if othersCPU+cpu > cpuBudget {
-			return fmt.Errorf("this project asks for %s cpu, and the applications of the platform may take %s of the %s of the node (the platform keeps %s for itself): with the other projects of the platform (%s), the platform would stop answering",
+			return fmt.Errorf("this project reserves %s, and the applications of the platform may reserve %s of the %s of the node (the platform keeps %s for itself): the other projects already reserve %s",
 				formatCPUs(cpu), formatCPUs(cpuBudget), formatCPUs(p.NodeCPU), formatCPUs(p.NodeCPU-cpuBudget), formatCPUs(othersCPU))
 		}
 	}

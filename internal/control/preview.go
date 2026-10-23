@@ -87,6 +87,7 @@ func (s *Server) processPreview(ctx context.Context, d store.Delivery) {
 		DeliveryID:          d.ID,
 		Provider:            s.cfg.Provider,
 		RegistryURL:         s.cfg.RegistryURL,
+		RegistryToken:       s.cfg.RegistryToken,
 		Token:               s.cfg.Token,
 		Owner:               owner,
 		Name:                name,

@@ -2,12 +2,16 @@
 
 PaaS GitOps visé : `git push` → image immuable → Flux.
 
-Le CLI, le chart et le contrat sont ici. Ce qui est réellement implémenté : [docs/status.md](docs/status.md). Kuberpack n’a pas de kubeconfig du cluster de production.
+Le CLI, le chart et le contrat sont ici. Ce qui est réellement implémenté :
+[docs/status.md](docs/status.md). L'[audit du 22 octobre](docs/audit-2026-10-22.md)
+détaille les parcours vérifiés et les défauts encore ouverts. Le modèle vise
+un déploiement applicatif par Git et Flux ; l'implémentation actuelle écrit
+aussi certains Secrets de registre et ConfigMaps applicatifs dans le cluster.
 
 ## Exigences
 
-- cluster k3s pour le control plane et les builds ;
-- Forgejo (API Gitea) comme Git et, le cas échéant, registre OCI ;
+- cluster Kubernetes existant pour le control plane et les builds (test réel sur k3s) ;
+- une forge Git : Forgejo/Gitea, GitHub ou GitLab ; registre OCI configurable séparément ;
 - un dépôt GitOps lu par Flux sur le cluster de production ;
 - builds rootless (BuildKit), images pinées par digest ;
 - secrets hors Git, hors SQLite.
@@ -36,11 +40,30 @@ Le CLI, le chart et le contrat sont ici. Ce qui est réellement implémenté : [
 
 Images : `ghcr.io/purrsec/kuberpack:latest` et `ghcr.io/purrsec/kuberpack-builder:latest`.
 
-Édite les URLs dans `helmfile.yaml`, crée les namespaces et secrets indiqués en tête du fichier, copie `charts/stateless` dans le dépôt GitOps, puis :
+Avec le kubeconfig du cluster et les jetons de forge et registre dans
+`KUBERPACK_GIT_TOKEN` et `KUBERPACK_REGISTRY_TOKEN` :
 
 ```bash
-helmfile apply
+kuberpack install
 ```
+
+Le questionnaire prépare Flux, les dépendances, Infisical et le control plane.
+Le parcours reproductible et les prérequis sont dans [docs/install.md](docs/install.md).
+La validation réelle couvre un [banc k3s Docker](docs/install-validation-2026-10-22.md)
+et un [VPS vierge de 8 Go](docs/install-vps-2026-10-22.md) avec HTTPS public et Stirling PDF.
+Vos applications complexes peuvent conserver leurs `helmfile.yaml` et charts
+à côté du `kuberpack.yaml` : les releases restent gérées par leur outil choisi.
+
+Après activation du profil CLI enregistré par l'installation :
+
+```bash
+kuberpack apps
+kuberpack app status stirling-pdf-pdf
+kuberpack app status --json stirling-pdf-pdf
+```
+
+Les états et réplicas proviennent du cluster via l'API ; le développeur
+n'a pas besoin de kubeconfig. Voir les [états de déploiement](docs/api.md#consulter-les-déploiements).
 
 ## Code
 
@@ -75,9 +98,25 @@ export KUBERPACK_API_TOKEN=$FORGEJO_TOKEN
 
 ## Installation
 
+Depuis un profil CLI configuré, les déploiements et leurs logs se consultent
+sans kubeconfig :
+
+```bash
+kuberpack apps
+kuberpack app status stirling-pdf-pdf
+kuberpack app logs stirling-pdf-pdf -f --tail 50
+kuberpack app build-logs demo-web
+```
+
+`app logs` affiche l'exécution ; `app build-logs` affiche le builder.
+Les images publiées n'ont pas de build Kuberpack.
+`app status` inclut CPU/RAM, demandes et limites, redémarrages et bridage
+CPU cumulé depuis le démarrage des conteneurs, avec les mesures indisponibles
+signalées explicitement.
+
 Voir [docs/install.md](docs/install.md) : un cluster, une forge git
 (Forgejo, GitHub, GitLab), un registre OCI et deux jetons (un pour lire les
-dépôts, un pour pousser les images).
+dépôts et écrire le GitOps, un pour publier et lire les images).
 
 ## État
 

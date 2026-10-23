@@ -6,10 +6,14 @@ metadata:
     app.kubernetes.io/name: {{ include "stateless.fullname" . }}-test
     app.kubernetes.io/component: helm-test
     app.kubernetes.io/part-of: kuberpack
+    {{- with .Values.networkPolicy.project }}
+    kuberpack.io/project: {{ . | quote }}
+    {{- end }}
   annotations:
     helm.sh/hook: test
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded,hook-failed
 spec:
+  activeDeadlineSeconds: {{ add (mul .Values.startupProbe.periodSeconds .Values.startupProbe.failureThreshold) 10 }}
   restartPolicy: Never
   automountServiceAccountToken: false
   securityContext:
@@ -26,15 +30,11 @@ spec:
         - -c
         - |
           url={{ printf "http://%s:%v%s" (include "stateless.fullname" .) .Values.port .Values.healthcheck | quote }}
-          # The test starts next to the app. While the app is still converging,
-          # the ingress NetworkPolicy may not be in place yet, so the SYN is
-          # dropped and an unbounded `wget` would hang until the Helm timeout
-          # instead of retrying. `-T` bounds each attempt so the loop actually
-          # retries and succeeds as soon as the app answers. The budget is
-          # short on purpose: the test reports the health of the
-          # application, it does not hold the next deployment.
+          # Match the application's startup budget, including slow JVMs.
+          # Bound each request so a dropped SYN cannot consume the budget.
+          deadline=$(( $(date +%s) + {{ mul .Values.startupProbe.periodSeconds .Values.startupProbe.failureThreshold }} ))
           i=0
-          while [ "$i" -lt 45 ]; do
+          while [ "$(date +%s)" -lt "$deadline" ]; do
             wget -q -T 2 -O /dev/null "$url" && echo "ok $url" && exit 0
             i=$((i + 1))
             sleep 1

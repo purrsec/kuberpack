@@ -1,5 +1,13 @@
 # Environnement de test Kuberpack
 
+La [passe sécurité du 23 octobre](../docs/security-audit-2026-10-23.md) ajoute
+des tests de permissions et de trafic réellement autorisé/refusé sur ce même
+Docker. Après installation, lancer `python3 scripts/security-smoke.py
+--kubeconfig ~/.kube/k3s-test.yaml` depuis `testenv/`. Les fixtures sont supprimées
+à la fin ; le script refuse un autre cluster. Le test d’installation accepte
+`--project <nom-neuf>` pour rejouer sur un cluster existant et `--install-only`
+pour vérifier l’installateur sans modifier un secret applicatif.
+
 Un cluster Kubernetes réel, local, dans lequel Kuberpack peut être testé pour
 de vrai : webhook → build Railpack/BuildKit → scan Trivy + SBOM Syft → digest
 épinglé dans Git → réconciliation Flux → déploiement Helm.
@@ -165,6 +173,14 @@ produit mais l'environnement de test.
    une adresse RFC 1918.
 
 ## Recréer l'environnement
+
+La validation du nouvel installateur est séparée du bootstrap historique
+ci-dessous. Elle part d'un k3s neuf, réutilise Forgejo, installe un Helmfile
+indépendant, puis exerce `kuberpack install`, sa reprise après interruption,
+les secrets humains et une application HTTPS. Voir
+[le scénario et ses résultats](../docs/install-validation-2026-10-22.md)
+et [le script](scripts/install-smoke.py). Le conteneur DSH original et son
+volume ont été conservés pendant ce travail ; le VPS n'a pas été réinstallé.
 
 ```bash
 ./scripts/bootstrap.sh

@@ -51,7 +51,8 @@ type Request struct {
 	GenerateLock bool
 	// GitAuthScheme is how the forge of the application authenticates a
 	// clone: "token" or "basic".
-	GitAuthScheme string
+	GitAuthScheme  string
+	CloneAnonymous bool
 	// BuildsGitAuthScheme is how the forge of the builds repository
 	// authenticates a clone: it is the forge of the platform, not the one
 	// of the application.
@@ -95,9 +96,12 @@ func Run(ctx context.Context, req Request) (digest string, err error) {
 	if err != nil {
 		return "", fail.Stage(fail.Image, err)
 	}
-	gitToken, err := readFirstToken(gitTokenPaths(req.GitTokenFile)...)
-	if err != nil {
-		return "", fail.Stage(fail.Auth, err)
+	var gitToken string
+	if !req.CloneAnonymous {
+		gitToken, err = readFirstToken(gitTokenPaths(req.GitTokenFile)...)
+		if err != nil {
+			return "", fail.Stage(fail.Auth, err)
+		}
 	}
 	registryToken, err := readFirstToken(registryTokenPaths(req.RegistryTokenFile)...)
 	if err != nil {
@@ -146,14 +150,9 @@ func Run(ctx context.Context, req Request) (digest string, err error) {
 	}
 	fmt.Printf("checked out %s\n", req.CommitSHA)
 	// root_directory selects the sub-directory Railpack analyzes and builds.
-	buildDir := source
-	if root := strings.Trim(strings.TrimSpace(req.RootDirectory), "/"); root != "" && root != "." {
-		candidate := filepath.Join(source, filepath.FromSlash(root))
-		info, statErr := os.Stat(candidate)
-		if statErr != nil || !info.IsDir() {
-			return "", fail.Text(fail.Strategy, "root_directory not found: "+root)
-		}
-		buildDir = candidate
+	buildDir, err := buildSourceDirectory(source, req.RootDirectory)
+	if err != nil {
+		return "", fail.Stage(fail.Strategy, err)
 	}
 	// A Python project without a lock file: the build resolves the
 	// dependencies. The lock of the repository is used when there is one.
@@ -533,7 +532,7 @@ func tokenDigest(token string) string {
 // strictTokens tells whether the platform refuses a build whose builder
 // holds the token of the control plane.
 func strictTokens() bool {
-	return strings.EqualFold(strings.TrimSpace(os.Getenv("KUBERPACK_STRICT_CREDENTIALS")), "true")
+	return !strings.EqualFold(strings.TrimSpace(os.Getenv("KUBERPACK_STRICT_CREDENTIALS")), "false")
 }
 
 // checkTokens refuses a builder that holds the token of the control

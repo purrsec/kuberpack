@@ -7,6 +7,7 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/fetch"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -39,14 +40,17 @@ type EnvVar struct {
 
 // AppSpec is what you describe. Kuberpack expands it to Helm + Kustomize.
 type AppSpec struct {
-	Name        string
-	Hostname    string
-	Port        int
-	Healthcheck string
-	Replicas    *int
-	Preview     bool
-	Internet    *bool
-	Peers       []string
+	Name          string
+	Hostname      string
+	Port          int
+	Healthcheck   string
+	Replicas      *int
+	Preview       bool
+	Internet      *bool
+	Peers         []string
+	StrictPeers   bool
+	ServicePeers  []ServicePeer
+	IncomingPeers []string
 	// Env are the literal environment variables of the application.
 	Env []EnvVar
 	// Command is what the container runs, when the image expects
@@ -95,6 +99,12 @@ type AppSpec struct {
 	// StartupBudget is how long the application may take to start, in
 	// seconds.
 	StartupBudget int
+}
+
+// ServicePeer is an exact application destination and its declared TCP port.
+type ServicePeer struct {
+	Name string
+	Port int
 }
 
 // PreviewSecretSource values for AppSpec.InheritSecretFrom.
@@ -287,11 +297,27 @@ func valuesYAML(spec AppSpec, p Platform) string {
 		b.WriteString("image: \"\"\n")
 	}
 	b.WriteString("port: " + strconv.Itoa(spec.Port) + "\n")
-	b.WriteString("healthcheck: " + spec.Healthcheck + "\n")
+	healthcheck := spec.Healthcheck
+	if healthcheck == "" {
+		healthcheck = "/"
+	}
+	b.WriteString("healthcheck: " + strconv.Quote(healthcheck) + "\n")
 	b.WriteString("hostname: " + spec.Hostname + "\n")
 	b.WriteString("replicas: " + strconv.Itoa(replicaCount(spec)) + "\n")
 	b.WriteString("ingressClassName: " + p.IngressClassName + "\n")
-	if p.ImagePullSecret != "" {
+	if p.IngressNamespace != "" {
+		b.WriteString("ingressNamespace: " + strconv.Quote(p.IngressNamespace) + "\n")
+	}
+	b.WriteString("ingressPodSelector:\n")
+	selectorKeys := make([]string, 0, len(p.IngressPodSelector))
+	for key := range p.IngressPodSelector {
+		selectorKeys = append(selectorKeys, key)
+	}
+	sort.Strings(selectorKeys)
+	for _, key := range selectorKeys {
+		b.WriteString("  " + strconv.Quote(key) + ": " + strconv.Quote(p.IngressPodSelector[key]) + "\n")
+	}
+	if p.ImagePullSecret != "" && spec.Image == "" {
 		b.WriteString("imagePullSecrets:\n")
 		b.WriteString("  - name: " + p.ImagePullSecret + "\n")
 	}
@@ -312,7 +338,7 @@ func valuesYAML(spec AppSpec, p Platform) string {
 	if p.ExternalDNSTTL != "" {
 		b.WriteString("    external-dns.alpha.kubernetes.io/ttl: " + strconv.Quote(p.ExternalDNSTTL) + "\n")
 	}
-	if p.TraefikEntrypoint != "" {
+	if p.IngressClassName == "traefik" && p.TraefikEntrypoint != "" {
 		b.WriteString("    traefik.ingress.kubernetes.io/router.entrypoints: " + p.TraefikEntrypoint + "\n")
 	}
 	// The certificate resolver belongs to the TLS configuration: Traefik
@@ -321,7 +347,7 @@ func valuesYAML(spec AppSpec, p Platform) string {
 	// The resolver of Traefik is only used when the platform does not issue
 	// the certificates itself: a router that names a resolver that does
 	// not exist is refused.
-	if p.IngressTLS && p.TraefikCertResolver != "" && spec.TLSSecretName == "" {
+	if p.IngressClassName == "traefik" && p.IngressTLS && p.TraefikCertResolver != "" && spec.TLSSecretName == "" {
 		b.WriteString("    traefik.ingress.kubernetes.io/router.tls.certresolver: " + p.TraefikCertResolver + "\n")
 	}
 	// The volumes of the application: a temporary one, or a disk that
@@ -329,20 +355,20 @@ func valuesYAML(spec AppSpec, p Platform) string {
 	if len(spec.Volumes) > 0 {
 		b.WriteString("volumes:\n")
 		for _, volume := range spec.Volumes {
-			b.WriteString("  - name: " + volume.Name + "\n")
-			b.WriteString("    path: " + volume.Path + "\n")
+			b.WriteString("  - name: " + strconv.Quote(volume.Name) + "\n")
+			b.WriteString("    path: " + strconv.Quote(volume.Path) + "\n")
 			if volume.Size != "" {
 				b.WriteString("    size: " + volume.Size + "\n")
 			}
 			if volume.Claim != "" {
-				b.WriteString("    claim: " + volume.Claim + "\n")
+				b.WriteString("    claim: " + strconv.Quote(volume.Claim) + "\n")
 			}
 		}
 	}
 	if spec.StartupBudget > 0 {
 		b.WriteString("startupProbe:\n")
 		b.WriteString("  periodSeconds: 2\n")
-		b.WriteString("  failureThreshold: " + strconv.Itoa(spec.StartupBudget/2) + "\n")
+		b.WriteString("  failureThreshold: " + strconv.Itoa((spec.StartupBudget+1)/2) + "\n")
 	}
 	if spec.WritableRoot {
 		b.WriteString("writableRoot: true\n")
@@ -353,7 +379,7 @@ func valuesYAML(spec AppSpec, p Platform) string {
 	if len(spec.Capabilities) > 0 {
 		b.WriteString("capabilities:\n")
 		for _, capability := range spec.Capabilities {
-			b.WriteString("  - " + capability + "\n")
+			b.WriteString("  - " + strconv.Quote(capability) + "\n")
 		}
 	}
 	b.WriteString("networkPolicy:\n")
@@ -366,6 +392,27 @@ func valuesYAML(spec AppSpec, p Platform) string {
 		b.WriteString("  internet: true\n")
 	} else {
 		b.WriteString("  internet: false\n")
+	}
+	if spec.Project != "" {
+		b.WriteString("  project: " + strconv.Quote(spec.Project) + "\n")
+	}
+	if spec.StrictPeers {
+		b.WriteString("  strictPeers: true\n  incomingPeers: [")
+		for i, peer := range spec.IncomingPeers {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(strconv.Quote(peer))
+		}
+		b.WriteString("]\n  servicePeers:")
+		if len(spec.ServicePeers) == 0 {
+			b.WriteString(" []\n")
+		} else {
+			b.WriteString("\n")
+			for _, peer := range spec.ServicePeers {
+				b.WriteString("    - name: " + strconv.Quote(peer.Name) + "\n      port: " + strconv.Itoa(peer.Port) + "\n")
+			}
+		}
 	}
 	if len(spec.Peers) == 0 {
 		b.WriteString("  peers: []\n")
@@ -448,14 +495,13 @@ func valuesYAML(spec AppSpec, p Platform) string {
 		b.WriteString("  - secretRef:\n")
 		b.WriteString("      name: " + inheritedPreviewSecretName(spec) + "\n")
 		b.WriteString("      optional: true\n")
-	} else {
-		// The Secret is created by an administrator, not by Kuberpack. Mark it
-		// optional so a secretless app (a frontend, a first deploy) still
-		// starts; present keys are injected normally.
+	} else if spec.Project == "" {
+		// Legacy standalone apps may use an administrator-managed Secret.
+		// Projects inject only explicitly declared keys through env below.
 		b.WriteString("envFrom:\n")
 		b.WriteString("  - secretRef:\n")
 		b.WriteString("      name: " + AppRuntimeSecretName(spec.Name) + "\n")
-		b.WriteString("      optional: true\n")
+		b.WriteString("      optional: " + strconv.FormatBool(len(spec.Secrets) == 0) + "\n")
 	}
 	// The canonical form is the one the control plane produces when it
 	// patches the image: a recompilation must not create a diff.
@@ -513,6 +559,14 @@ func envYAML(spec AppSpec) string {
 		}
 		b.WriteString("  value: " + strconv.Quote(e.Value) + "\n")
 	}
+	if spec.Project != "" && !spec.Preview {
+		for _, key := range spec.Secrets {
+			b.WriteString("- name: " + key + "\n")
+			b.WriteString("  valueFrom:\n    secretKeyRef:\n")
+			b.WriteString("      name: " + AppRuntimeSecretName(spec.Name) + "\n")
+			b.WriteString("      key: " + key + "\n")
+		}
+	}
 	return b.String()
 }
 
@@ -537,6 +591,21 @@ func replicaCount(spec AppSpec) int {
 
 func helmReleaseYAML(spec AppSpec, p Platform) string {
 	p = p.withDefaults()
+	upgradeOptions, rollbackOptions := "", ""
+	for _, volume := range spec.Volumes {
+		if volume.Size != "" || volume.Claim != "" {
+			// Helm SSA retains Kubernetes-owned RollingUpdate defaults when
+			// switching an existing Deployment to Recreate. Replacement via
+			// client-side apply clears those fields without touching its PVCs.
+			upgradeOptions = "    serverSideApply: disabled\n    force: true\n"
+			rollbackOptions = "  rollback:\n    serverSideApply: disabled\n    force: true\n"
+			break
+		}
+	}
+	budget := spec.StartupBudget
+	if budget == 0 {
+		budget = 600
+	}
 	return fmt.Sprintf(`apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -544,14 +613,12 @@ metadata:
   namespace: %s
 spec:
   interval: 5m
-  # The release does not wait for the pods: the timeout bounds the test
-  # hook, not the rollout. A broken application must not hold the pipeline
-  # for long.
-  timeout: 2m
+  # Allow the declared startup budget plus time to schedule the test hook.
+  timeout: %ds
   chart:
     spec:
       chart: %s
-      reconcileStrategy: Revision
+      reconcileStrategy: ChartVersion
       sourceRef:
         kind: %s
         name: %s
@@ -562,32 +629,34 @@ spec:
       name: %s-values
       valuesKey: values.yaml
   install:
-    # The release does not wait for the pods. A broken image must not hold
-    # the pipeline: the next push applies its fix at once. The health of the
-    # application is the business of the test hook below, which reports it
-    # without blocking the next deployment.
-    disableWait: true
+    # Wait for this revision before testing HTTP: a previous pod can still
+    # answer while its replacement starts. Flux 2.8+ can interrupt this
+    # wait when a newer desired revision arrives.
+    disableWait: false
     remediation:
       retries: 2
   upgrade:
-    disableWait: true
+%s    disableWait: false
     cleanupOnFail: true
     remediation:
       retries: 1
       strategy: rollback
       remediateLastFailure: true
-  test:
-    enable: true
-`, spec.Name, releaseNamespace(spec, p), p.ChartRef, p.ChartSourceKind, p.SourceName, p.SourceNamespace, spec.Name)
+%s  test:
+    enable: %t
+`, spec.Name, releaseNamespace(spec, p), budget+60, p.ChartRef, p.ChartSourceKind, p.SourceName, p.SourceNamespace, spec.Name, upgradeOptions, rollbackOptions, replicaCount(spec) > 0)
 }
 
 func appKustomizationYAML(spec AppSpec, p Platform) string {
 	p = p.withDefaults()
 	resources := "  - helmrelease.yaml"
+	if spec.Project != "" && len(spec.Secrets) > 0 && p.InfisicalEnabled() {
+		resources += "\n  - secret.yaml"
+	}
 	if spec.TLSSecretName != "" {
 		resources += "\n  - certificate.yaml"
 	}
-	if p.ImagePullSecret != "" {
+	if p.ImagePullSecret != "" && spec.Image == "" {
 		resources += "\n  - rbac.yaml"
 	}
 	for _, volume := range spec.Volumes {

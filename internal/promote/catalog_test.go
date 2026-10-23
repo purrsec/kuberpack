@@ -71,7 +71,7 @@ func TestATypeThatNeedsAnOperatorIsRefusedWithoutIt(t *testing.T) {
 	m := ProjectManifest{
 		Project:  "demo",
 		Addons:   map[string]Addon{"postgres": {Engine: "cnpg", Database: "demo"}},
-		Services: map[string]Service{"app": {Type: "stateless", Port: 8080, Hostname: "demo.host.bzh"}},
+		Services: map[string]Service{"app": {Type: "stateless", Repository: "owner/app", Port: 8080, Hostname: "demo.host.bzh"}},
 	}
 	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{}}
 	_, err := EnsureProject(context.Background(), req)
@@ -96,7 +96,7 @@ func TestTheAddonPodsAreIsolated(t *testing.T) {
 		t.Fatal("the type postgres is not in the catalogue")
 	}
 	policy := addonNetworkPolicy("boutique-postgres", "boutique", entry.Kind, "postgres", "boutique",
-		[]int{5432}, "cnpg-system")
+		[]int{5432}, "cnpg-system", AddonSpec{ServiceClients: []string{"web"}})
 	for _, want := range []string{
 		"kind: NetworkPolicy",
 		"kuberpack.io/addon: postgres",
@@ -120,7 +120,7 @@ func TestTheObjectStorageHasItsCredentialsBornInTheCluster(t *testing.T) {
 			"rustfs":   {Engine: "rustfs", Plan: "small"},
 			"postgres": {Engine: "cnpg", Database: "demo", Backup: &Backup{S3: "rustfs", Retention: "30d"}},
 		},
-		Services: map[string]Service{"app": {Type: "stateless", Port: 8080, Hostname: "demo.host.bzh"}},
+		Services: map[string]Service{"app": {Type: "stateless", Repository: "owner/app", Port: 8080, Hostname: "demo.host.bzh"}},
 	}
 	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{AddonOperators: []string{"cnpg"}}}
 	if _, err := EnsureProject(context.Background(), req); err != nil {
@@ -201,7 +201,7 @@ func TestABackupWithoutStorageIsRefused(t *testing.T) {
 		Addons: map[string]Addon{
 			"postgres": {Engine: "cnpg", Database: "demo", Backup: &Backup{S3: "nowhere"}},
 		},
-		Services: map[string]Service{"app": {Type: "stateless", Port: 8080, Hostname: "demo.host.bzh"}},
+		Services: map[string]Service{"app": {Type: "stateless", Repository: "owner/app", Port: 8080, Hostname: "demo.host.bzh"}},
 	}
 	req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: m, Platform: Platform{AddonOperators: []string{"cnpg"}}}
 	if _, err := EnsureProject(context.Background(), req); err == nil {
@@ -349,17 +349,15 @@ func TestTheClusterThatDoesNotFitIsRefused(t *testing.T) {
 	// The platform keeps a fifth of the node: the applications may take
 	// 2.4 Gi of the 3 Gi.
 	platform := Platform{NetworkPolicy: true, NodeMemory: "3Gi", NodeReserve: "20"}
-	for _, manifest := range []ProjectManifest{big, other} {
-		req := ProjectRequest{GitOpsURL: bare, GitOpsBranch: "main", Manifest: manifest, Platform: platform}
-		if _, err := EnsureProject(context.Background(), req); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// The two projects fit one after the other, and together they do not.
 	if _, err := EnsureProject(context.Background(), ProjectRequest{
 		GitOpsURL: bare, GitOpsBranch: "main", Manifest: big, Platform: platform,
 	}); err != nil {
-		t.Fatalf("a project that fits alone must compile: %v", err)
+		t.Fatal(err)
+	}
+	if _, err := EnsureProject(context.Background(), ProjectRequest{
+		GitOpsURL: bare, GitOpsBranch: "main", Manifest: other, Platform: platform,
+	}); err == nil {
+		t.Fatal("API compilation must refuse the sum of projects that exceeds capacity")
 	}
 }
 
@@ -488,7 +486,7 @@ func TestAProjectThatTakesTheCoresOfTheNodeIsRefused(t *testing.T) {
 		Project: "greedy",
 		Services: map[string]Service{
 			"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "greedy.host.bzh",
-				Resources: &ServiceResources{Limits: ResourceList{Memory: "1Gi", CPU: "2"}}},
+				Resources: &ServiceResources{Requests: ResourceList{CPU: "2"}, Limits: ResourceList{Memory: "1Gi", CPU: "2"}}},
 		},
 	}
 	err := checkCapacity(manifest, platform)

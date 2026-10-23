@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -56,6 +57,9 @@ type Service struct {
 	// Addons are the addons of the project the service uses: it gets their
 	// environment and may reach them.
 	Addons []string `yaml:"addons,omitempty" json:"addons,omitempty"`
+	// Peers are outgoing neighbours inside this project. Nil inherits the
+	// project policy for compatibility; an explicit [] grants no neighbours.
+	Peers *[]string `yaml:"peers,omitempty" json:"peers,omitempty"`
 	// Build holds the build-time overrides of the service.
 	Build *BuildOptions `yaml:"build,omitempty" json:"build,omitempty"`
 	// Volumes are the volumes of the service. A volume without a size is
@@ -130,8 +134,7 @@ type Addon struct {
 
 // Backup describes how an addon is backed up.
 type Backup struct {
-	// S3 is the name of the storage profile of the platform. It is not
-	// implemented yet: the compiler refuses it.
+	// S3 names the S3-compatible addon of this project used for backups.
 	S3 string `yaml:"s3,omitempty" json:"s3,omitempty"`
 	// Retention is how long the backups are kept (30d, 7d...).
 	Retention string `yaml:"retention,omitempty" json:"retention,omitempty"`
@@ -166,6 +169,10 @@ func ParseProjectManifest(raw []byte) (ProjectManifest, error) {
 	if err := dec.Decode(&m); err != nil {
 		return m, fmt.Errorf("invalid manifest: %w", err)
 	}
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		return m, fmt.Errorf("invalid manifest: expected a single YAML document")
+	}
 	if err := validateManifest(m); err != nil {
 		return m, err
 	}
@@ -176,8 +183,14 @@ func ParseProjectManifest(raw []byte) (ProjectManifest, error) {
 // that declares something unsupported fails loudly instead of compiling into
 // a silent no-op.
 func validateManifest(m ProjectManifest) error {
+	if err := validateManifestFields(m); err != nil {
+		return err
+	}
 	if strings.TrimSpace(m.Project) == "" {
 		return fmt.Errorf("project is required")
+	}
+	if !m.Policies.defaultDenyEnabled() {
+		return fmt.Errorf("policies.defaultDeny: false is not allowed for an isolated project")
 	}
 	for name, svc := range m.Services {
 		switch strings.ToLower(strings.TrimSpace(svc.Type)) {
@@ -191,6 +204,12 @@ func validateManifest(m ProjectManifest) error {
 		if strings.TrimSpace(svc.Repository) == "" && strings.TrimSpace(svc.Image) == "" {
 			return fmt.Errorf("service %q: it must declare a repository to build, or an image to run", name)
 		}
+		if strings.TrimSpace(svc.Repository) != "" && strings.TrimSpace(svc.Image) != "" {
+			return fmt.Errorf("service %q: choose either repository or image", name)
+		}
+		if svc.Image != "" && (svc.Build != nil || svc.Strategy != "" || svc.Branch != "") {
+			return fmt.Errorf("service %q: build, strategy and branch require a repository", name)
+		}
 		if s := strings.TrimSpace(svc.Strategy); s != "" {
 			switch s {
 			case "auto", "uv", "railpack":
@@ -201,6 +220,14 @@ func validateManifest(m ProjectManifest) error {
 		for _, addon := range svc.Addons {
 			if _, ok := m.Addons[strings.TrimSpace(addon)]; !ok {
 				return fmt.Errorf("service %q: addon %q is not declared in the project", name, addon)
+			}
+		}
+		for _, peer := range servicePeerNames(m, svc) {
+			if _, ok := m.Services[peer]; ok {
+				continue
+			}
+			if _, ok := m.Addons[peer]; !ok {
+				return fmt.Errorf("service %q: peer %q is not declared in this project", name, peer)
 			}
 		}
 	}
@@ -272,10 +299,10 @@ func (req ProjectRequest) authArgs() []string {
 
 // ProjectApp is the operational description of a service of a project: what
 // to build, and where the digest must land. The control plane reconciles it
-// into the app record, the HMAC secret and the Forgejo webhook. A service
-// without a repository produces no app: it stays in the GitOps, it is never
-// built.
+// into either a repository build target or a published-image inventory entry.
+// Only repository services receive an HMAC secret, webhook and build.
 type ProjectApp struct {
+	Image string
 	// Name is the global identity of the app: <project>-<service>.
 	Name string
 	// Service is the name of the service inside the project.
@@ -366,9 +393,12 @@ func (p Platform) ProjectServiceValuesPath(project, service string) string {
 
 // --- compile --------------------------------------------------------------
 
-// EnsureProject compiles a manifest and commits the result. It never rewrites
-// an existing values.yaml, so a digest already pinned by promote is preserved.
+// EnsureProject regenerates runtime values from the manifest and commits them.
+// A built image's pinned digest and track are preserved during recompilation.
 func EnsureProject(ctx context.Context, req ProjectRequest) (ProjectResult, error) {
+	if err := validateManifest(req.Manifest); err != nil {
+		return ProjectResult{}, err
+	}
 	if req.GitOpsURL == "" {
 		return ProjectResult{}, fmt.Errorf("gitops URL is empty")
 	}
@@ -406,6 +436,12 @@ func EnsureProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 		if _, err := req.remoteGit(ctx, "", "clone", "--branch", req.GitOpsBranch, "--single-branch", req.GitOpsURL, work); err != nil {
 			return ProjectResult{}, err
 		}
+		if err := guardProjectTree(work, req.Platform); err != nil {
+			return ProjectResult{}, err
+		}
+		if err := checkClusterAddition(work, req.Platform, req.Manifest); err != nil {
+			return ProjectResult{}, err
+		}
 		services, adds, apps, err := compileProjectFiles(ctx, work, req.Manifest, req.Platform, req.Raw, true)
 		if err != nil {
 			return ProjectResult{}, err
@@ -413,6 +449,9 @@ func EnsureProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 		result.Services = services
 		result.Addons = adds
 		result.Apps = apps
+		if err := SyncInfisicalOperatorScope(work, req.Platform); err != nil {
+			return ProjectResult{}, err
+		}
 
 		rel := req.Platform.ProjectDir(project)
 		parentRel := req.Platform.ProjectsParentPath()
@@ -422,8 +461,16 @@ func EnsureProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 		// without its secret.
 		watched := []string{rel, parentRel}
 		platform := req.Platform.withDefaults()
+		if platform.InfisicalOperatorScope {
+			watched = append(watched, filepath.ToSlash(filepath.Join(platform.ProjectsDirPath(), InfisicalOperatorScopeFile)))
+		}
 		if platform.InfisicalEnabled() {
-			watched = append(watched, platform.InfisicalDir)
+			if _, err := os.Stat(filepath.Join(work, platform.InfisicalDir)); err == nil {
+				watched = append(watched, platform.InfisicalDir)
+			}
+			if _, err := os.Stat(filepath.Join(work, "kustomization.yaml")); err == nil {
+				watched = append(watched, "kustomization.yaml")
+			}
 		}
 		statusArgs := append([]string{"status", "--porcelain", "--"}, watched...)
 		status, err := runGit(ctx, work, statusArgs...)
@@ -475,10 +522,32 @@ func EnsureProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 // compileProjectFiles writes the project source + generated artifacts.
 func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p Platform, raw string, writeManifest bool) ([]string, []string, []ProjectApp, error) {
 	p = p.withDefaults()
+	if err := guardProjectTree(work, p); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := validateProjectNamespace(work, m, p); err != nil {
+		return nil, nil, nil, err
+	}
+	for name, svc := range m.Services {
+		if len(svc.Secrets) > 0 && !p.InfisicalEnabled() {
+			return nil, nil, nil, fmt.Errorf("service %q: secrets are declared but Infisical is not configured on the platform", name)
+		}
+	}
 	project := sanitizeName(m.Project)
 	projectDir := filepath.Join(work, filepath.FromSlash(p.ProjectDir(project)))
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
 		return nil, nil, nil, err
+	}
+	if old, err := os.ReadFile(filepath.Join(projectDir, "kuberpack.yaml")); err == nil {
+		var previous ProjectManifest
+		if err := yaml.Unmarshal(old, &previous); err != nil {
+			return nil, nil, nil, err
+		}
+		for name := range previous.Services {
+			if _, _, err := removeSecretCR(work, AppSpec{Name: name, Project: project}, p); err != nil {
+				return nil, nil, nil, err
+			}
+		}
 	}
 
 	// Persist the human source verbatim (so comments survive).
@@ -500,6 +569,9 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 	}
 
 	net := m.Policies.Internet
+	if net == nil {
+		net = BoolPtr(false)
+	}
 	namespace := projectNamespace(m, project)
 	// The NetworkPolicy of the services follows the policy of the project.
 	isolated := m.Policies.defaultDenyEnabled()
@@ -511,12 +583,13 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 	}
 	// The policy peers are either services of the project or addons of the
 	// project.
-	servicePeers, policyAddonPeers := projectPeers(m, addonResults)
-
 	services := make([]string, 0, len(m.Services))
 	apps := make([]ProjectApp, 0, len(m.Services))
 	for name, svc := range m.Services {
 		sname := sanitizeName(name)
+		peerManifest := m
+		peerManifest.Policies.Peers = servicePeerNames(m, svc)
+		servicePeers, policyAddonPeers := projectPeers(peerManifest, addonResults)
 		// The defaults are the ones of the app registration: the manifest
 		// and the API must not disagree about a port or a probe.
 		spec, err := normalizeSpec(AppSpec{
@@ -536,6 +609,15 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 		})
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("service %q: %w", name, err)
+		}
+		spec.StrictPeers = true
+		spec.IncomingPeers = incomingServicePeers(m, name)
+		for _, peer := range servicePeers {
+			port := m.Services[peer].Port
+			if port == 0 {
+				port = 8080
+			}
+			spec.ServicePeers = append(spec.ServicePeers, ServicePeer{Name: peer, Port: port})
 		}
 		// The addons the service uses give it their environment and their
 		// network peer. The environment of the addon comes first: what the
@@ -606,7 +688,9 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 		// A service that declares secrets gets an InfisicalStaticSecret:
 		// the operator synchronises the values from Infisical into a
 		// Secret of the namespace. The values never transit by Kuberpack.
-		if _, _, err := ensureSecretCR(work, spec, p); err != nil {
+		// Project secrets travel with the project; they do not depend on a
+		// separately maintained root kustomization. Remove the legacy copy.
+		if _, _, err := removeSecretCR(work, spec, p); err != nil {
 			return nil, nil, nil, err
 		}
 		// A volume with a size is a disk: the claim is written with the
@@ -625,22 +709,25 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 				return nil, nil, nil, err
 			}
 		}
+		if err := writeFile(filepath.Join(dir, "status-rbac.yaml"), RenderStatusRBAC(spec, p)); err != nil {
+			return nil, nil, nil, err
+		}
 		if certificate := RenderCertificate(spec, p); certificate != "" {
 			if err := writeFile(filepath.Join(dir, "certificate.yaml"), certificate); err != nil {
 				return nil, nil, nil, err
 			}
 		}
 		if len(svc.Secrets) > 0 && p.InfisicalEnabled() {
-			if err := writeIfMissing(filepath.Join(dir, "secret.yaml"), RenderSecretCR(spec, p)); err != nil {
+			if err := writeFile(filepath.Join(dir, "secret.yaml"), RenderSecretCR(spec, p)); err != nil {
 				return nil, nil, nil, err
 			}
+		} else if err := os.Remove(filepath.Join(dir, "secret.yaml")); err != nil && !os.IsNotExist(err) {
+			return nil, nil, nil, err
 		}
 		services = append(services, sname)
-		// A service with a repository is a build target: the control plane
-		// arms the pipeline for it.
-		if repo := strings.TrimSpace(svc.Repository); repo != "" {
-			apps = append(apps, projectApp(p, project, sname, svc, namespace, net, servicePeers))
-		}
+		app := projectApp(p, project, sname, svc, namespace, net, servicePeers)
+		app.Image = spec.Image
+		apps = append(apps, app)
 	}
 	sort.Strings(services)
 	sort.Slice(apps, func(i, j int) bool { return apps[i].Name < apps[j].Name })
@@ -653,13 +740,23 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 			activated = append(activated, sname)
 		}
 	}
-	resources := append(append([]string{}, activated...), addons...)
+	// Observation must work before the first source build has an image. Its
+	// read-only roles are applied even when the service release is not active.
+	resources := make([]string, 0, len(services)+len(activated)+len(addons))
+	for _, service := range services {
+		resources = append(resources, service+"/status-rbac.yaml")
+	}
+	resources = append(resources, activated...)
+	resources = append(resources, addons...)
 	// The namespace of the project is created by the project itself: Flux
 	// applies it with the rest.
-	if err := writeIfMissing(filepath.Join(projectDir, "namespace.yaml"), RenderProjectNamespace(namespace)); err != nil {
+	if err := writeFile(filepath.Join(projectDir, "namespace.yaml"), RenderProjectNamespace(namespace)); err != nil {
 		return nil, nil, nil, err
 	}
-	parentYAML := RenderParentKustomization(namespace, append([]string{"namespace.yaml"}, resources...))
+	if err := writeFile(filepath.Join(projectDir, "networkpolicy.yaml"), RenderProjectDefaultDeny(namespace)); err != nil {
+		return nil, nil, nil, err
+	}
+	parentYAML := RenderParentKustomization(namespace, append([]string{"namespace.yaml", "networkpolicy.yaml"}, resources...))
 	if err := os.WriteFile(filepath.Join(projectDir, "kustomization.yaml"), []byte(parentYAML), 0o644); err != nil {
 		return nil, nil, nil, err
 	}
@@ -795,7 +892,7 @@ func serviceEnv(svc Service) []EnvVar {
 // RenderProjectNamespace renders the Namespace object of a project.
 func RenderProjectNamespace(namespace string) string {
 	return "apiVersion: v1\nkind: Namespace\nmetadata:\n  name: " + namespace +
-		"\n  labels:\n    app.kubernetes.io/part-of: kuberpack\n"
+		"\n  labels:\n    app.kubernetes.io/part-of: kuberpack\n    pod-security.kubernetes.io/enforce: baseline\n    pod-security.kubernetes.io/audit: restricted\n    pod-security.kubernetes.io/warn: restricted\n"
 }
 
 // serviceHasPinnedImage reports whether the service already carries a
@@ -848,17 +945,19 @@ func compileAddons(work string, m ProjectManifest, project string, namespace str
 			siblings[sanitizeName(other)] = entry.Kind
 		}
 		result, err := engine.Render(dir, AddonSpec{
-			Name:      aname,
-			Project:   project,
-			Namespace: namespace,
-			Database:  addon.Database,
-			Owner:     addon.Owner,
-			Backup:    addon.Backup,
-			Plan:      addon.Plan,
-			Params:    addon.Params,
-			Version:   addon.Version,
-			Path:      addon.Path,
-			Siblings:  siblings,
+			Name:           aname,
+			Project:        project,
+			Namespace:      namespace,
+			Database:       addon.Database,
+			Owner:          addon.Owner,
+			Backup:         addon.Backup,
+			Plan:           addon.Plan,
+			Params:         addon.Params,
+			Version:        addon.Version,
+			Path:           addon.Path,
+			Siblings:       siblings,
+			ServiceClients: addonServiceClients(m, name),
+			AddonClients:   addonDependencyClients(m, name),
 		}, p)
 		if err != nil {
 			return nil, nil, fmt.Errorf("addon %q: %w", name, err)
@@ -1053,6 +1152,9 @@ func ReadProjectManifest(ctx context.Context, req ProjectRequest) ([]byte, error
 	if _, err := req.remoteGit(ctx, "", "clone", "--branch", req.GitOpsBranch, "--single-branch", req.GitOpsURL, work); err != nil {
 		return nil, err
 	}
+	if err := guardProjectTree(work, req.Platform); err != nil {
+		return nil, err
+	}
 	raw, err := os.ReadFile(filepath.Join(work, filepath.FromSlash(req.Platform.ProjectManifestPath(project))))
 	if os.IsNotExist(err) {
 		return nil, ErrProjectNotFound
@@ -1079,6 +1181,9 @@ func ListProjects(ctx context.Context, req ProjectRequest) ([]ProjectResult, err
 	defer os.RemoveAll(parent)
 	work := filepath.Join(parent, "repo")
 	if _, err := req.remoteGit(ctx, "", "clone", "--branch", req.GitOpsBranch, "--single-branch", req.GitOpsURL, work); err != nil {
+		return nil, err
+	}
+	if err := guardProjectTree(work, req.Platform); err != nil {
 		return nil, err
 	}
 	root := filepath.Join(work, filepath.FromSlash(req.Platform.ProjectsDirPath()))
@@ -1135,6 +1240,9 @@ func DeleteProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 	if _, err := req.remoteGit(ctx, "", "clone", "--branch", req.GitOpsBranch, "--single-branch", req.GitOpsURL, work); err != nil {
 		return ProjectResult{}, err
 	}
+	if err := guardProjectTree(work, req.Platform); err != nil {
+		return ProjectResult{}, err
+	}
 	rel := req.Platform.ProjectDir(project)
 	// A project that holds a database is not removed silently: the data
 	// leaves the cluster first, with the Job the engine wrote.
@@ -1170,6 +1278,12 @@ func DeleteProject(ctx context.Context, req ProjectRequest) (ProjectResult, erro
 	}
 	if !changed {
 		return ProjectResult{Project: project}, nil
+	}
+	if err := SyncInfisicalOperatorScope(work, req.Platform); err != nil {
+		return ProjectResult{}, err
+	}
+	if req.Platform.InfisicalOperatorScope {
+		add = append(add, filepath.ToSlash(filepath.Join(req.Platform.ProjectsDirPath(), InfisicalOperatorScopeFile)))
 	}
 	if _, err := runGit(ctx, work, gitConfig(append([]string{"add", "-A", "--"}, add...)...)...); err != nil {
 		return ProjectResult{}, err

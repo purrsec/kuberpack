@@ -324,9 +324,14 @@ policies:
     - postgres
 ```
 
-- **`defaultDeny`** : isole les services du projet. `true` (défaut) rend la `NetworkPolicy` du chart, `false` la désactive : le service n'est plus cloisonné.
-- **`internet`** : Permet aux services d'effectuer des appels externes (APIs tierces, webhooks, passerelles de paiement).
-- **`peers`** : Configure les règles ingress/egress des `NetworkPolicy` pour autoriser le trafic inter-services et vers les addons déclarés. Chaque peer doit être **un service ou un addon du projet** : le compilateur refuse un nom inconnu.
+- **`defaultDeny`** : isole les services du projet ; activé par défaut, `false` est refusé.
+- **`internet`** : autorise HTTP/HTTPS vers Internet lorsqu’il vaut `true`. Il vaut **false par défaut** pour un projet.
+- **`peers`** : liste héritée des voisins locaux autorisés. Chaque peer doit être **un service ou un addon du projet** : le compilateur refuse un nom inconnu ou un voisin d’un autre projet. Une connexion entre services est limitée au port de la cible et à la direction déclarée.
+
+La liste peut être précisée par service : `services.web.peers: [api]` autorise
+`web` à joindre `api`. `services.api.peers: []` n’autorise aucune connexion
+inverse et n’hérite pas de `policies.peers`. `addons: [cache]` autorise également
+l’accès au cache déclaré. Voir [les garanties et limites réseau](security.md).
 
 ---
 

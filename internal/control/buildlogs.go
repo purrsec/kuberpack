@@ -3,7 +3,9 @@ package control
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,22 +50,33 @@ func (s *Server) buildLogs(ctx context.Context, deliveryID string) string {
 
 // podLogs reads the output of the builder of a pod.
 func (s *Server) podLogs(ctx context.Context, pod corev1.Pod) string {
-	request := s.cfg.Kube.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
-		Container: builderContainer,
-		TailLines: int64Ptr(logTailLines),
-	})
-	raw, err := request.DoRaw(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	options := &corev1.PodLogOptions{Container: builderContainer, TailLines: int64Ptr(logTailLines), LimitBytes: int64Ptr(maxLogBytes)}
+	request := s.cfg.Kube.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, options)
+	stream, err := request.Stream(ctx)
 	if err != nil {
 		// The container may not have started, or may have another name.
 		// The whole output is then read, and the reader will see the
 		// sidecar of BuildKit instead of nothing.
 		request = s.cfg.Kube.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
-			TailLines: int64Ptr(logTailLines),
+			TailLines:  int64Ptr(logTailLines),
+			LimitBytes: int64Ptr(maxLogBytes),
 		})
-		raw, err = request.DoRaw(ctx)
+		stream, err = request.Stream(ctx)
 		if err != nil {
 			return ""
 		}
+	}
+	defer stream.Close()
+	// Enforce the bound while reading, even when a kubelet ignores LimitBytes
+	// or returns a single line larger than that limit.
+	raw, err := io.ReadAll(io.LimitReader(stream, maxLogBytes+1))
+	if err != nil {
+		return ""
+	}
+	if len(raw) > maxLogBytes {
+		return fmt.Sprintf("... build log stream exceeded %d bytes; extract truncated ...\n%s", maxLogBytes, strings.TrimRight(string(raw[:maxLogBytes]), "\n"))
 	}
 	return clipLogs(string(raw))
 }

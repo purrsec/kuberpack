@@ -20,23 +20,38 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: kube-system
+              kubernetes.io/metadata.name: {{ .Values.ingressNamespace | default "kube-system" }}
           podSelector:
             matchLabels:
-              app.kubernetes.io/name: traefik
+              {{- toYaml .Values.ingressPodSelector | nindent 14 }}
         - podSelector:
             matchLabels:
+              app.kubernetes.io/name: {{ include "stateless.fullname" . }}-test
               app.kubernetes.io/component: helm-test
+              {{- with .Values.networkPolicy.project }}
+              kuberpack.io/project: {{ . | quote }}
+              {{- end }}
       ports:
         - protocol: TCP
           port: {{ .Values.port }}
+    {{- $root := . }}
+    {{- $incoming := .Values.networkPolicy.peers | default list }}
+    {{- if .Values.networkPolicy.strictPeers }}
+    {{- $incoming = .Values.networkPolicy.incomingPeers | default list }}
+    {{- end }}
+    {{- range $incoming }}
     - from:
         - podSelector:
             matchLabels:
+              app.kubernetes.io/name: {{ . | toString | quote }}
               app.kubernetes.io/part-of: kuberpack
+              {{- with $root.Values.networkPolicy.project }}
+              kuberpack.io/project: {{ . | quote }}
+              {{- end }}
       ports:
         - protocol: TCP
-          port: {{ .Values.port }}
+          port: {{ $root.Values.port }}
+    {{- end }}
   egress:
     - to:
         - namespaceSelector:
@@ -55,23 +70,30 @@ spec:
             except: [10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16]
         - ipBlock:
             cidr: "::/0"
-            except: ["::1/128", "fc00::/7", "fe80::/10"]
-      ports:
-        - { protocol: TCP, port: 80 }
-        - { protocol: TCP, port: 443 }
-    - to:
-        - ipBlock:
-            cidr: "64:ff9b::/96"
+            except: ["::/96", "::ffff:0:0/96", "64:ff9b::/96", "64:ff9b:1::/48", "fc00::/7", "fe80::/10"]
       ports:
         - { protocol: TCP, port: 80 }
         - { protocol: TCP, port: 443 }
     {{- end }}
+    {{- if .Values.networkPolicy.strictPeers }}
+    {{- range (.Values.networkPolicy.servicePeers | default list) }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ .name | quote }}
+              app.kubernetes.io/part-of: kuberpack
+              kuberpack.io/project: {{ $root.Values.networkPolicy.project | quote }}
+      ports:
+        - { protocol: TCP, port: {{ .port }} }
+    {{- end }}
+    {{- else }}
     {{- range (.Values.networkPolicy.peers | default list) }}
     - to:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: {{ . | toString | quote }}
               app.kubernetes.io/part-of: kuberpack
+    {{- end }}
     {{- end }}
     {{- range (.Values.networkPolicy.addonPeers | default list) }}
     - to:
@@ -118,12 +140,6 @@ spec:
         - podSelector:
             matchLabels:
               {{- include "stateless.selectorLabels" . | nindent 14 }}
-      ports:
-        - protocol: TCP
-          port: {{ .Values.port }}
-    - to:
-        - ipBlock:
-            cidr: 10.43.0.0/16
       ports:
         - protocol: TCP
           port: {{ .Values.port }}

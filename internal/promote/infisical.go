@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // ensureSecretCR writes an InfisicalStaticSecret for the app's declared
@@ -118,6 +121,27 @@ func removeSecretCR(work string, spec AppSpec, p Platform) ([]string, bool, erro
 			paths = append(paths, parentRel)
 			changed = true
 		}
+		var parent struct {
+			Resources []string `yaml:"resources"`
+		}
+		if err := yaml.Unmarshal(updated, &parent); err != nil {
+			return nil, false, err
+		}
+		if len(parent.Resources) == 0 {
+			// An empty legacy tree is not a buildable kustomization. Its
+			// root reference must leave in the same commit as its last sync.
+			rootPath := filepath.Join(work, "kustomization.yaml")
+			root, err := os.ReadFile(rootPath)
+			if err == nil && listedInKustomization(root, p.InfisicalDir) {
+				if err := os.WriteFile(rootPath, removeKustomizationResource(root, p.InfisicalDir), 0o644); err != nil {
+					return nil, false, err
+				}
+				paths = append(paths, "kustomization.yaml")
+				changed = true
+			} else if err != nil && !os.IsNotExist(err) {
+				return nil, false, err
+			}
+		}
 	}
 	return paths, changed, nil
 }
@@ -147,7 +171,7 @@ func infisicalCRContent(spec AppSpec, p Platform) string {
 	b.WriteString("    namespace: " + p.InfisicalNamespace + "\n")
 	b.WriteString("  sources:\n")
 	b.WriteString("    - projectId: " + p.InfisicalProjectID + "\n")
-	b.WriteString("      environmentSlug: " + secretEnv(spec) + "\n")
+	b.WriteString("      environmentSlug: " + strconv.Quote(secretEnv(spec)) + "\n")
 	b.WriteString("      secretPath: " + p.InfisicalPath + "\n")
 	b.WriteString("  syncOptions:\n")
 	b.WriteString("    refreshInterval: 1m\n")

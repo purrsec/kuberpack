@@ -4,6 +4,9 @@ metadata:
   name: kuberpack-data
   namespace: {{ .Release.Namespace }}
 spec:
+  {{- with .Values.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
   accessModes: [ReadWriteOnce]
   resources:
     requests:

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"strconv"
 
@@ -22,6 +23,12 @@ import (
 )
 
 func runServe(args []string) error {
+	if raw := os.Getenv("KUBERPACK_INGRESS_POD_SELECTOR"); raw != "" {
+		var selector map[string]string
+		if err := json.Unmarshal([]byte(raw), &selector); err != nil || len(selector) == 0 {
+			return fmt.Errorf("KUBERPACK_INGRESS_POD_SELECTOR must be a nonempty JSON label map")
+		}
+	}
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	addr := fs.String("addr", getenv("KUBERPACK_ADDR", ":8080"), "listen address")
 	dataDir := fs.String("data", getenv("KUBERPACK_DATA", "data"), "SQLite and HMAC secrets directory")
@@ -40,7 +47,12 @@ func runServe(args []string) error {
 	// The read token opens the repositories. The build token pushes the
 	// images: the builder reads them from their own secrets.
 	token := strings.TrimSpace(getenv("KUBERPACK_GIT_TOKEN", os.Getenv("FORGEJO_TOKEN")))
-	apiToken := getenv("KUBERPACK_API_TOKEN", token)
+	// Missing API credentials close administrative routes. A Git credential
+	// must never implicitly become a remotely usable administrator token.
+	apiToken := strings.TrimSpace(os.Getenv("KUBERPACK_API_TOKEN"))
+	if apiToken != "" && apiToken == token {
+		return fmt.Errorf("KUBERPACK_API_TOKEN must be distinct from KUBERPACK_GIT_TOKEN")
+	}
 	provider, err := git.New(git.Config{
 		Kind:  *gitProvider,
 		URL:   *gitURL,
@@ -107,23 +119,26 @@ func runServe(args []string) error {
 	srv := control.New(control.Config{
 		Kube:             kubeClient,
 		KubeConfig:       kubeConfig,
+		KubeletCA:        []byte(os.Getenv("KUBERPACK_KUBELET_CA_PEM")),
 		BuilderNamespace: getenv("KUBERPACK_BUILDER_NAMESPACE", "kuberpack-build"),
 		// The volume of the cache of the builder: the database of the
 		// vulnerabilities of Trivy. The platform creates it.
-		BuilderCacheName: getenv("KUBERPACK_BUILDER_CACHE_NAME", "kuberpack-builder-cache"),
-		BuilderCacheSize: getenv("KUBERPACK_BUILDER_CACHE_SIZE", "2Gi"),
-		Builder:          jobBuilder,
-		Store:            db,
-		Secrets:          store.SecretsDir(filepath.Join(*dataDir, "secrets")),
-		Provider:         provider,
-		RegistryURL:      *registryURL,
-		RegistryUser:     strings.TrimSpace(os.Getenv("KUBERPACK_REGISTRY_USER")),
-		Token:            token,
-		APIToken:         apiToken,
-		WebhookURL:       strings.TrimSpace(*webhookURL),
-		GitOpsURL:        *gitopsURL,
-		GitOpsBranch:     *gitopsBranch,
-		ChartPath:        *chartPath,
+		BuilderCacheName:         getenv("KUBERPACK_BUILDER_CACHE_NAME", "kuberpack-builder-cache"),
+		BuilderCacheSize:         getenv("KUBERPACK_BUILDER_CACHE_SIZE", "2Gi"),
+		BuilderCacheStorageClass: getenv("KUBERPACK_STORAGE_CLASS", ""),
+		Builder:                  jobBuilder,
+		Store:                    db,
+		Secrets:                  store.SecretsDir(filepath.Join(*dataDir, "secrets")),
+		Provider:                 provider,
+		RegistryURL:              *registryURL,
+		RegistryUser:             strings.TrimSpace(os.Getenv("KUBERPACK_REGISTRY_USER")),
+		RegistryToken:            strings.TrimSpace(os.Getenv("KUBERPACK_REGISTRY_TOKEN")),
+		Token:                    token,
+		APIToken:                 apiToken,
+		WebhookURL:               strings.TrimSpace(*webhookURL),
+		GitOpsURL:                *gitopsURL,
+		GitOpsBranch:             *gitopsBranch,
+		ChartPath:                *chartPath,
 		// The chart of the control plane itself. The platform writes it in
 		// the GitOps repository: the deployment of the platform follows
 		// the image that runs it.
@@ -140,6 +155,11 @@ func runServe(args []string) error {
 		Addr:              *addr,
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    32 * 1024,
+		// Runtime log follow responses intentionally stay open. Their writer
+		// sets a fresh deadline for each write to evict stalled consumers.
 	}
 	fmt.Printf("kuberpack listening on %s\n", *addr)
 	return httpSrv.ListenAndServe()
@@ -156,40 +176,53 @@ func clusterClient() (kubernetes.Interface, error) {
 
 func platformFromEnv() promote.Platform {
 	return promote.Platform{
-		AppsDir:             getenv("KUBERPACK_GITOPS_APPS", "kubernetes/vps/apps"),
-		ChartRef:            getenv("KUBERPACK_GITOPS_CHART", "./kubernetes/vps/charts/stateless"),
-		ChartSourceKind:     getenv("KUBERPACK_GITOPS_CHART_SOURCE_KIND", "GitRepository"),
-		SourceName:          getenv("KUBERPACK_GITOPS_SOURCE", "infra-homelab"),
-		SourceNamespace:     getenv("KUBERPACK_GITOPS_SOURCE_NAMESPACE", "flux-system"),
-		ReleaseNamespace:    getenv("KUBERPACK_RELEASE_NAMESPACE", "apps"),
-		IngressClassName:    getenv("KUBERPACK_INGRESS_CLASS", "traefik"),
-		ImagePullSecret:     getenv("KUBERPACK_IMAGE_PULL_SECRET", "forgejo-registry-pull"),
-		IngressTLS:          getenvBool("KUBERPACK_INGRESS_TLS", true),
-		ExternalDNSTarget:   promote.IPv6DNSTargets(os.Getenv("KUBERPACK_DNS_TARGET")),
-		ExternalDNSTTL:      getenv("KUBERPACK_DNS_TTL", "300"),
-		TraefikEntrypoint:   getenv("KUBERPACK_TRAEFIK_ENTRYPOINT", "websecure"),
-		TraefikCertResolver: getenv("KUBERPACK_CERT_RESOLVER", "letsencrypt"),
-		NetworkPolicy:       getenvBool("KUBERPACK_NETWORK_POLICY", true),
-		PreviewDomain:       getenv("KUBERPACK_PREVIEW_DOMAIN", "preview.host.bzh"),
-		InfisicalAuthRef:    getenv("KUBERPACK_INFISICAL_AUTH_REF", "contabo-vps"),
-		InfisicalProjectID:  strings.TrimSpace(os.Getenv("KUBERPACK_INFISICAL_PROJECT_ID")),
-		InfisicalPath:       getenv("KUBERPACK_INFISICAL_PATH", "/"),
-		InfisicalDir:        getenv("KUBERPACK_INFISICAL_DIR", "kubernetes/vps/infisical"),
-		InfisicalNamespace:  getenv("KUBERPACK_INFISICAL_NAMESPACE", "infisical"),
-		PostgresImage:       getenv("KUBERPACK_POSTGRES_IMAGE", ""),
-		AddonOperators:      splitList(getenv("KUBERPACK_ADDON_OPERATORS", "")),
-		NodeMemory:          getenv("KUBERPACK_NODE_MEMORY", ""),
-		NodeCPU:             getenvFloat("KUBERPACK_NODE_CPU", 0),
+		AppsDir:                getenv("KUBERPACK_GITOPS_APPS", "kubernetes/vps/apps"),
+		ChartRef:               getenv("KUBERPACK_GITOPS_CHART", "./kubernetes/vps/charts/stateless"),
+		ChartSourceKind:        getenv("KUBERPACK_GITOPS_CHART_SOURCE_KIND", "GitRepository"),
+		SourceName:             getenv("KUBERPACK_GITOPS_SOURCE", "infra-homelab"),
+		SourceNamespace:        getenv("KUBERPACK_GITOPS_SOURCE_NAMESPACE", "flux-system"),
+		ReleaseNamespace:       getenv("KUBERPACK_RELEASE_NAMESPACE", "apps"),
+		IngressClassName:       getenv("KUBERPACK_INGRESS_CLASS", "traefik"),
+		IngressNamespace:       getenv("KUBERPACK_INGRESS_NAMESPACE", "kube-system"),
+		IngressPodSelector:     ingressPodSelectorFromEnv(),
+		Issuer:                 getenv("KUBERPACK_ISSUER", "letsencrypt"),
+		VolumeStorageClass:     getenv("KUBERPACK_STORAGE_CLASS", ""),
+		ImagePullSecret:        getenv("KUBERPACK_IMAGE_PULL_SECRET", "forgejo-registry-pull"),
+		IngressTLS:             getenvBool("KUBERPACK_INGRESS_TLS", true),
+		ExternalDNSTarget:      promote.IPv6DNSTargets(os.Getenv("KUBERPACK_DNS_TARGET")),
+		ExternalDNSTTL:         getenv("KUBERPACK_DNS_TTL", "300"),
+		TraefikEntrypoint:      getenv("KUBERPACK_TRAEFIK_ENTRYPOINT", "websecure"),
+		TraefikCertResolver:    getenv("KUBERPACK_CERT_RESOLVER", "letsencrypt"),
+		NetworkPolicy:          getenvBool("KUBERPACK_NETWORK_POLICY", true),
+		PreviewDomain:          getenv("KUBERPACK_PREVIEW_DOMAIN", "preview.host.bzh"),
+		InfisicalAuthRef:       getenv("KUBERPACK_INFISICAL_AUTH_REF", "contabo-vps"),
+		InfisicalProjectID:     strings.TrimSpace(os.Getenv("KUBERPACK_INFISICAL_PROJECT_ID")),
+		InfisicalPath:          getenv("KUBERPACK_INFISICAL_PATH", "/"),
+		InfisicalDir:           getenv("KUBERPACK_INFISICAL_DIR", "kubernetes/vps/infisical"),
+		InfisicalNamespace:     getenv("KUBERPACK_INFISICAL_NAMESPACE", "infisical"),
+		InfisicalOperatorScope: getenvBool("KUBERPACK_INFISICAL_OPERATOR_SCOPE", false),
+		PostgresImage:          getenv("KUBERPACK_POSTGRES_IMAGE", ""),
+		AddonOperators:         splitList(getenv("KUBERPACK_ADDON_OPERATORS", "")),
+		NodeMemory:             getenv("KUBERPACK_NODE_MEMORY", ""),
+		NodeCPU:                getenvFloat("KUBERPACK_NODE_CPU", 0),
 		// The share of the node the platform keeps for itself. The
 		// applications of the platform share what is left.
 		NodeReserve:            getenv("KUBERPACK_NODE_RESERVE", ""),
 		PostgresStorage:        getenv("KUBERPACK_POSTGRES_STORAGE", ""),
 		PostgresStorageClass:   getenv("KUBERPACK_POSTGRES_STORAGE_CLASS", ""),
+		AddonStorageClass:      getenv("KUBERPACK_STORAGE_CLASS", ""),
 		PreviewDatabaseStorage: getenv("KUBERPACK_PREVIEW_DB_STORAGE", ""),
 		PreviewDatabaseClass:   getenv("KUBERPACK_PREVIEW_DB_CLASS", ""),
 		ProjectsDir:            getenv("KUBERPACK_PROJECTS_DIR", "kubernetes/vps/projects"),
 		ControlPlaneNamespace:  getenv("KUBERPACK_CONTROL_PLANE_NAMESPACE", "kuberpack"),
+		BuildNamespace:         getenv("KUBERPACK_BUILDER_NAMESPACE", "kuberpack-build"),
 	}
+}
+
+func ingressPodSelectorFromEnv() map[string]string {
+	var selector map[string]string
+	_ = json.Unmarshal([]byte(os.Getenv("KUBERPACK_INGRESS_POD_SELECTOR")), &selector)
+	return selector
 }
 
 // getenvFloat reads a number from the environment.

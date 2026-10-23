@@ -3,16 +3,12 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
-	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
-	"time"
 
-	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/cli"
@@ -56,13 +52,13 @@ func clusterServices() []clusterService {
 			Name:      "cert-manager",
 			Repo:      "https://charts.jetstack.io",
 			Chart:     "cert-manager",
-			Version:   "v1.18.2",
+			Version:   "v1.21.2",
 			Namespace: "cert-manager",
 			Values: map[string]any{
 				// The platform issues the certificates of the
 				// applications. The webhook is the one of the
 				// platform, not the one of the cluster.
-				"installCRDs": true,
+				"crds": map[string]any{"enabled": true},
 				"global": map[string]any{
 					"leaderElection": map[string]any{
 						"namespace": "cert-manager",
@@ -89,67 +85,6 @@ func clusterServices() []clusterService {
 			Namespace: "cnpg-system",
 		},
 	}
-}
-
-// installClusterServices installs the services of the cluster the platform
-// needs.
-//
-// It is idempotent: a service that is already there is upgraded to the
-// version of the platform. With dryRun, nothing is written: the operator
-// sees what would be done.
-func installClusterServices(ctx context.Context, dryRun bool) error {
-	settings := helmSettings()
-	for _, service := range clusterServices() {
-		if dryRun {
-			fmt.Printf("would install %s (%s %s) in the namespace %s\n",
-				service.Name, service.Chart, service.Version, service.Namespace)
-			continue
-		}
-		if err := installClusterService(ctx, settings, service); err != nil {
-			return fmt.Errorf("the service %s: %w", service.Name, err)
-		}
-		fmt.Printf("the service %s is installed (version %s)\n", service.Name, service.Version)
-	}
-	return nil
-}
-
-// installClusterService installs one service of the cluster, or upgrades it
-// when it is already there.
-func installClusterService(ctx context.Context, settings *cli.EnvSettings, service clusterService) error {
-	actionConfig := new(action.Configuration)
-	if err := actionConfig.Init(settings.RESTClientGetter(), service.Namespace, "secret", func(string, ...interface{}) {}); err != nil {
-		return err
-	}
-	chart, err := fetchChart(settings, service)
-	if err != nil {
-		return err
-	}
-	history, err := actionConfig.Releases.History(service.Name)
-	if err != nil {
-		return err
-	}
-	if len(history) == 0 {
-		install := action.NewInstall(actionConfig)
-		install.ReleaseName = service.Name
-		install.Namespace = service.Namespace
-		install.CreateNamespace = true
-		install.Wait = true
-		install.Timeout = 10 * time.Minute
-		if _, err := install.RunWithContext(ctx, chart, service.Values); err != nil {
-			return err
-		}
-		return nil
-	}
-	// The service is already there: it is brought to the version of the
-	// platform. A failure leaves the service as it was.
-	upgrade := action.NewUpgrade(actionConfig)
-	upgrade.Namespace = service.Namespace
-	upgrade.Wait = true
-	upgrade.Timeout = 10 * time.Minute
-	if _, err := upgrade.RunWithContext(ctx, service.Name, chart, service.Values); err != nil {
-		return err
-	}
-	return nil
 }
 
 // fetchChart downloads a chart and loads it.
@@ -253,14 +188,4 @@ func untar(src, dest string) error {
 			}
 		}
 	}
-}
-
-// clusterServicesSummary describes the services of the cluster, for the
-// output of the install command.
-func clusterServicesSummary() string {
-	names := make([]string, 0, len(clusterServices()))
-	for _, service := range clusterServices() {
-		names = append(names, fmt.Sprintf("%s %s %s", service.Chart, service.Version, service.Namespace))
-	}
-	return strings.Join(names, ", ")
 }

@@ -3,13 +3,12 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
-	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/cli"
@@ -23,6 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -37,7 +37,7 @@ const (
 	// The name of the InfisicalAuth object is the one the platform
 	// expects: it is written in the InfisicalStaticSecret of every
 	// application that declares secrets.
-	infisicalAuthName = "contabo-vps"
+	infisicalAuthName = "kuberpack"
 	// infisicalInternalAddress is where the secrets operator talks to
 	// Infisical: the service of the chart, inside the cluster. The public
 	// address is only for the browser.
@@ -63,7 +63,7 @@ type infisicalService struct {
 //
 // The instance and the operator: the operator is what synchronises the
 // secrets of the applications. The instance holds them.
-func infisicalServices(domain, adminEmail, adminPassword string) []infisicalService {
+func infisicalServices(domain string) []infisicalService {
 	return []infisicalService{
 		{
 			Name:      "infisical",
@@ -119,10 +119,12 @@ func infisicalServices(domain, adminEmail, adminPassword string) []infisicalServ
 					},
 					"auth": map[string]any{
 						"username": "infisical",
-						"password": "root",
+
 						"database": "infisicalDB",
 					},
 					"primary": map[string]any{
+						"automountServiceAccountToken": false,
+						"networkPolicy":                infisicalDatabaseNetworkPolicy(),
 						"resources": map[string]any{
 							"limits":   map[string]any{"cpu": "500m", "memory": "768Mi"},
 							"requests": map[string]any{"cpu": "100m", "memory": "256Mi"},
@@ -131,16 +133,18 @@ func infisicalServices(domain, adminEmail, adminPassword string) []infisicalServ
 					},
 				},
 				"redis": map[string]any{
-					"enabled": true,
+					"enabled":       true,
+					"networkPolicy": infisicalDatabaseNetworkPolicy(),
+					"replica":       map[string]any{"automountServiceAccountToken": false},
 					"image": map[string]any{
 						"registry":   "mirror.gcr.io",
 						"repository": "bitnamilegacy/redis",
 					},
 					"auth": map[string]any{
 						"usePassword": true,
-						"password":    "mysecretpassword",
 					},
 					"master": map[string]any{
+						"automountServiceAccountToken": false,
 						"resources": map[string]any{
 							"limits":   map[string]any{"cpu": "300m", "memory": "384Mi"},
 							"requests": map[string]any{"cpu": "50m", "memory": "128Mi"},
@@ -156,124 +160,12 @@ func infisicalServices(domain, adminEmail, adminPassword string) []infisicalServ
 			Chart:     "secrets-operator",
 			Version:   "0.11.13",
 			Namespace: infisicalNamespace,
-			Values:    map[string]any{},
+			Values: map[string]any{
+				"scopedRBAC":       true,
+				"scopedNamespaces": []string{infisicalNamespace},
+			},
 		},
 	}
-}
-
-// installInfisical installs Infisical and its operator, and wires the
-// operator to the instance.
-//
-// The operator is what the platform uses: it authenticates with a machine
-// identity, and that identity is created by the chart when it boots the
-// instance. Everything is created here, in one command: the operator
-// writes no YAML.
-func installInfisical(ctx context.Context, config *rest.Config, client kubernetes.Interface, domain, adminEmail string, dryRun bool) error {
-	if domain == "" {
-		return fmt.Errorf("the domain of Infisical is required")
-	}
-	if dryRun {
-		for _, service := range infisicalServices(domain, adminEmail, "") {
-			fmt.Printf("would install %s (%s %s) in the namespace %s\n",
-				service.Name, service.Chart, service.Version, service.Namespace)
-		}
-		fmt.Printf("would create the service accounts, the roles and the objects of the operator in the namespace %s\n", infisicalNamespace)
-		return nil
-	}
-	if err := ensureNamespace(ctx, client, infisicalNamespace); err != nil {
-		return fmt.Errorf("the namespace: %w", err)
-	}
-	// Les secrets de l'instance : la cle d'authentification et la cle de
-	// chiffrement. Elles ne quittent jamais le cluster, et l'operateur les
-	// lit. La cle de chiffrement est ecrite a part, sur le disque de
-	// l'operateur : sans elle, les secrets de la base sont illisibles.
-	// La cle de chiffrement n'est jamais changee : elle chiffre ce qui est
-	// deja dans la base. Regeneree, l'instance ne peut plus lire ses
-	// propres secrets. Elle n'est donc ecrite que si elle n'existe pas.
-	existing, err := client.CoreV1().Secrets(infisicalNamespace).Get(ctx, "infisical-secrets", metav1.GetOptions{})
-	if err != nil && !apierrors.IsNotFound(err) {
-		return err
-	}
-	secrets := map[string][]byte{"SITE_URL": []byte("https://" + domain)}
-	if err == nil {
-		if key := strings.TrimSpace(string(existing.Data["ENCRYPTION_KEY"])); key != "" {
-			secrets["ENCRYPTION_KEY"] = existing.Data["ENCRYPTION_KEY"]
-		}
-		if auth := strings.TrimSpace(string(existing.Data["AUTH_SECRET"])); auth != "" {
-			secrets["AUTH_SECRET"] = existing.Data["AUTH_SECRET"]
-		}
-	}
-	if _, ok := secrets["ENCRYPTION_KEY"]; !ok {
-		secrets["ENCRYPTION_KEY"] = []byte(randomHex(16))
-	}
-	if _, ok := secrets["AUTH_SECRET"]; !ok {
-		secrets["AUTH_SECRET"] = []byte(randomSecret(32))
-	}
-	if err := ensureSecret(ctx, client, infisicalNamespace, "infisical-secrets", secrets); err != nil {
-		return err
-	}
-	adminPassword := randomSecret(18)
-	if err := ensureSecret(ctx, client, infisicalNamespace, "infisical-bootstrap-credentials", map[string][]byte{
-		"INFISICAL_ADMIN_EMAIL":    []byte(adminEmail),
-		"INFISICAL_ADMIN_PASSWORD": []byte(adminPassword),
-	}); err != nil {
-		return err
-	}
-	// Le certificat : l'instance est servie en HTTPS.
-	if err := ensureCertificate(ctx, config, client, domain); err != nil {
-		return fmt.Errorf("the certificate: %w", err)
-	}
-	settings := helmSettings()
-	for _, service := range infisicalServices(domain, adminEmail, adminPassword) {
-		if err := installInfisicalChart(ctx, settings, config, service); err != nil {
-			return fmt.Errorf("the chart %s: %w", service.Name, err)
-		}
-		fmt.Printf("the chart %s is installed (version %s)\n", service.Name, service.Version)
-	}
-	// Le chart amorce l'instance et depose le jeton de l'identite machine
-	// dans un Secret. L'operateur s'authentifie avec cette identite.
-	identityID, err := waitForBootstrapIdentity(ctx, client)
-	if err != nil {
-		return err
-	}
-	if err := ensureInfisicalObjects(ctx, config, client, domain, identityID); err != nil {
-		return fmt.Errorf("the objects of the operator: %w", err)
-	}
-	fmt.Printf("Infisical is installed in the namespace %s, on https://%s\n", infisicalNamespace, domain)
-	return nil
-}
-
-// installInfisicalChart installs or upgrades one chart of the
-// installation.
-func installInfisicalChart(ctx context.Context, settings *cli.EnvSettings, config *rest.Config, service infisicalService) error {
-	actionConfig := new(action.Configuration)
-	if err := actionConfig.Init(settings.RESTClientGetter(), service.Namespace, "secret", func(string, ...interface{}) {}); err != nil {
-		return err
-	}
-	loaded, err := fetchInfisicalChart(settings, service)
-	if err != nil {
-		return err
-	}
-	history, err := actionConfig.Releases.History(service.Name)
-	if err != nil {
-		return err
-	}
-	if len(history) == 0 {
-		install := action.NewInstall(actionConfig)
-		install.ReleaseName = service.Name
-		install.Namespace = service.Namespace
-		install.CreateNamespace = true
-		install.Wait = true
-		install.Timeout = 10 * time.Minute
-		_, err = install.RunWithContext(ctx, loaded, service.Values)
-		return err
-	}
-	upgrade := action.NewUpgrade(actionConfig)
-	upgrade.Namespace = service.Namespace
-	upgrade.Wait = true
-	upgrade.Timeout = 10 * time.Minute
-	_, err = upgrade.RunWithContext(ctx, service.Name, loaded, service.Values)
-	return err
 }
 
 // fetchInfisicalChart downloads a chart of the installation and loads it.
@@ -282,27 +174,12 @@ func fetchInfisicalChart(settings *cli.EnvSettings, service infisicalService) (*
 	if err != nil {
 		return nil, err
 	}
-	return loaded, nil
-}
-
-// waitForBootstrapIdentity waits for the chart to have booted the
-// instance, and returns the identifier of the machine identity.
-func waitForBootstrapIdentity(ctx context.Context, client kubernetes.Interface) (string, error) {
-	deadline := time.Now().Add(10 * time.Minute)
-	for time.Now().Before(deadline) {
-		secret, err := client.CoreV1().Secrets(infisicalNamespace).Get(ctx, "infisical-bootstrap-secret", metav1.GetOptions{})
-		if err == nil {
-			if id := strings.TrimSpace(string(secret.Data["identityId"])); id != "" {
-				return id, nil
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case <-time.After(10 * time.Second):
+	if service.Name == "infisical" {
+		if err := hardenInfisicalRuntimeChart(loaded); err != nil {
+			return nil, err
 		}
 	}
-	return "", fmt.Errorf("the instance was not booted in time: the chart did not leave the identity of the machine in the secret infisical-bootstrap-secret")
+	return loaded, nil
 }
 
 // ensureInfisicalObjects creates the objects the operator needs: the
@@ -322,7 +199,7 @@ func ensureInfisicalObjects(ctx context.Context, config *rest.Config, client kub
 		ObjectMeta: metav1.ObjectMeta{Name: "infisical-token-reviewer-binding"},
 		RoleRef:    rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: "system:auth-delegator"},
 		Subjects: []rbacv1.Subject{
-			{Kind: "ServiceAccount", Name: "infisical-token-reviewer", Namespace: infisicalNamespace},
+			{Kind: "ServiceAccount", Name: "infisical-service-account", Namespace: infisicalNamespace},
 		},
 	}
 	if _, err := client.RbacV1().ClusterRoleBindings().Create(ctx, binding, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
@@ -367,6 +244,7 @@ func ensureInfisicalObjects(ctx context.Context, config *rest.Config, client kub
 			},
 			"method": "kubernetes",
 			"kubernetes": map[string]any{
+				"serviceAccountTokenAudiences": []any{},
 				"identityIdRef": map[string]any{
 					"name":      "kubernetes-credentials",
 					"namespace": infisicalNamespace,
@@ -399,6 +277,10 @@ func restmapperFor(config *rest.Config) (meta.RESTMapper, error) {
 // applyUnstructured creates or updates an object the platform does not own
 // a typed client for.
 func applyUnstructured(ctx context.Context, dyn dynamic.Interface, config *rest.Config, object *unstructured.Unstructured) error {
+	return applyOwnedUnstructured(ctx, dyn, config, object, false)
+}
+
+func applyOwnedUnstructured(ctx context.Context, dyn dynamic.Interface, config *rest.Config, object *unstructured.Unstructured, force bool) error {
 	// The resource is found by the mapper: the plural of a kind is not
 	// the kind in lower case, and guessing it fails.
 	group, version := "", ""
@@ -418,22 +300,12 @@ func applyUnstructured(ctx context.Context, dyn dynamic.Interface, config *rest.
 	if err != nil {
 		return fmt.Errorf("the resource of %s: %w", object.GetKind(), err)
 	}
-	resource := dyn.Resource(mapping.Resource)
-	_, err = resource.Namespace(object.GetNamespace()).Create(ctx, object, metav1.CreateOptions{})
-	if err == nil {
-		return nil
-	}
-	if !apierrors.IsAlreadyExists(err) {
-		return err
-	}
-	// The object is already there: it is updated. The version of the
-	// existing object is required, the API refuses an update without it.
-	existing, err := resource.Namespace(object.GetNamespace()).Get(ctx, object.GetName(), metav1.GetOptions{})
+	data, err := json.Marshal(object.Object)
 	if err != nil {
 		return err
 	}
-	object.SetResourceVersion(existing.GetResourceVersion())
-	_, err = resource.Namespace(object.GetNamespace()).Update(ctx, object, metav1.UpdateOptions{})
+	resource := dyn.Resource(mapping.Resource)
+	_, err = resource.Namespace(object.GetNamespace()).Patch(ctx, object.GetName(), types.ApplyPatchType, data, metav1.PatchOptions{FieldManager: "kuberpack-install", Force: &force})
 	return err
 }
 
@@ -446,7 +318,7 @@ func randomSecret(size int) string {
 func randomHex(size int) string {
 	buf := make([]byte, size)
 	if _, err := rand.Read(buf); err != nil {
-		return "kuberpack"
+		panic(fmt.Errorf("secure random generator: %w", err))
 	}
 	const digits = "0123456789abcdef"
 	out := make([]byte, len(buf)*2)
@@ -455,27 +327,6 @@ func randomHex(size int) string {
 		out[i*2+1] = digits[b&0x0f]
 	}
 	return string(out)
-}
-
-// ensureCertificate asks cert-manager for the certificate of the
-// instance. The cluster already has an issuer: the one that signs the
-// certificates of the applications.
-func ensureCertificate(ctx context.Context, config *rest.Config, client kubernetes.Interface, domain string) error {
-	dyn, err := dynamic.NewForConfig(config)
-	if err != nil {
-		return err
-	}
-	certificate := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "cert-manager.io/v1",
-		"kind":       "Certificate",
-		"metadata":   map[string]any{"name": "infisical-tls", "namespace": infisicalNamespace},
-		"spec": map[string]any{
-			"secretName": "infisical-tls",
-			"issuerRef":  map[string]any{"name": "letsencrypt", "kind": "ClusterIssuer"},
-			"dnsNames":   []any{domain},
-		},
-	}}
-	return applyUnstructured(ctx, dyn, config, certificate)
 }
 
 // helmSettings returns the settings of the SDK Helm.
@@ -491,26 +342,6 @@ func helmSettings() *cli.EnvSettings {
 		settings.KubeConfig = filepath.Join(home, ".kube", "config")
 	}
 	return settings
-}
-
-// platformDomain returns the domain the platform is served on, deduced
-// from the URL of its API. Infisical lives beside it.
-func platformDomain() string {
-	url := apiBase()
-	trimmed := strings.TrimPrefix(strings.TrimPrefix(url, "https://"), "http://")
-	if index := strings.Index(trimmed, "/"); index > 0 {
-		trimmed = trimmed[:index]
-	}
-	if trimmed == "" {
-		return "kuberpack.local"
-	}
-	return trimmed
-}
-
-// installInfisicalSummary describes the installation, for the output of
-// the install command.
-func installInfisicalSummary() string {
-	return "Infisical (instance, operateur, identite machine), namespace " + infisicalNamespace
 }
 
 // fetchChartFromRepo downloads a chart of a repository and loads it.

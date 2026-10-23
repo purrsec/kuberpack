@@ -46,6 +46,10 @@ spec:
             - {{ .Values.wait | quote }}
             {{- end }}
           env:
+            {{- with .Values.nodeMetrics.caBundle }}
+            - name: KUBERPACK_KUBELET_CA_PEM
+              value: {{ . | quote }}
+            {{- end }}
             - name: KUBERPACK_GIT_PROVIDER
               value: {{ .Values.gitProvider | default "forgejo" | quote }}
             - name: KUBERPACK_GIT_URL
@@ -60,6 +64,8 @@ spec:
             {{- end }}
             - name: KUBERPACK_GITOPS_URL
               value: {{ required "gitopsURL is required" .Values.gitopsURL | quote }}
+            - name: KUBERPACK_GITOPS_BRANCH
+              value: {{ .Values.gitopsBranch | quote }}
             - name: KUBERPACK_GITOPS_APPS
               value: {{ .Values.gitopsApps | quote }}
             - name: KUBERPACK_PROJECTS_DIR
@@ -81,7 +87,7 @@ spec:
             - name: KUBERPACK_BUILDER_IMAGE
               value: {{ required "builderImage is required" .Values.builderImage | quote }}
             - name: KUBERPACK_BUILDER_NAMESPACE
-              value: kuberpack-build
+              value: {{ .Values.buildNamespace }}
             {{- with .Values.builderResources }}
             - name: KUBERPACK_BUILDER_CPU
               value: {{ .cpu | quote }}
@@ -123,6 +129,12 @@ spec:
                 secretKeyRef:
                   name: kuberpack
                   key: KUBERPACK_API_TOKEN
+            - name: KUBERPACK_REGISTRY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: kuberpack
+                  key: KUBERPACK_REGISTRY_TOKEN
+                  optional: true
           ports:
             - name: http
               containerPort: 8080

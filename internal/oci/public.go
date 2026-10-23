@@ -35,7 +35,7 @@ var PublicEndpoints = map[string]Endpoints{
 	},
 	"quay.io": {
 		Auth: "https://quay.io/v2/auth?service=quay.io&scope=repository:",
-		API:  "https://quay.io/v2",
+		API:  "https://quay.io",
 	},
 }
 
@@ -127,6 +127,8 @@ func splitReference(reference string) (host, repository, tag string, err error) 
 		if tag == "" {
 			return "", "", "", fmt.Errorf("image reference %q has no tag", reference)
 		}
+	} else {
+		tag = "latest"
 	}
 	return host, repository, tag, nil
 }
@@ -140,12 +142,18 @@ func splitRepository(repository string) (host, name string, err error) {
 	parts := strings.SplitN(repo, "/", 2)
 	if len(parts) == 1 || !strings.ContainsAny(parts[0], ".:") {
 		// No registry: the image is on the default one.
+		if len(parts) == 1 {
+			repo = "library/" + repo
+		}
 		return defaultRegistry, repo, nil
 	}
 	host = parts[0]
 	name = parts[1]
 	if host == "index.docker.io" {
 		host = defaultRegistry
+	}
+	if host == defaultRegistry && !strings.Contains(name, "/") {
+		name = "library/" + name
 	}
 	if name == "" {
 		return "", "", fmt.Errorf("image reference %q has no repository", repository)

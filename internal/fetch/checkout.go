@@ -4,14 +4,18 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 )
 
+var exactCommitPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
+
 // Checkout clones cloneURL and verifies HEAD is exactly commitSHA.
-// Kuberpack only uses HTTPS clones (control plane and builder); there is no
-// SSH deploy-key path.
+// The control plane validates HTTP(S) remotes and the builder requires HTTPS;
+// local repositories are also supported by the test fixtures.
 //
 // The token of the platform is not necessarily valid on the forge of the
 // application: a third party repository lives on somebody else's forge. When
@@ -39,14 +43,22 @@ func checkout(ctx context.Context, cloneURL, commitSHA, dest string, extraGitArg
 		return fmt.Errorf("clone URL is empty")
 	}
 	commitSHA = strings.ToLower(strings.TrimSpace(commitSHA))
-	if commitSHA == "" {
-		return fmt.Errorf("commit SHA is empty")
+	if !exactCommitPattern.MatchString(commitSHA) {
+		return fmt.Errorf("commit SHA must contain exactly 40 hexadecimal characters")
 	}
 	if dest == "" {
 		return fmt.Errorf("checkout directory is empty")
 	}
+	if strings.HasPrefix(cloneURL, "-") || (strings.Contains(cloneURL, "::") && !strings.Contains(cloneURL, "://")) {
+		return fmt.Errorf("clone URL must not select Git options or remote helpers")
+	}
+	var err error
+	extraGitArgs, err = scopedCloneAuth(cloneURL, extraGitArgs)
+	if err != nil {
+		return err
+	}
 
-	args := []string{"clone", "--filter=blob:none", cloneURL, dest}
+	args := []string{"clone", "--filter=blob:none", "--", cloneURL, dest}
 	if _, err := runGit(ctx, "", extraGitArgs, args...); err != nil {
 		return err
 	}
@@ -61,6 +73,24 @@ func checkout(ctx context.Context, cloneURL, commitSHA, dest string, extraGitArg
 		return fmt.Errorf("cloned SHA %s does not match requested %s", got, commitSHA)
 	}
 	return nil
+}
+
+// Scope credentials to the exact remote origin. Git's global http.extraHeader
+// otherwise forwards a platform credential to every HTTP remote it contacts.
+func scopedCloneAuth(cloneURL string, args []string) ([]string, error) {
+	out := append([]string(nil), args...)
+	for index := 0; index+1 < len(out); index++ {
+		if out[index] != "-c" || !strings.HasPrefix(strings.ToLower(out[index+1]), "http.extraheader=") {
+			continue
+		}
+		remote, err := url.Parse(cloneURL)
+		if err != nil || remote.Host == "" || remote.User != nil || (remote.Scheme != "https" && remote.Scheme != "http") {
+			return nil, fmt.Errorf("clone credentials require an HTTP(S) URL without embedded credentials")
+		}
+		_, value, _ := strings.Cut(out[index+1], "=")
+		out[index+1] = "http." + remote.Scheme + "://" + remote.Host + "/.extraHeader=" + value
+	}
+	return out, nil
 }
 
 // The authentication schemes of a clone. Every forge has its own way, and
@@ -104,7 +134,10 @@ func BasicAuthArgs(user, token string) []string {
 }
 
 func runGit(ctx context.Context, dir string, extra []string, args ...string) (string, error) {
-	all := append(append([]string{}, extra...), args...)
+	// Checkout can trigger lazy HTTP fetches for a partial clone. Keep these
+	// restrictions on every Git command, including its child Git processes.
+	all := append(append([]string{}, extra...), "-c", "http.followRedirects=false", "-c", "protocol.ext.allow=never")
+	all = append(all, args...)
 	cmd := exec.CommandContext(ctx, "git", all...)
 	cmd.Dir = dir
 	cmd.Env = os.Environ()
@@ -125,7 +158,7 @@ func sanitizeGitArgs(args []string) []string {
 		if out[i] != "-c" {
 			continue
 		}
-		if strings.HasPrefix(strings.ToLower(out[i+1]), "http.extraheader=authorization:") {
+		if key, value, ok := strings.Cut(out[i+1], "="); ok && strings.HasPrefix(strings.ToLower(key), "http.") && strings.HasSuffix(strings.ToLower(key), ".extraheader") && strings.HasPrefix(strings.ToLower(value), "authorization:") {
 			out[i+1] = "http.extraHeader=Authorization: ***"
 		}
 	}

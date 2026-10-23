@@ -1,5 +1,14 @@
 image: ghcr.io/purrsec/kuberpack:latest
+buildNamespace: kuberpack-build
+storageClass: ""
+gitopsBranch: main
 builderImage: ghcr.io/purrsec/kuberpack-builder:latest
+# Admission is enforced by the API server, outside the dispatcher's RBAC.
+# Rootless BuildKit needs exceptions to restricted Pod Security; arbitrary
+# privileged Jobs and host mounts must still be refused.
+buildAdmission:
+  enabled: true
+  buildkitImage: docker.io/moby/buildkit:v0.33.0-rootless@sha256:80b15f0735e87bab7bf59ec4d695dfb4a7cfb25521cf56dc75d6f256285b63ef
 # The git forge: forgejo, github or gitlab.
 gitProvider: forgejo
 gitURL: https://git.example.com
@@ -31,12 +40,23 @@ webhookURL: ""
 # `name`/`value` pair or a `valueFrom` block.
 extraEnv: []
 
+# Direct, verified HTTPS reads of kubelet CPU quota counters. These reads
+# require nodes/metrics, never nodes/proxy. CPU/RAM use metrics.k8s.io.
+nodeMetrics:
+  enabled: true
+  # Optional PEM serving CA when kubelets use a different CA from the API.
+  caBundle: ""
+
 # The secrets that pull the images. A private registry needs one.
 imagePullSecrets: []
 
 # Public ingress of the control plane.
 ingress:
   enabled: true
+  className: traefik
+  tls: true
+  issuer: ""
+  annotations: {}
 # Secret that holds the certificate of the host. Empty means the default of
 # the ingress controller.
 tlsSecret: kuberpack-tls

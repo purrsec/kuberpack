@@ -16,6 +16,10 @@ import (
 func (s *Server) listBuilds(w http.ResponseWriter, r *http.Request) {
 	app, err := s.cfg.Store.AppByName(r.Context(), r.PathValue("name"))
 	if errors.Is(err, store.ErrNotFound) {
+		if _, imageErr := s.cfg.Store.ImageAppByName(r.Context(), r.PathValue("name")); imageErr == nil {
+			writeJSON(w, http.StatusOK, map[string]any{"builds": []any{}})
+			return
+		}
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
@@ -38,6 +42,10 @@ func (s *Server) listBuilds(w http.ResponseWriter, r *http.Request) {
 func (s *Server) redeployApp(w http.ResponseWriter, r *http.Request) {
 	app, err := s.cfg.Store.AppByName(r.Context(), r.PathValue("name"))
 	if errors.Is(err, store.ErrNotFound) {
+		if _, imageErr := s.cfg.Store.ImageAppByName(r.Context(), r.PathValue("name")); imageErr == nil {
+			http.Error(w, "this application uses a published image: edit kuberpack.yaml and run kuberpack project compile", http.StatusBadRequest)
+			return
+		}
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
@@ -80,6 +88,10 @@ func (s *Server) fluxHook(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
 	if err != nil {
 		http.Error(w, "cannot read body", http.StatusBadRequest)
+		return
+	}
+	if len(body) > maxBody {
+		http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
 		return
 	}
 	if !hmacsig.Valid(s.cfg.FluxSecret, hmacsig.Header(r.Header), body) && strings.TrimSpace(r.Header.Get("Authorization")) != "Bearer "+s.cfg.FluxSecret {

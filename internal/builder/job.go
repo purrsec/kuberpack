@@ -49,6 +49,9 @@ type Request struct {
 	// GitAuthScheme is how the forge of the application authenticates a
 	// clone: "token" or "basic". It is not a secret.
 	GitAuthScheme string
+	// CloneAnonymous prevents credentials of the platform from being sent to
+	// public repositories, including repositories on another forge.
+	CloneAnonymous bool
 	// BuildsGitAuthScheme is how the forge of the builds repository
 	// authenticates a clone. It is not a secret.
 	BuildsGitAuthScheme string
@@ -180,7 +183,9 @@ func (r *JobRunner) volumeSizes() (work, cache, tmp resource.Quantity) {
 	cacheSize := total.Value() * 3 / 100
 	tmpSize := total.Value() * 1 / 100
 	return resource.MustParse(fmt.Sprintf("%d", maxInt64(workSize, 1<<30))),
-		resource.MustParse(fmt.Sprintf("%d", maxInt64(cacheSize, 512<<20))),
+		// Active build layers cannot be garbage-collected. A normal Node
+		// build exceeds 1 GiB even when the retained cache target is smaller.
+		resource.MustParse(fmt.Sprintf("%d", maxInt64(cacheSize, 2<<30))),
 		resource.MustParse(fmt.Sprintf("%d", maxInt64(tmpSize, 256<<20)))
 }
 
@@ -318,6 +323,31 @@ func (r *JobRunner) podFailureMessage(ctx context.Context, job *batchv1.Job) str
 		return ""
 	}
 	for _, pod := range pods.Items {
+		if pod.Status.Reason != "" && pod.Status.Message != "" {
+			return fmt.Sprintf("job: %s: %s", pod.Status.Reason, strings.TrimSpace(pod.Status.Message))
+		}
+		// BuildKit is a native sidecar: its OOM is recorded with the init
+		// containers, while the builder only sees a disconnected buildctl.
+		statuses := append(append([]corev1.ContainerStatus{}, pod.Status.InitContainerStatuses...), pod.Status.ContainerStatuses...)
+		for _, cs := range statuses {
+			terminated := cs.State.Terminated
+			if terminated == nil || terminated.Reason != "OOMKilled" {
+				terminated = cs.LastTerminationState.Terminated
+			}
+			if terminated == nil || terminated.Reason != "OOMKilled" {
+				continue
+			}
+			limit := ""
+			containers := append(append([]corev1.Container{}, pod.Spec.InitContainers...), pod.Spec.Containers...)
+			for _, container := range containers {
+				if container.Name == cs.Name {
+					if quantity, ok := container.Resources.Limits[corev1.ResourceMemory]; ok {
+						limit = " (memory limit " + quantity.String() + ")"
+					}
+				}
+			}
+			return fmt.Sprintf("job: %s OOMKilled%s: increase the platform build memory limit", cs.Name, limit)
+		}
 		for _, cs := range pod.Status.ContainerStatuses {
 			if cs.Name != "builder" || cs.State.Terminated == nil {
 				continue
@@ -391,7 +421,7 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 	builderMemory := resourceQuantity(r.BuilderMemory, builderMemoryLimit)
 	buildkitCPU := resourceQuantity(r.BuildkitCPU, "2")
 	buildkitMemory := resourceQuantity(r.BuildkitMemory, buildkitMemoryLimit)
-	requestDigest := sha256.Sum256([]byte(cloneURL + "\x00" + req.CommitSHA + "\x00" + req.ImageRepository + "\x00" + req.RegistryUser + "\x00" + req.StartCmd))
+	requestDigest := sha256.Sum256([]byte(cloneURL + "\x00" + req.CommitSHA + "\x00" + req.ImageRepository + "\x00" + req.RegistryUser + "\x00" + req.StartCmd + "\x00" + strconv.FormatBool(req.CloneAnonymous)))
 	buildsURL := strings.TrimSpace(req.BuildsGitURL)
 	if buildsURL == "" {
 		buildsURL = strings.TrimSpace(r.BuildsGitURL)
@@ -408,6 +438,7 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 		{Name: "KUBERPACK_STRICT_CREDENTIALS", Value: strconv.FormatBool(req.StrictTokens)},
 		{Name: "KUBERPACK_GENERATE_LOCK", Value: strconv.FormatBool(req.GenerateLock)},
 		{Name: "KUBERPACK_GIT_AUTH", Value: req.GitAuthScheme},
+		{Name: "KUBERPACK_GIT_ANONYMOUS", Value: strconv.FormatBool(req.CloneAnonymous)},
 		{Name: "KUBERPACK_BUILDS_GIT_AUTH", Value: req.BuildsGitAuthScheme},
 		{Name: "KUBERPACK_TRIVY_IGNORE", Value: strings.Join(r.AcceptedVulnerabilities, ",")},
 		{Name: "KUBERPACK_START_CMD", Value: req.StartCmd},
@@ -421,10 +452,9 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 		{Name: "TMPDIR", Value: "/work"},
 		{Name: "TRIVY_CACHE_DIR", Value: "/work/trivy-cache"},
 		// The space the build writes. The builder refuses to start
-		// when the node cannot hold it. The cache of BuildKit is not
-		// counted: BuildKit deletes it when it grows, it is not a
-		// volume that grows with the build.
-		{Name: "KUBERPACK_BUILD_DISK_NEED", Value: strconv.FormatInt(workSize.Value()+tmpSize.Value(), 10)},
+		// when the node cannot hold it. Active BuildKit layers must count:
+		// garbage collection cannot reclaim them during the build.
+		{Name: "KUBERPACK_BUILD_DISK_NEED", Value: strconv.FormatInt(workSize.Value()+cacheSize.Value()+tmpSize.Value(), 10)},
 	}
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -458,7 +488,7 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 					ServiceAccountName:           "kuberpack-build",
 					AutomountServiceAccountToken: &never,
 					ImagePullSecrets:             []corev1.LocalObjectReference{{Name: pullSecret}},
-					SecurityContext:              &corev1.PodSecurityContext{RunAsNonRoot: &allowEscalation, RunAsUser: &uid, RunAsGroup: &uid, FSGroup: &uid},
+					SecurityContext:              &corev1.PodSecurityContext{RunAsNonRoot: &allowEscalation, RunAsUser: &uid, RunAsGroup: &uid, FSGroup: &uid, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}},
 					InitContainers: []corev1.Container{{
 						Name: "buildkitd", Image: buildkitImage, ImagePullPolicy: corev1.PullIfNotPresent,
 						Command: []string{"rootlesskit", "buildkitd"},

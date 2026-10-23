@@ -1,0 +1,109 @@
+{{- if .Values.buildAdmission.enabled }}
+{{- if not (semverCompare ">=1.30-0" .Capabilities.KubeVersion.Version) }}
+{{- fail "builder isolation requires Kubernetes >= 1.30 with ValidatingAdmissionPolicy" }}
+{{- end }}
+{{- $root := . }}
+{{- range $resource := list "jobs" "pods" }}
+{{- $name := printf "%s-kuberpack-build-%s" $root.Release.Namespace $resource }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ $name }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ $root.Values.buildNamespace }}
+    resourceRules:
+      - apiGroups: [{{ if eq $resource "jobs" }}"batch"{{ else }}""{{ end }}]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [{{ $resource }}{{ if eq $resource "pods" }}, pods/ephemeralcontainers{{ end }}]
+  variables:
+    - name: p
+      expression: {{ if eq $resource "jobs" }}object.spec.template.spec{{ else }}object.spec{{ end }}
+    - name: containers
+      expression: >-
+        variables.p.containers + (has(variables.p.initContainers) ? variables.p.initContainers : [])
+  validations:
+    - expression: >-
+        has(variables.p.serviceAccountName) && variables.p.serviceAccountName == 'kuberpack-build' &&
+        has(variables.p.automountServiceAccountToken) && !variables.p.automountServiceAccountToken &&
+        (!has(variables.p.hostNetwork) || !variables.p.hostNetwork) &&
+        (!has(variables.p.hostPID) || !variables.p.hostPID) &&
+        (!has(variables.p.hostIPC) || !variables.p.hostIPC) &&
+        (!has(variables.p.shareProcessNamespace) || !variables.p.shareProcessNamespace) &&
+        (!has(variables.p.ephemeralContainers) || variables.p.ephemeralContainers.size() == 0)
+      message: Builds must use their unprivileged identity without a token or host namespaces
+      reason: Forbidden
+    - expression: >-
+        has(variables.p.securityContext) &&
+        has(variables.p.securityContext.runAsNonRoot) && variables.p.securityContext.runAsNonRoot &&
+        has(variables.p.securityContext.runAsUser) && variables.p.securityContext.runAsUser == 1000 &&
+        has(variables.p.securityContext.runAsGroup) && variables.p.securityContext.runAsGroup == 1000 &&
+        has(variables.p.securityContext.fsGroup) && variables.p.securityContext.fsGroup == 1000 &&
+        has(variables.p.securityContext.seccompProfile) && variables.p.securityContext.seccompProfile.type == 'RuntimeDefault' &&
+        (!has(variables.p.securityContext.sysctls) || variables.p.securityContext.sysctls.size() == 0)
+      message: Builds must run with UID and GID 1000 without custom sysctls
+      reason: Forbidden
+    - expression: >-
+        variables.p.containers.size() == 1 && variables.p.containers[0].name == 'builder' &&
+        variables.p.containers[0].image == {{ $root.Values.builderImage | toJson }} &&
+        has(variables.p.containers[0].command) && variables.p.containers[0].command == ['/usr/bin/kuberpack', 'builder'] &&
+        (!has(variables.p.containers[0].args) || variables.p.containers[0].args.size() == 0) &&
+        has(variables.p.initContainers) && variables.p.initContainers.size() == 1 && variables.p.initContainers[0].name == 'buildkitd' &&
+        variables.p.initContainers[0].image == {{ $root.Values.buildAdmission.buildkitImage | toJson }} &&
+        has(variables.p.initContainers[0].command) && variables.p.initContainers[0].command == ['rootlesskit', 'buildkitd'] &&
+        has(variables.p.initContainers[0].args) && variables.p.initContainers[0].args.size() == 3 &&
+        variables.p.initContainers[0].args[0] == '--addr=unix:///run/buildkit/buildkitd.sock' &&
+        variables.p.initContainers[0].args[1] == '--oci-worker-no-process-sandbox' &&
+        variables.p.initContainers[0].args[2].matches('^--oci-worker-gc-keepstorage=[0-9]+,[0-9]+,[0-9]+$')
+      message: Only the configured builder and rootless BuildKit images and entrypoints may run
+      reason: Forbidden
+    - expression: >-
+        variables.containers.all(c,
+          has(c.securityContext) && (!has(c.securityContext.privileged) || !c.securityContext.privileged) &&
+          has(c.securityContext.runAsNonRoot) && c.securityContext.runAsNonRoot &&
+          has(c.securityContext.runAsUser) && c.securityContext.runAsUser == 1000 &&
+          has(c.securityContext.runAsGroup) && c.securityContext.runAsGroup == 1000 &&
+          (!has(c.securityContext.capabilities) || !has(c.securityContext.capabilities.add) || c.securityContext.capabilities.add.size() == 0) &&
+          (!has(c.securityContext.procMount) || c.securityContext.procMount == 'Default') &&
+          (!has(c.securityContext.windowsOptions) || !has(c.securityContext.windowsOptions.hostProcess) || !c.securityContext.windowsOptions.hostProcess) &&
+          (!has(c.ports) || c.ports.all(p, !has(p.hostPort) || p.hostPort == 0)) &&
+          !has(c.lifecycle) &&
+          !has(c.startupProbe) && !has(c.livenessProbe) && !has(c.readinessProbe) &&
+          (!has(c.envFrom) || c.envFrom.size() == 0) &&
+          (!has(c.env) || c.env.all(e, !has(e.valueFrom))))
+      message: Builds cannot add privileges, host ports or indirect credentials
+      reason: Forbidden
+    - expression: >-
+        has(variables.p.containers[0].securityContext) && has(variables.p.containers[0].securityContext.allowPrivilegeEscalation) &&
+        !variables.p.containers[0].securityContext.allowPrivilegeEscalation &&
+        has(variables.p.containers[0].securityContext.readOnlyRootFilesystem) && variables.p.containers[0].securityContext.readOnlyRootFilesystem &&
+        (!has(variables.p.containers[0].securityContext.seccompProfile) || variables.p.containers[0].securityContext.seccompProfile.type == 'RuntimeDefault') &&
+        (!has(variables.p.containers[0].securityContext.appArmorProfile) || variables.p.containers[0].securityContext.appArmorProfile.type == 'RuntimeDefault') &&
+        has(variables.p.containers[0].securityContext.capabilities) &&
+        has(variables.p.containers[0].securityContext.capabilities.drop) &&
+        variables.p.containers[0].securityContext.capabilities.drop.exists(c, c == 'ALL')
+      message: The builder must drop all capabilities and keep its root filesystem read-only
+      reason: Forbidden
+    - expression: >-
+        has(variables.p.volumes) && variables.p.volumes.all(v,
+          has(v.emptyDir) ||
+          (has(v.secret) && v.secret.secretName == 'kuberpack-builder') ||
+          (has(v.persistentVolumeClaim) && v.persistentVolumeClaim.claimName == 'kuberpack-builder-cache')) &&
+        (!has(variables.p.imagePullSecrets) || variables.p.imagePullSecrets.all(s, s.name == 'kuberpack-builder-pull'))
+      message: Builds may mount only temporary storage, their cache and their own credentials
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ $name }}
+spec:
+  policyName: {{ $name }}
+  validationActions: [Deny]
+---
+{{- end }}
+{{- end }}

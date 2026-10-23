@@ -19,10 +19,12 @@ import (
 
 func runProject(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: kuberpack project create|apply|delete [flags]")
+		return fmt.Errorf("usage: kuberpack project init|compile|create|delete [flags]")
 	}
 	switch args[0] {
-	case "create", "init":
+	case "init":
+		return runProjectWizard(args[1:], true)
+	case "create":
 		return runProjectCreate(args[1:])
 	case "compile", "apply":
 		return runProjectCompile(args[1:])
@@ -50,7 +52,16 @@ func apiToken() string {
 }
 
 func runProjectCreate(args []string) error {
-	fs := flag.NewFlagSet("project create", flag.ContinueOnError)
+	return runProjectWizard(args, false)
+}
+
+func runProjectWizard(args []string, local bool) error {
+	command := "project create"
+	if local {
+		command = "project init"
+	}
+	fs := flag.NewFlagSet(command, flag.ContinueOnError)
+	file := fs.String("f", "kuberpack.yaml", "local manifest to create (project init only; existing files are preserved)")
 	project := fs.String("project", "", "project name (skips the prompt)")
 	namespace := fs.String("namespace", "", "namespace (default: project name)")
 	service := fs.String("service", "app", "first service name")
@@ -62,7 +73,7 @@ func runProjectCreate(args []string) error {
 	cache := fs.String("cache", "", "add a cache to the project (valkey)")
 	storage := fs.String("object-storage", "", "add an object storage to the project (rustfs)")
 	backup := fs.Bool("backup", false, "back the database up to the object storage")
-	dryRun := fs.Bool("dry-run", false, "print the manifest and compiled artifacts without writing")
+	dryRun := fs.Bool("dry-run", false, "validate and print the manifest without writing")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -107,10 +118,14 @@ func runProjectCreate(args []string) error {
 	}
 	if *storage != "" {
 		addons["rustfs"] = promote.Addon{Engine: "rustfs", Plan: "small"}
+		peers = append(peers, "rustfs")
 	}
 	if *backup {
 		if _, ok := addons["rustfs"]; !ok {
 			return fmt.Errorf("a backup needs an object storage: add --object-storage rustfs")
+		}
+		if _, ok := addons["postgres"]; !ok {
+			return fmt.Errorf("a database backup needs a database: add --database postgres")
 		}
 		if addon, ok := addons["postgres"]; ok {
 			addon.Backup = &promote.Backup{S3: "rustfs", Retention: "7d"}
@@ -132,10 +147,32 @@ func runProjectCreate(args []string) error {
 		return err
 	}
 	text := string(raw)
+	if _, err := promote.ParseProjectManifest(raw); err != nil {
+		return err
+	}
 
 	if *dryRun {
 		fmt.Fprintln(os.Stderr, "--- kuberpack.yaml ---")
 		fmt.Print(text)
+		return nil
+	}
+	if local {
+		f, err := os.OpenFile(*file, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if os.IsExist(err) {
+			return fmt.Errorf("%s already exists; edit it and run kuberpack project compile", *file)
+		}
+		if err != nil {
+			return err
+		}
+		_, writeErr := f.Write(raw)
+		closeErr := f.Close()
+		if writeErr != nil {
+			return writeErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		fmt.Fprintf(os.Stderr, "created %s; review it, load any secrets with Infisical, then run kuberpack project compile -f %s\n", *file, *file)
 		return nil
 	}
 	if apiToken() == "" {

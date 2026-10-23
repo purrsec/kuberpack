@@ -33,7 +33,8 @@ type Request struct {
 	// RegistryUser is the namespace the image is published in. It is the
 	// account of the platform, not the owner of the application
 	// repository: the code may live in the repository of somebody else.
-	RegistryUser string
+	RegistryUser  string
+	RegistryToken string
 	// ImageName is the name of the image. It is the name of the app, not
 	// the name of the repository it is built from.
 	ImageName         string
@@ -144,6 +145,9 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if req.Provider == nil {
 		return Result{}, fail.Text(fail.Clone, "forgejo client is nil")
 	}
+	if strings.TrimSpace(req.RegistryToken) == "" {
+		return Result{}, fail.Text(fail.Auth, "registry token is required; configure KUBERPACK_REGISTRY_TOKEN separately from the GitOps token")
+	}
 
 	kind, err := strategy.ParseKind(req.Strategy)
 	if err != nil {
@@ -171,8 +175,11 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	// The forge of the application has its own way to authenticate a clone:
 	// the token of a Gitea in a header is an invalid credential for GitHub,
 	// which then asks for a username on the terminal.
-	if err := checkout(ctx, repo.CloneURL, sha, dest,
-		git.CloneAuthArgs(git.AuthScheme(req.Provider.Name()), req.Token)); err != nil {
+	cloneAuth, err := applicationCloneAuth(req.Provider, req.Token, repo)
+	if err != nil {
+		return Result{}, fail.Stage(fail.Clone, err)
+	}
+	if err := checkout(ctx, repo.CloneURL, sha, dest, cloneAuth); err != nil {
 		return Result{}, fail.Stage(fail.Clone, err)
 	}
 	plan, err := strategy.Resolve(dest, kind)
@@ -211,6 +218,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		// The forge of the application has its own way to authenticate a
 		// clone: the builder must use it, not the way of the platform.
 		GitAuthScheme:       git.AuthScheme(req.Provider.Name()),
+		CloneAnonymous:      !repo.Private,
 		CloneURL:            repo.CloneURL,
 		CommitSHA:           sha,
 		ImageRepository:     ociRepo,
@@ -239,7 +247,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if regUser == "" {
 		regUser = req.Owner
 	}
-	reg, err := oci.New(req.registryURL(), regUser, req.Token)
+	reg, err := oci.New(req.registryURL(), regUser, req.RegistryToken)
 	if err != nil {
 		return Result{}, fail.Stage(fail.Push, err)
 	}
@@ -347,9 +355,8 @@ func tokenDigest(token string) string {
 }
 
 // strictTokens tells whether the platform refuses a build whose builder
-// holds the token of the control plane. The operator decides: the
-// default is a warning, because a platform that refuses to build must
-// say why.
+// holds the token of the control plane. Separation is enforced by default;
+// a legacy operator can explicitly request warning-only behavior.
 func strictTokens() bool {
-	return strings.EqualFold(strings.TrimSpace(os.Getenv("KUBERPACK_STRICT_CREDENTIALS")), "true")
+	return !strings.EqualFold(strings.TrimSpace(os.Getenv("KUBERPACK_STRICT_CREDENTIALS")), "false")
 }

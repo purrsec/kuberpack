@@ -11,7 +11,7 @@ import (
 
 func TestEnsureBuilderCacheCreatesTheVolumeOnce(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	s := &Server{cfg: Config{Kube: client, BuilderNamespace: "kuberpack-build"}}
+	s := &Server{cfg: Config{Kube: client, BuilderNamespace: "kuberpack-build", BuilderCacheStorageClass: "selected-csi"}}
 	ctx := context.Background()
 	if err := s.ensureBuilderCache(ctx); err != nil {
 		t.Fatal(err)
@@ -24,6 +24,9 @@ func TestEnsureBuilderCacheCreatesTheVolumeOnce(t *testing.T) {
 		t.Fatalf("the cache of the builder must have one volume, got %d", len(claims.Items))
 	}
 	claim := claims.Items[0]
+	if claim.Spec.StorageClassName == nil || *claim.Spec.StorageClassName != "selected-csi" {
+		t.Fatal("builder cache ignored the platform storage class")
+	}
 	if claim.Name != "kuberpack-builder-cache" {
 		t.Fatalf("wrong volume: %s", claim.Name)
 	}

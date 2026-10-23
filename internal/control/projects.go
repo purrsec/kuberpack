@@ -149,8 +149,8 @@ func parseProjectManifest(body projectBody) (promote.ProjectManifest, error) {
 	if err != nil {
 		return m, err
 	}
-	if strings.TrimSpace(body.Project) != "" {
-		m.Project = strings.TrimSpace(body.Project)
+	if name := strings.TrimSpace(body.Project); name != "" && name != m.Project {
+		return m, errors.New("project must match the name in the manifest")
 	}
 	if strings.TrimSpace(m.Project) == "" {
 		return m, errors.New("manifest must set project")

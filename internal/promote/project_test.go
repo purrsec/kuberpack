@@ -259,10 +259,10 @@ func TestTheProjectWithAVolumeAddonMountsTheDisk(t *testing.T) {
 	}
 	clone := readRemoteTree(t, bare)
 	values := readFile(t, clone, "kubernetes/vps/projects/shop/app/values.yaml")
-	if !strings.Contains(values, "path: /data") {
+	if !strings.Contains(values, `path: "/data"`) {
 		t.Fatalf("the volume of the addon is not in the values of the application:\n%s", values)
 	}
-	if !strings.Contains(values, "claim: shop-data") {
+	if !strings.Contains(values, `claim: "shop-data"`) {
 		t.Fatalf("the claim of the volume is not in the values of the application:\n%s", values)
 	}
 	claim := readFile(t, clone, "kubernetes/vps/projects/shop/addons/data/volume.yaml")
@@ -371,7 +371,7 @@ func TestTheProjectWithSecretsGeneratesTheInfisicalSecret(t *testing.T) {
 		t.Fatal(err)
 	}
 	clone := readRemoteTree(t, bare)
-	cr := readFile(t, clone, "kubernetes/vps/infisical/app-shop-app.yaml")
+	cr := readFile(t, clone, "kubernetes/vps/projects/shop/app/secret.yaml")
 	if !strings.Contains(cr, "kind: InfisicalStaticSecret") {
 		t.Fatalf("the Infisical secret is not generated:\n%s", cr)
 	}

@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/promote"
 	"git.host.bzh/pepe/kuberpack/internal/release"
 	"git.host.bzh/pepe/kuberpack/internal/store"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -57,13 +59,14 @@ type Config struct {
 	// account of the platform, not the owner of the application
 	// repository: the code of a third party application is built and
 	// published in the namespace of the platform.
-	RegistryUser string
-	Token        string
-	APIToken     string
-	WebhookURL   string
-	GitOpsURL    string
-	GitOpsBranch string
-	ChartPath    string
+	RegistryUser  string
+	RegistryToken string
+	Token         string
+	APIToken      string
+	WebhookURL    string
+	GitOpsURL     string
+	GitOpsBranch  string
+	ChartPath     string
 	// SelfChartPath is the chart of the control plane itself, on the disk
 	// of the control plane. The platform writes it in the GitOps
 	// repository: the deployment of the platform must never drift from
@@ -87,10 +90,14 @@ type Config struct {
 	// Kube is the cluster the applications live in. The platform writes
 	// there what must not be written in the GitOps repository: the secret
 	// that pulls the images of the registry.
-	Kube kubernetes.Interface
+	Kube        kubernetes.Interface
+	KubeDynamic dynamic.Interface
 	// KubeConfig is the configuration of the cluster. The platform needs it
 	// to reach the resources that have no Go type, the releases of Flux.
 	KubeConfig *rest.Config
+	// KubeletCA optionally supplies the PEM serving CA used by kubelets when
+	// it differs from the API server CA. Certificate verification stays enabled.
+	KubeletCA []byte
 	// BuilderNamespace is the namespace where the build Jobs run. It is
 	// where the logs of a build are.
 	BuilderNamespace string
@@ -98,12 +105,14 @@ type Config struct {
 	// the database of the vulnerabilities of Trivy.
 	BuilderCacheName string
 	// BuilderCacheSize is the size of that volume.
-	BuilderCacheSize string
+	BuilderCacheSize         string
+	BuilderCacheStorageClass string
 }
 
 type Server struct {
-	cfg  Config
-	wake chan struct{}
+	cfg          Config
+	wake         chan struct{}
+	logFollowers chan struct{}
 }
 
 func New(cfg Config) *Server {
@@ -119,7 +128,7 @@ func New(cfg Config) *Server {
 	if cfg.ReconcileInterval <= 0 {
 		cfg.ReconcileInterval = 5 * time.Minute
 	}
-	return &Server{cfg: cfg, wake: make(chan struct{}, 1)}
+	return &Server{cfg: cfg, wake: make(chan struct{}, 1), logFollowers: make(chan struct{}, 8)}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -129,6 +138,8 @@ func (s *Server) Handler() http.Handler {
 	// writer, and it is the compiler. The app endpoints read the state.
 	mux.HandleFunc("GET /api/v1/apps", s.withAPI(s.listApps))
 	mux.HandleFunc("GET /api/v1/apps/{name}", s.withAPI(s.getApp))
+	mux.HandleFunc("GET /api/v1/apps/{name}/status", s.withAPI(s.getAppStatus))
+	mux.HandleFunc("GET /api/v1/apps/{name}/logs", s.withAPI(s.getAppLogs))
 	mux.HandleFunc("GET /api/v1/apps/{name}/builds", s.withAPI(s.listBuilds))
 	mux.HandleFunc("GET /api/v1/apps/{name}/builds/{id}", s.withAPI(s.getBuild))
 	mux.HandleFunc("GET /api/v1/apps/{name}/builds/{id}/logs", s.withAPI(s.getBuildLogs))
@@ -237,15 +248,22 @@ func (s *Server) listApps(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	out := make([]map[string]any, 0, len(apps))
-	for _, app := range apps {
-		out = append(out, appJSON(app))
+	published, err := s.cfg.Store.ListImageApps(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
+	apps = append(apps, published...)
+	sort.Slice(apps, func(i, j int) bool { return apps[i].Name < apps[j].Name })
+	out := s.observedApps(r.Context(), apps)
 	writeJSON(w, http.StatusOK, map[string]any{"apps": out})
 }
 
 func (s *Server) getApp(w http.ResponseWriter, r *http.Request) {
 	app, err := s.cfg.Store.AppByName(r.Context(), r.PathValue("name"))
+	if errors.Is(err, store.ErrNotFound) {
+		app, err = s.cfg.Store.ImageAppByName(r.Context(), r.PathValue("name"))
+	}
 	if errors.Is(err, store.ErrNotFound) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -254,7 +272,11 @@ func (s *Server) getApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, appJSON(app))
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	out := appJSON(app)
+	out["deployment"] = s.observeApp(ctx, app)
+	writeJSON(w, http.StatusOK, out)
 }
 
 type pushPayload struct {
@@ -443,6 +465,7 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 		Provider:      provider,
 		RegistryURL:   s.cfg.RegistryURL,
 		RegistryUser:  s.cfg.RegistryUser,
+		RegistryToken: s.cfg.RegistryToken,
 		ImageName:     app.Name,
 		Token:         s.cfg.Token,
 		Owner:         owner,
@@ -565,8 +588,10 @@ func appJSON(app store.App) map[string]any {
 		"id":                  app.ID,
 		"name":                app.Name,
 		"project":             app.Project,
+		"namespace":           app.Namespace,
 		"values_path":         app.ValuesPath,
 		"repository":          app.ForgejoRepository,
+		"image":               app.Image,
 		"branch":              app.ProductionBranch,
 		"strategy":            app.Strategy,
 		"autodeploy":          app.Autodeploy,

@@ -8,18 +8,18 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: kuberpack-build
-  namespace: kuberpack-build
+  namespace: {{ .Values.buildNamespace }}
 automountServiceAccountToken: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: kuberpack-build-dispatch
-  namespace: kuberpack-build
+  namespace: {{ .Values.buildNamespace }}
 rules:
   - apiGroups: [batch]
     resources: [jobs]
-    verbs: [create, get]
+    verbs: [create, get, delete]
   - apiGroups: [""]
     resources: [pods]
     verbs: [get, list]
@@ -44,7 +44,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: kuberpack-build-dispatch
-  namespace: kuberpack-build
+  namespace: {{ .Values.buildNamespace }}
 subjects:
   - kind: ServiceAccount
     name: kuberpack
@@ -53,3 +53,29 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: kuberpack-build-dispatch
+{{- if .Values.nodeMetrics.enabled }}
+---
+# Kubelet metrics have a dedicated read permission. The proxy subresource
+# also permits command execution and must not be granted for diagnostics.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Namespace }}-kuberpack-node-metrics
+rules:
+  - apiGroups: [""]
+    resources: [nodes, nodes/metrics]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Namespace }}-kuberpack-node-metrics
+subjects:
+  - kind: ServiceAccount
+    name: kuberpack
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Namespace }}-kuberpack-node-metrics
+{{- end }}

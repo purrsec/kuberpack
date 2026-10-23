@@ -1,3 +1,9 @@
+{{- $persistent := false }}
+{{- range .Values.volumes }}
+{{- if or .size .claim }}
+{{- $persistent = true }}
+{{- end }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -6,6 +12,12 @@ metadata:
     {{- include "stateless.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicas }}
+  {{- if $persistent }}
+  # A writable disk must not have old and new processes running together.
+  strategy:
+    type: Recreate
+    rollingUpdate: null
+  {{- end }}
   selector:
     matchLabels:
       {{- include "stateless.selectorLabels" . | nindent 6 }}

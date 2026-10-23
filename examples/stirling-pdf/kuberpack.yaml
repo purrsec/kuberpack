@@ -1,0 +1,30 @@
+project: stirling-pdf
+services:
+  pdf:
+    image: docker.io/stirlingtools/stirling-pdf:3.2.0
+    hostname: pdf.151.115.39.23.nip.io
+    port: 8080
+    healthcheck: /api/v1/info/status
+    startup_budget: 600
+    resources:
+      requests: {cpu: 500m, memory: 1Gi}
+      limits: {cpu: "1", memory: 4Gi}
+    # The official image initializes its directories, then drops privileges.
+    writable_root: true
+    run_as_root: true
+    capabilities: [CHOWN, FOWNER, SETUID, SETGID, DAC_OVERRIDE]
+    env:
+      SECURITY_ENABLELOGIN: "true"
+      SYSTEM_DEFAULTLOCALE: fr-FR
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=50"
+    # Load these with the Infisical CLI before compiling this file.
+    secrets:
+      - SECURITY_INITIALLOGIN_USERNAME
+      - SECURITY_INITIALLOGIN_PASSWORD
+      - SECURITY_CUSTOMGLOBALAPIKEY
+    volumes:
+      - {name: configs, path: /configs, size: 1Gi}
+      - {name: storage, path: /storage, size: 2Gi}
+policies:
+  defaultDeny: true
+  internet: true

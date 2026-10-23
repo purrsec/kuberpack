@@ -63,6 +63,10 @@ func (s *Server) ensureBuilderCache(ctx context.Context) error {
 			},
 		},
 	}
+	if s.cfg.BuilderCacheStorageClass != "" {
+		class := s.cfg.BuilderCacheStorageClass
+		claim.Spec.StorageClassName = &class
+	}
 	if _, err := claims.Create(ctx, claim, metav1.CreateOptions{}); err != nil {
 		if apierrors.IsAlreadyExists(err) {
 			return nil

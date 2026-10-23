@@ -65,7 +65,9 @@ func TestSplitReference(t *testing.T) {
 	}{
 		{"docker.io/library/nginx:1.27", "docker.io", "library/nginx", "1.27"},
 		{"library/nginx:1.27", "docker.io", "library/nginx", "1.27"},
-		{"nginx", "docker.io", "nginx", ""},
+		{"nginx", "docker.io", "library/nginx", "latest"},
+		{"nginx:1.27", "docker.io", "library/nginx", "1.27"},
+		{"docker.io/nginx", "docker.io", "library/nginx", "latest"},
 		{"ghcr.io/user345679/kuberpack:1", "ghcr.io", "user345679/kuberpack", "1"},
 		{"quay.io/prometheus/node-exporter:v1.8.0", "quay.io", "prometheus/node-exporter", "v1.8.0"},
 	}

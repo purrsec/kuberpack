@@ -82,6 +82,9 @@ func ReloadProjects(ctx context.Context, req ReloadRequest) (ReloadResult, error
 		if _, err := cloneGitOps(ctx, req, work); err != nil {
 			return result, err
 		}
+		if err := rejectRepoSymlinks(work, platform.ProjectsDirPath(), platform.InfisicalDir); err != nil {
+			return result, err
+		}
 
 		wanted, err := reloadTargets(work, req, platform)
 		if err != nil {
@@ -107,6 +110,9 @@ func ReloadProjects(ctx context.Context, req ReloadRequest) (ReloadResult, error
 			if err != nil {
 				return result, fmt.Errorf("project %s: %w", name, err)
 			}
+			if manifest.Project != name {
+				return result, fmt.Errorf("project %s: manifest project %q must match its directory", name, manifest.Project)
+			}
 			// The platform must fit in the node. It is the total that
 			// kills a cluster, not one project: the project that tips
 			// the total over is refused, and the others are deployed.
@@ -127,11 +133,20 @@ func ReloadProjects(ctx context.Context, req ReloadRequest) (ReloadResult, error
 				InfraCommitSHA: "",
 			})
 		}
+		if err := SyncInfisicalOperatorScope(work, platform); err != nil {
+			return result, err
+		}
 
-		// The projects parent and the project directories are the only paths
-		// a recompilation touches.
+		// Include legacy secret removals when migrating to project-owned syncs.
 		projectsRel := platform.ProjectsDirPath()
-		status, err := runGit(ctx, work, "status", "--porcelain", "--", projectsRel)
+		watched := []string{projectsRel}
+		if _, err := os.Stat(filepath.Join(work, platform.InfisicalDir)); err == nil && platform.InfisicalEnabled() {
+			watched = append(watched, platform.InfisicalDir)
+			if _, err := os.Stat(filepath.Join(work, "kustomization.yaml")); err == nil {
+				watched = append(watched, "kustomization.yaml")
+			}
+		}
+		status, err := runGit(ctx, work, append([]string{"status", "--porcelain", "--"}, watched...)...)
 		if err != nil {
 			return result, err
 		}
@@ -143,7 +158,7 @@ func ReloadProjects(ctx context.Context, req ReloadRequest) (ReloadResult, error
 			result.InfraCommitSHA = sha
 			return result, nil
 		}
-		if _, err := runGit(ctx, work, gitConfig("add", "-A", "--", projectsRel)...); err != nil {
+		if _, err := runGit(ctx, work, gitConfig(append([]string{"add", "-A", "--"}, watched...)...)...); err != nil {
 			return result, err
 		}
 		msg := fmt.Sprintf("compile %d project(s)", len(result.Projects))

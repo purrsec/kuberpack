@@ -41,7 +41,7 @@ func PinExisting(ctx context.Context, req Request) (Result, error) {
 	}
 	digest := strings.TrimSpace(req.digestOverride())
 	if digest == "" {
-		reg, err := oci.New(req.registryURL(), regUser, req.Token)
+		reg, err := oci.New(req.registryURL(), regUser, req.RegistryToken)
 		if err != nil {
 			return Result{}, fail.Stage(fail.Push, err)
 		}

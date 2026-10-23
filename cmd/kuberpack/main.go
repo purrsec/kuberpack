@@ -67,6 +67,7 @@ func main() {
 			Environment:             os.Getenv("KUBERPACK_ENVIRONMENT"),
 			GenerateLock:            os.Getenv("KUBERPACK_GENERATE_LOCK") == "1" || os.Getenv("KUBERPACK_GENERATE_LOCK") == "true",
 			GitAuthScheme:           os.Getenv("KUBERPACK_GIT_AUTH"),
+			CloneAnonymous:          os.Getenv("KUBERPACK_GIT_ANONYMOUS") == "true",
 			BuildsGitAuthScheme:     os.Getenv("KUBERPACK_BUILDS_GIT_AUTH"),
 			AcceptedVulnerabilities: splitList(os.Getenv("KUBERPACK_TRIVY_IGNORE")),
 		}); err != nil {
@@ -100,8 +101,13 @@ func usage() {
 Usage:
   kuberpack promote [flags]
   kuberpack trigger [flags]
+  kuberpack install --gitops-url URL --git-token TOKEN --registry-token TOKEN
   kuberpack serve [--addr :8080] [--data data]
-  kuberpack project create|delete [flags]
+  kuberpack project init|compile|create|delete [flags]
+  kuberpack apps [--json]
+  kuberpack app status [--json] <name>
+  kuberpack app logs <name> [-f] [--tail N] [--since 10m] [--previous]
+  kuberpack app builds|build-logs|redeploy [flags] <name>
   kuberpack builder           (inside a Kuberpack Kubernetes Job)
 
 promote:
@@ -128,6 +134,10 @@ trigger (FORGEJO_TOKEN, write:repository):
   Submits a Kubernetes build Job (same as serve). Requires a cluster builder.
 
 project (KUBERPACK_API_TOKEN, KUBERPACK_API_URL):
+  init    --project name --repository owner/name --hostname host
+          creates kuberpack.yaml locally; no API connection required
+  compile [-f kuberpack.yaml] [--dry-run]
+          sends the reviewed manifest to the control plane
   create  --project name [--namespace ns] [--service name] [--repository owner/name]
           [--port 8080] [--hostname host] [--dry-run]
   delete  --project name [--force]
@@ -141,6 +151,8 @@ serve (FORGEJO_TOKEN, KUBERPACK_API_TOKEN, KUBERPACK_BUILDER_IMAGE):
   DELETE /api/v1/projects/{name}
   GET  /api/v1/apps          list
   GET  /api/v1/apps/{name}
+  GET  /api/v1/apps/{name}/status
+  GET  /api/v1/apps/{name}/logs
   GET  /api/v1/apps/{name}/builds
   POST /api/v1/apps/{name}/redeploy
   POST /hooks/forgejo        HMAC (push, pull_request)

@@ -1,13 +1,9 @@
 # Control-plane image. Not the builder: no buildkitd, no privileged Docker.
-# Runtime is Chainguard git (Wolfi), not Debian. Tool stages are discarded.
-# kuberpack/railpack/buildctl/uv are static binaries copied in.
+# Runtime contains only Kuberpack, native Git HTTPS support and its libraries.
 
 # syntax=docker/dockerfile:1
 
 ARG GO_VERSION=1.26.9
-ARG RAILPACK_VERSION=0.39.0
-ARG BUILDKIT_VERSION=v0.33.0
-ARG UV_VERSION=0.8.22
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
 ARG TARGETOS=linux
@@ -22,44 +18,33 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags="-s -w" -o /out/kuberpack ./cmd/kuberpack
 
-FROM alpine:3.21 AS railpack
-ARG TARGETARCH=amd64
-ARG RAILPACK_VERSION
-RUN apk add --no-cache ca-certificates curl
-RUN set -eux; \
-    case "${TARGETARCH}" in \
-      amd64) rarch=x86_64-unknown-linux-musl; rsha=728407f5cdb9e9bc1cdd07f568419344a20e71b0a5a9fd90a9cfbaca0a6c94f7 ;; \
-      arm64) rarch=arm64-unknown-linux-musl; rsha=42eb3fa68e38f44be3610a7d74f714ec0d808d70c105fbe35e053b6e6cfb20be ;; \
-      *) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL -o /tmp/railpack.tgz \
-      "https://github.com/railwayapp/railpack/releases/download/v${RAILPACK_VERSION}/railpack-v${RAILPACK_VERSION}-${rarch}.tar.gz"; \
-    echo "${rsha}  /tmp/railpack.tgz" | sha256sum -c -; \
-    tar -xzf /tmp/railpack.tgz -C /tmp; \
-    bin="$(find /tmp -type f -name railpack | head -n1)"; \
-    install -m0755 "${bin}" /railpack
+# Git is retained for GitOps; build tools and command interpreters belong only
+# in Dockerfile.builder. Copy the HTTPS transport and shared libraries into an
+# empty runtime, rather than inheriting the shell/tools of a general git image.
+FROM cgr.dev/chainguard/git:latest@sha256:913be6e43cb65ed65bc5c5f9b22e68e780616a66c5237da59334c7d1cdc3d628 AS git-runtime
+FROM alpine:3.21 AS runtime-files
+COPY --from=git-runtime /usr/lib/ /runtime/usr/lib/
+COPY --from=git-runtime /usr/bin/git /runtime/usr/bin/git
+COPY --from=git-runtime /usr/libexec/git-core/git-remote-http /runtime/usr/libexec/git-core/git-remote-http
+COPY --from=git-runtime /etc/ssl/certs/ca-certificates.crt /runtime/etc/ssl/certs/ca-certificates.crt
+RUN mkdir -p /runtime/home/nonroot /runtime/var/lib/kuberpack /runtime/tmp /runtime/usr/share/empty && \
+    chmod 1777 /runtime/tmp && \
+    chown -R 65532:65532 /runtime/home/nonroot /runtime/var/lib/kuberpack && \
+    ln -s usr/lib /runtime/lib && ln -s usr/lib /runtime/lib64 && \
+    ln -s git-remote-http /runtime/usr/libexec/git-core/git-remote-https && \
+    printf '[safe]\n\tdirectory = *\n[core]\n\thooksPath = /dev/null\n[init]\n\ttemplateDir = /usr/share/empty\n' > /runtime/etc/gitconfig
 
-FROM docker.io/moby/buildkit:${BUILDKIT_VERSION}-rootless@sha256:80b15f0735e87bab7bf59ec4d695dfb4a7cfb25521cf56dc75d6f256285b63ef AS buildkit
-FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
-
-FROM cgr.dev/chainguard/git:latest
-USER root
+FROM scratch
+COPY --from=runtime-files /runtime/ /
 COPY --from=build --chmod=755 /out/kuberpack /usr/bin/kuberpack
-COPY --from=railpack --chmod=755 /railpack /usr/bin/railpack
-COPY --from=buildkit --chmod=755 /usr/bin/buildctl /usr/bin/buildctl
-COPY --from=uv --chmod=755 /uv /usr/bin/uv
 COPY charts/stateless /opt/kuberpack/charts/stateless
-# The chart of the control plane itself: the platform writes it in the
-# GitOps repository, so the deployment follows the image that runs it.
 COPY charts/kuberpack /opt/kuberpack/charts/kuberpack
-WORKDIR /var/lib/kuberpack
-RUN printf '[safe]\n\tdirectory = *\n' > /etc/gitconfig
-
-ENV HOME=/home/nonroot \
+ENV PATH=/usr/bin \
+    HOME=/home/nonroot \
+    GIT_EXEC_PATH=/usr/libexec/git-core \
     KUBERPACK_DATA=/var/lib/kuberpack \
     KUBERPACK_CHART=/opt/kuberpack/charts/stateless
-
-USER 65532
+USER 65532:65532
 WORKDIR /var/lib/kuberpack
 EXPOSE 8080
 ENTRYPOINT ["/usr/bin/kuberpack"]

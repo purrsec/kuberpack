@@ -22,7 +22,7 @@ L’expérience visée est celle de Railway ou Heroku. Le modèle d’exploitati
 4. **Le control plane n’exécute pas les apps.** Il orchestre. Un builder isolé construit. Flux déploie.
 5. **SQLite = état opérationnel.** Secrets ailleurs (Secrets Kubernetes, gestionnaire de secrets).
 6. **Le digest est l’identité.** Un tag n’est jamais la référence de production.
-7. **k3s est la cible d’installation.** Control plane et jobs de build tournent sur k3s. Le cluster de production est un k3s (éventuellement un autre) géré par GitOps.
+7. **Un Kubernetes existant est la cible d’installation.** Control plane et jobs de build utilisent l'API Kubernetes. k3s est l'environnement testé ; EKS et GKE sont des cibles avec des prérequis explicites de réseau, stockage et permissions. Les projets abstraits et les releases Helmfile personnalisées peuvent coexister.
 
 ## Hors produit
 

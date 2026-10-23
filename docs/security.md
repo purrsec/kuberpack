@@ -1,14 +1,27 @@
 # Sécurité
 
-## Trois identités Git, jamais une
+## Frontières de confiance
 
-Un secret compromis ne doit pas ouvrir code + registre + GitOps.
+Kuberpack gère les déploiements au nom d’un administrateur. Les namespaces et
+NetworkPolicies isolent les workloads ; la clé API reste administrateur global.
+L’[audit du 23 octobre 2026](security-audit-2026-10-23.md) distingue les protections
+vérifiées des risques restant à traiter.
 
-| Identité | Droit | Interdit |
+| Credential | Usage attendu | Interdit |
 | --- | --- | --- |
-| Control plane | Lire les dépôts apps, webhooks, clés de deploy read-only, statuts / commentaires PR | Push apps, push GitOps |
-| Kuberpack (GitOps) | Écrire le dépôt GitOps (`main`, `previews`) | Dépôts apps, packages OCI, API Kubernetes |
-| Builder | Push d’images ; optionnellement commit sur le dépôt d’archives de build (`KUBERPACK_BUILDS_GIT_URL`) | GitOps de prod, push apps |
+| `KUBERPACK_GIT_TOKEN` | API de forge et écriture du GitOps configuré | Montage dans le builder, clé API Kuberpack |
+| `KUBERPACK_BUILDER_GIT_TOKEN` | Lecture des sources privées ; optionnel pour les sources publiques | Écriture des sources ou du GitOps |
+| `KUBERPACK_REGISTRY_TOKEN` | Push/pull des images autorisées | Écriture Git, administration Kubernetes |
+| `KUBERPACK_API_TOKEN` | Administration de Kuberpack | Réutilisation d’un credential de forge/registre |
+
+L’installateur refuse les credentials identiques. Les builds refusent par défaut
+un credential correspondant au CP. Cela ne prouve pas les scopes réels d’un
+second PAT : les permissions chez le fournisseur doivent être limitées.
+Un credential d’archives peut être fourni dans la clé builder `builds-token`.
+
+Un clone public est anonyme ; un clone privé doit appartenir à l’origine de son
+provider. Son header Git est limité à cette origine, sans redirection. Le
+registre utilise son propre credential, sans repli vers le token GitOps.
 
 Commits signés sur `main` si le dépôt l’exige : clé du bot, pas d’un admin humain.
 
@@ -22,7 +35,13 @@ Les bots de dépendances (Renovate, etc.) ne gèrent pas les images que Kuberpac
 - `push` et `pull_request` seulement ;
 - déduplication par identifiant de livraison ;
 - file asynchrone ;
-- logs sans secret.
+- logs sans credential émis par Kuberpack ; les logs applicatifs peuvent
+  néanmoins contenir une valeur que l’application y imprime.
+
+La clé API est comparée en temps constant, avant lecture du corps. Sans clé
+explicite, les routes administratives restent fermées. Les corps JSON/webhooks
+et les lectures de logs sont bornés ; les streams ont un plafond de connexions
+et un délai d’écriture. Il n’existe pas encore de droits API par projet.
 
 ## Pull requests
 
@@ -31,16 +50,83 @@ Code non fiable : pas de secret de production, pas de token large, pas de socket
 ## Runtime de production
 
 - non-root ; si l’image a un USER numérique, on le garde ; les images Railpack `USER root` passent à `65534` (chart) ;
-- Pod Security `restricted` ;
+- Pod Security `baseline` pour les namespaces de projets, audit `restricted` ;
 - `allowPrivilegeEscalation: false` sauf le builder ;
-- secrets via `envFrom` du Secret `app-<name>` (prod). Pas de SDK de secrets dans l’app. Previews : pas ce Secret.
+- seules les clés de secrets déclarées sont injectées ; pas de SDK de secrets dans l’application.
 
-Le namespace de build est le seul à pouvoir être moins restreint (besoins BuildKit).
+L’image CP contient le binaire Go et le support natif Git/HTTPS, sans shell,
+Railpack, uv ou buildctl. UID 65532, rootfs en lecture seule, seccomp RuntimeDefault,
+capabilities retirées. Git reçoit des arguments séparés et ses hooks sont
+désactivés. Une image sans shell conserve les pouvoirs de ses credentials.
+
+Le builder n’a pas de token SA, socket Docker ou hostPath. Des policies
+d’admission bornent Jobs et Pods : images/commandes/arguments, UID/GID, compte
+de service, volumes, credentials et absence de privilèges/namespaces hôte.
+Cette protection activée par défaut exige Kubernetes >= 1.30. Les images de
+production doivent être épinglées par digest ; un tag mutable affaiblit le
+contrôle des images autorisées.
+
+BuildKit rootless garde des exceptions seccomp/AppArmor et utilise
+`--oci-worker-no-process-sandbox`. Cela n’est pas une sandbox forte pour du
+code hostile ; nœuds dédiés ou runtime isolé restent recommandés.
 
 ## Réseau des apps
 
-Default-deny dans `apps`. Une app décrit son egress : `internet` (bool, défaut true) et `peers` (`billing`, `postgres:web`). Ce n’est pas un nom de Service Kubernetes ni un RBAC. NetworkPolicy additive : on n’enlève pas l’egress namespace aux pods Kuberpack, on le remplace par la policy du chart. `internet: false` sans `peers` = DNS seulement (plus Stripe, plus GitHub). Ingress cluster : tout pod `part-of: kuberpack` vers le port de l’app.
+Un projet possède son namespace. Deux manifestes ne peuvent pas le partager,
+reprendre une identité d’application ou déplacer implicitement un projet vers
+un autre namespace. Les namespaces réservés sont refusés ; le nom du manifeste
+doit correspondre à son dossier GitOps.
+
+Les services sont isolés en entrée et sortie. `internet` vaut **false par défaut**
+pour les projets. `true` autorise HTTP/HTTPS vers le public, hors plages privées
+et de traduction connues. Sans voisins ni Internet, seul le DNS est autorisé.
+
+`services.web.peers: [api]` autorise web → api sur le port TCP déclaré par api.
+La règle d’entrée correspondante est générée sur api. `services.api.peers: []`
+n’autorise pas le sens inverse et n’hérite pas de `policies.peers`. La liste de
+projet reste acceptée pour les anciens manifestes. `addons: [cache]` autorise
+la dépendance déclarée. Un voisin appartient nécessairement au même manifeste.
+`defaultDeny: false` est refusé. Ingress et test Helm propre au service ont des
+autorisations spécifiques ; il n’y a plus d’ingress général entre apps.
+
+Un refus d’entrée de namespace protège aussi les helpers. **L’egress des addons
+et helpers n’est pas encore fermé au niveau du namespace** : les flux vers
+l’API, les opérateurs et les sauvegardes doivent être bornés par moteur. Leur
+ingress est limité aux consommateurs et dépendances déclarés et à la réplication.
+
+Les policies sont additives et exigent un CNI qui les applique réellement.
+Le banc Docker valide k3s/kube-router ; EKS/GKE nécessitent leur propre validation.
+`internet: true` permet de joindre le domaine public d’un autre projet. Les
+policies natives ne couvrent pas tous les flux avec le nœud ou localhost.
+Les namespaces de contrôleurs externes personnalisés doivent être exclus du
+provisionnement. Les Helmfiles indépendants restent sous leur propre gestion.
+
+## Infisical
+
+Le web Infisical, PostgreSQL et Redis n’ont pas de token Kubernetes monté.
+Le Job de bootstrap conserve celui qui lui est nécessaire. L’operator géré
+utilise des Roles dans les namespaces exacts des projets et `infisical`, avec
+sa liste de surveillance mise à jour par GitOps. Le manager n’a plus de
+ClusterRole permettant Secrets et TokenRequests dans tout le cluster. Un
+operator externe réutilisé conserve sa configuration externe.
+
+Le projet/chemin Infisical reste partagé. Un auteur de manifeste autorisé peut
+y demander les noms de clés d’un autre projet. Une isolation entre développeurs
+exige des projets/chemins et identités Infisical séparés, avec migration des
+secrets existants. L’operator partagé garde accès aux projets gérés et au
+namespace Infisical contenant les credentials de bootstrap.
 
 ## Promotion Git
 
 Rendu des manifestes avant push. Conflit sur `main` : rebase, revalider, retry seulement si le SHA est encore HEAD.
+
+Les symlinks dans les arbres générés sont refusés avant lecture/écriture. Noms,
+chemins, quantités et scalaires sont validés contre l’injection YAML. L’observation
+suit les UIDs Deployment → ReplicaSet → Pod, sans `pods/exec` ni `nodes/proxy`.
+
+**CP → GitOps → Flux reste une frontière critique.** Le CP peut écrire dans le
+dépôt qui pilote aussi la plateforme, et Flux y applique avec des droits élevés.
+Une compromission du CP peut donc encore conduire à la prise du cluster. La
+cible est un dépôt du socle inaccessible au CP, un dépôt applicatif réconcilié
+sous des comptes limités aux namespaces et un provisionneur distinct pour
+namespaces/RBAC. Les gardes dans le processus CP ne remplacent pas cette frontière.

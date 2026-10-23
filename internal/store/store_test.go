@@ -118,3 +118,47 @@ func TestSecretsDir(t *testing.T) {
 		t.Fatalf("%q %v", got, err)
 	}
 }
+
+func TestNamespaceMigrationPreservesExistingAppsAndRoundTripsUpdates(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "db.sqlite")
+	s, err := Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	app, err := s.InsertApp(ctx, App{Name: "demo-web", Project: "demo", ForgejoRepository: "owner/web", ProductionBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Reproduce the schema of an installation predating deployment observation.
+	if _, err := s.db.Exec(`ALTER TABLE apps DROP COLUMN namespace`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.AppByName(ctx, app.Name)
+	if err != nil || got.ID != app.ID || got.ForgejoRepository != "owner/web" || got.Namespace != "" {
+		t.Fatalf("legacy app lost during migration: %+v %v", got, err)
+	}
+	got.Namespace = "custom-runtime"
+	if _, created, err := s.UpsertApp(ctx, got); err != nil || created {
+		t.Fatalf("namespace reconciliation: created=%v err=%v", created, err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	apps, err := s.ListApps(ctx)
+	if err != nil || len(apps) != 1 || apps[0].Namespace != "custom-runtime" {
+		t.Fatalf("namespace not persisted: %+v %v", apps, err)
+	}
+}

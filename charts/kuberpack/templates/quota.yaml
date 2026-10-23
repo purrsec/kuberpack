@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ResourceQuota
 metadata:
   name: kuberpack-build
-  namespace: kuberpack-build
+  namespace: {{ .Values.buildNamespace }}
 spec:
   hard:
     pods: {{ .Values.buildQuota.pods | quote }}

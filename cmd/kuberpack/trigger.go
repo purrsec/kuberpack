@@ -50,6 +50,7 @@ func runTrigger(args []string) error {
 	_, err = release.Run(context.Background(), release.Request{
 		Provider:        provider,
 		RegistryURL:     *registryURL,
+		RegistryToken:   strings.TrimSpace(os.Getenv("KUBERPACK_REGISTRY_TOKEN")),
 		Token:           token,
 		Owner:           owner,
 		Name:            name,

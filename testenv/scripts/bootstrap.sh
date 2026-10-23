@@ -171,23 +171,30 @@ echo "images imported"
 # ------------------------------------------------------------------- forgejo account
 log "forgejo account, tokens and repositories"
 CTL_TOKEN=""
+ADMIN_PASSWORD="${FORGEJO_ADMIN_PASSWORD:-}"
+if [ -z "${ADMIN_PASSWORD}" ] && [ -f .env.test ]; then
+    ADMIN_PASSWORD=$(sed -n 's/^FORGEJO_ADMIN_PASSWORD=//p' .env.test)
+fi
+if [ -z "${ADMIN_PASSWORD}" ]; then
+    ADMIN_PASSWORD=$(openssl rand -hex 24)
+fi
 if [ -f .env.test ]; then
     CTL_TOKEN=$(grep FORGEJO_CONTROL_TOKEN .env.test | cut -d= -f2)
 fi
 if [ -z "${CTL_TOKEN}" ] || ! curl -sS --cacert pki/ca.crt -H "Authorization: token ${CTL_TOKEN}" \
         "https://${FORGEJO_IP}:3000/api/v1/user" | grep -q login; then
     docker exec forgejo forgejo admin user create --config /etc/forgejo/app.ini \
-        --admin --username kuberpack --password 'kuberpack-test-pw' \
+        --admin --username kuberpack --password "${ADMIN_PASSWORD}" \
         --email kuberpack@test.local --must-change-password=false >/dev/null 2>&1 || true
     docker exec forgejo forgejo admin user create --config /etc/forgejo/app.ini \
-        --username kuberpack-builder --password 'kuberpack-builder-pw' \
+        --username kuberpack-builder --password "$(openssl rand -hex 24)" \
         --email builder@test.local --must-change-password=false >/dev/null 2>&1 || true
     CTL_TOKEN=$(docker exec forgejo forgejo admin user generate-access-token --config /etc/forgejo/app.ini \
         --username kuberpack --token-name "kuberpack-control-$(date +%s)" --raw \
-        --scopes write:repository,write:package,write:user 2>/dev/null | tail -1 | tr -d '\r\n')
+        --scopes write:repository 2>/dev/null | tail -1 | tr -d '\r\n')
     BUILDER_TOKEN=$(docker exec forgejo forgejo admin user generate-access-token --config /etc/forgejo/app.ini \
         --username kuberpack-builder --token-name "builder-git-$(date +%s)" --raw \
-        --scopes read:repository,write:repository 2>/dev/null | tail -1 | tr -d '\r\n')
+        --scopes read:repository 2>/dev/null | tail -1 | tr -d '\r\n')
     REGISTRY_TOKEN=$(docker exec forgejo forgejo admin user generate-access-token --config /etc/forgejo/app.ini \
         --username kuberpack --token-name "kuberpack-registry-$(date +%s)" --raw \
         --scopes write:package,read:package 2>/dev/null | tail -1 | tr -d '\r\n')
@@ -201,7 +208,7 @@ FORGEJO_CONTROL_TOKEN=${CTL_TOKEN}
 FORGEJO_BUILDER_TOKEN=${BUILDER_TOKEN}
 FORGEJO_REGISTRY_TOKEN=${REGISTRY_TOKEN}
 FORGEJO_ADMIN_USER=kuberpack
-FORGEJO_ADMIN_PASSWORD=kuberpack-test-pw
+FORGEJO_ADMIN_PASSWORD=${ADMIN_PASSWORD}
 GITOPS_REPO=kuberpack/gitops
 APP_REPO=kuberpack/hello-kuberpack
 BUILDS_REPO=kuberpack/kuberpack-builds

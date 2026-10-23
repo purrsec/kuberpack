@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -23,6 +24,45 @@ func TestCheckoutExactSHA(t *testing.T) {
 	got := git(t, dest, "rev-parse", "HEAD")
 	if got != sha {
 		t.Fatalf("got %s want %s", got, sha)
+	}
+}
+
+func TestCheckoutNeverForwardsAuthorizationThroughRedirect(t *testing.T) {
+	var forwarded atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwarded.Add(1)
+		http.NotFound(w, r)
+	}))
+	defer target.Close()
+	var authenticated atomic.Int32
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" {
+			authenticated.Add(1)
+		}
+		http.Redirect(w, r, target.URL+r.URL.Path, http.StatusFound)
+	}))
+	defer origin.Close()
+	err := Checkout(context.Background(), origin.URL+"/repo.git", strings.Repeat("a", 40), filepath.Join(t.TempDir(), "checkout"), TokenHeaderArgs("test-only-token"))
+	if err == nil {
+		t.Fatal("non-Git redirecting server unexpectedly cloned")
+	}
+	if authenticated.Load() == 0 {
+		t.Fatal("test did not exercise authenticated request")
+	}
+	if forwarded.Load() != 0 {
+		t.Fatal("Git followed a redirect outside the credential origin")
+	}
+	if strings.Contains(err.Error(), "test-only-token") {
+		t.Fatal("clone error exposed credentials")
+	}
+}
+
+func TestCheckoutRejectsCommitOptionsAndRemoteHelpers(t *testing.T) {
+	if err := Checkout(context.Background(), "ext::sh -c echo", strings.Repeat("a", 40), t.TempDir(), nil); err == nil {
+		t.Fatal("external remote helper accepted")
+	}
+	if err := Checkout(context.Background(), "https://example.invalid/repo.git", "--orphan", t.TempDir(), nil); err == nil || !strings.Contains(err.Error(), "40 hexadecimal") {
+		t.Fatal("non-SHA commit was not rejected before cloning")
 	}
 }
 

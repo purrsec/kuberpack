@@ -81,7 +81,7 @@ func TestTheApplicationCloneIsNotTheGiteaOne(t *testing.T) {
 		CloneURL: "https://github.com/o/n.git",
 		Private:  true,
 	}}
-	req := Request{Provider: provider, Token: "s3cret", Owner: "o", Name: "n", SHA: strings.Repeat("a", 40)}
+	req := Request{Provider: provider, Token: "s3cret", RegistryToken: "registry-only", Owner: "o", Name: "n", SHA: strings.Repeat("a", 40)}
 	// The release fails after the clone (there is no source to analyze):
 	// the arguments of the clone are what matters here.
 	_, _ = Run(context.Background(), req)
@@ -90,5 +90,34 @@ func TestTheApplicationCloneIsNotTheGiteaOne(t *testing.T) {
 	}
 	if joined := strings.Join(seen, " "); !strings.Contains(joined, "Authorization: Basic") {
 		t.Errorf("the clone of the application uses %q, want a basic authentication", joined)
+	}
+}
+
+func TestPublicApplicationCloneNeverReceivesPlatformCredentials(t *testing.T) {
+	provider := fakeProvider{repo: git.Repository{CloneURL: "https://gitlab.com/third-party/public.git"}}
+	args, err := applicationCloneAuth(provider, "platform-secret", provider.repo)
+	if err != nil || len(args) != 0 {
+		t.Fatalf("public clone must be anonymous: args present=%t error=%v", len(args) > 0, err)
+	}
+}
+
+func TestPrivateCloneCannotForwardCredentialsToAnotherOrigin(t *testing.T) {
+	provider := fakeProvider{}
+	for _, remote := range []string{"https://attacker.invalid/o/r.git", "http://github.com/o/r.git", "https://github.com:444/o/r.git", "https://token@github.com/o/r.git", "ext::sh -c echo"} {
+		_, err := applicationCloneAuth(provider, "platform-secret", git.Repository{CloneURL: remote, Private: true})
+		if err == nil {
+			t.Fatalf("clone origin %q accepted", remote)
+		}
+	}
+}
+
+func TestAnonymousThirdPartyProviderDoesNotBorrowPlatformToken(t *testing.T) {
+	provider, err := git.NewGitLab("https://gitlab.com/api/v4", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	args, err := applicationCloneAuth(provider, "platform-secret", git.Repository{CloneURL: "https://gitlab.com/o/r.git", Private: true})
+	if err != nil || len(args) != 0 {
+		t.Fatalf("anonymous provider borrowed credentials: args present=%t error=%v", len(args) > 0, err)
 	}
 }

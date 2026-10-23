@@ -9,8 +9,8 @@ import (
 )
 
 // The contract of a service is written from the manifest: the image is empty
-// until the control plane pins it, the track follows the branch, the secret
-// is referenced, and the service is activated only after the first pin.
+// until the control plane pins it, the track follows the branch, and only
+// declared secrets are mounted. The service activates after the first pin.
 func TestProjectServiceWritesTheContract(t *testing.T) {
 	bare := setupAppsGitOps(t)
 	platform := Platform{NetworkPolicy: true, IngressTLS: true, ExternalDNSTarget: "95.111.234.93,2a02:c207:2312:1564::1"}
@@ -46,8 +46,8 @@ func TestProjectServiceWritesTheContract(t *testing.T) {
 	if strings.Contains(values, "command:") {
 		t.Fatal("values must not set command")
 	}
-	if !strings.Contains(values, "name: app-site") {
-		t.Fatalf("expected envFrom secret app-site:\n%s", values)
+	if strings.Contains(values, "envFrom:") {
+		t.Fatalf("a project must not mount undeclared secrets:\n%s", values)
 	}
 	if !strings.Contains(values, "2a02:c207:2312:1564::1") {
 		t.Fatalf("expected AAAA ExternalDNS target:\n%s", values)
@@ -55,7 +55,7 @@ func TestProjectServiceWritesTheContract(t *testing.T) {
 	if strings.Contains(values, "95.111.234.93") {
 		t.Fatal("values must not publish an IPv4 ExternalDNS target")
 	}
-	if !strings.Contains(values, "internet: true") || !strings.Contains(values, "peers: []") {
+	if !strings.Contains(values, "internet: false") || !strings.Contains(values, "peers: []") {
 		t.Fatalf("expected default network allowlist:\n%s", values)
 	}
 

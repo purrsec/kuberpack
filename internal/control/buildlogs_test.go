@@ -1,8 +1,18 @@
 package control
 
 import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 // TestClipLogsKeepsTheEnd checks that the extract of a build keeps the
@@ -24,6 +34,27 @@ func TestClipLogsKeepsTheEnd(t *testing.T) {
 	}
 	if !strings.Contains(got, "bytes of output were dropped") {
 		t.Error("the extract does not say what it dropped")
+	}
+}
+
+func TestBuildLogReadIsBoundedEvenForAnOversizedLine(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("limitBytes") != strconv.Itoa(maxLogBytes) {
+			t.Error("kubelet was not asked for a bounded extract")
+		}
+		// Deliberately ignore the requested limit, as a large line may exceed
+		// the kubelet's approximate bound. No unbounded read may reach SQLite.
+		_, _ = io.WriteString(w, strings.Repeat("x", 4*maxLogBytes))
+	}))
+	defer api.Close()
+	kube, err := kubernetes.NewForConfig(&rest.Config{Host: api.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(Config{Kube: kube})
+	logs := s.podLogs(context.Background(), corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "build", Namespace: "build"}})
+	if logs == "" || len(logs) > maxLogBytes+200 {
+		t.Fatalf("unbounded or empty build extract: %d bytes", len(logs))
 	}
 }
 

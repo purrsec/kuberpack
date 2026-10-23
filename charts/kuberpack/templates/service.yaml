@@ -35,11 +35,14 @@ metadata:
   name: kuberpack
   namespace: {{ .Release.Namespace }}
   annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: websecure
-    traefik.ingress.kubernetes.io/router.tls: "true"
-    traefik.ingress.kubernetes.io/router.tls.certresolver: letsencrypt
+    {{- with .Values.ingress.issuer }}
+    cert-manager.io/cluster-issuer: {{ . | quote }}
+    {{- end }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 spec:
-  ingressClassName: traefik
+  ingressClassName: {{ .Values.ingress.className | quote }}
   rules:
     - host: {{ .Values.host | quote }}
       http:
@@ -51,10 +54,12 @@ spec:
                 name: kuberpack
                 port:
                   name: http
+  {{- if .Values.ingress.tls }}
   tls:
     - hosts:
         - {{ .Values.host | quote }}
       {{- if .Values.tlsSecret }}
       secretName: {{ .Values.tlsSecret | quote }}
       {{- end }}
+  {{- end }}
 {{- end }}

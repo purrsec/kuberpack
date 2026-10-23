@@ -1,163 +1,166 @@
-# Installer Kuberpack
+# Installer Kuberpack sur un Kubernetes existant
 
-Kuberpack est une couche d'abstraction : il se pose sur un cluster Kubernetes
-que vous avez déjà, et il prend en charge le chemin « push → build → image →
-déploiement ».
+`kuberpack install` orchestre des étapes Go avec les bibliothèques Kubernetes
+et Helm. Le CLI embarque ses charts : aucun checkout du produit, Ansible,
+Python ou Helmfile n'est nécessaire pour installer Kuberpack. Git doit être
+présent sur la machine qui exécute le CLI.
 
-Il n'a pas d'avis sur votre forge, sur votre registre d'images ni sur votre
-cloud. Il lui faut un cluster, une forge git, deux jetons, et c'est tout.
+## Préparer le cluster
 
-## Ce qu'il faut
+L'installateur utilise le kubeconfig courant, ou `--kubeconfig` et `--context`.
+Il faut les droits d'administration nécessaires aux CRD et aux opérateurs,
+une StorageClass utilisable, un contrôleur d'ingress et des nœuds Linux
+compatibles avec les builds BuildKit rootless. Le domaine doit pointer vers
+l'exposition de cet ingress. Kuberpack ne crée ni VPC, ni cluster EKS/GKE,
+ni contrôleur réseau ou disque propre au fournisseur.
 
-| | |
-| --- | --- |
-| Un cluster | EKS, GKE, AKS, un k3s, un kubeadm… n'importe lequel |
-| Une forge git | Forgejo, Gitea, GitHub, GitLab |
-| Un registre OCI | celui de la forge (Forgejo, GitLab) ou GHCR, ECR, GAR… |
-| Deux jetons | un pour **lire** les dépôts, un pour **pousser** les images |
+La cible est un Kubernetes existant, notamment EKS, GKE ou k3s. Les tests
+réels utilisent k3s Docker et un [VPS recréé de 8 Go](install-vps-2026-10-22.md) ;
+cela ne certifie pas tous les modes Autopilot,
+Fargate, les politiques d'admission ou toutes les versions Kubernetes.
+Les NetworkPolicy nécessitent un plugin réseau qui les applique.
 
-Les deux jetons sont séparés par principe : le jeton de build ne sert qu'à
-pousser les images, celui de lecture n'a pas le droit d'écrire dans vos
-dépôts d'application.
+Deux identifiants distincts sont fournis par l'opérateur :
 
-## Les deux jetons
+- `KUBERPACK_GIT_TOKEN` : lecture du code, gestion des webhooks et écriture
+  dans le dépôt GitOps. Kuberpack n'écrit pas dans les dépôts applicatifs.
+- `KUBERPACK_REGISTRY_TOKEN` : publication et lecture des images. Le builder
+  l'utilise pour pousser ; le control plane l'utilise pour les Secrets de pull.
 
-| Jeton | Droit | Sert à |
-| --- | --- | --- |
-| **lecture** | `repo` (GitHub), `read_repository` + `api` (GitLab), `read:repository` (Forgejo) | cloner le code, lire les branches, poser les webhooks |
-| **build** | `write:packages` (GitHub), `write_registry` (GitLab), `write:repository` (Forgejo) | pousser l'image dans le registre |
+Les dépôts GitOps et applicatifs existent déjà. Le registre peut être
+indépendant de la forge (`--registry-url`, `--registry-user`). Les identifiants
+cloud temporaires d'un registre nécessitent une stratégie de renouvellement
+adaptée à ce fournisseur ; leur rotation automatique n'est pas implémentée.
 
-Le control plane ne reçoit que le jeton de lecture. Le jeton de build va au
-builder, dans le Secret qui monte dans le Job de build :
+## Installer
 
-```
-/secrets/git-token       jeton de lecture   (clone du dépôt applicatif)
-/secrets/registry-token  jeton de build     (push de l'image)
-```
-
-Les deux peuvent venir de fichiers ou d'Infisical (le builder lit aussi
-`kuberpack-builder-git-token` et `kuberpack-builder-registry-token`).
-
-## La configuration
-
-```bash
-# la forge
-KUBERPACK_GIT_PROVIDER=github        # forgejo | github | gitlab
-KUBERPACK_GIT_URL=https://api.github.com
-KUBERPACK_GIT_TOKEN=<jeton de lecture>
-
-# le registre d'images (par défaut : l'URL de la forge)
-KUBERPACK_REGISTRY_URL=ghcr.io
-```
-
-Les anciennes variables `FORGEJO_URL` et `FORGEJO_TOKEN` restent reconnues :
-rien ne casse.
-
-| Forge | `KUBERPACK_GIT_URL` |
-| --- | --- |
-| Forgejo | `https://git.exemple.org` |
-| GitHub | `https://api.github.com` (ou `https://ghe.exemple.org/api/v3`) |
-| GitLab | `https://gitlab.com/api/v4` (ou `https://gitlab.exemple.org/api/v4`) |
-
-## Le déploiement
-
-```bash
-helm install kuberpack ./charts/kuberpack \\
-  --namespace kuberpack --create-namespace \\
-  --set image=ghcr.io/kuberpack/control \\
-  --set builderImage=ghcr.io/kuberpack/builder \\
-  --set forgejoURL=https://api.github.com \\
-  --set gitopsURL=https://github.com/vous/deploiement.git \\
-  --set webhookURL=https://kuberpack.exemple.org/hooks/forgejo
-```
-
-Le chart est dans [`charts/kuberpack`](../charts/kuberpack). Il ne dépend
-d'aucun service particulier : Flux s'installe à côté, et le `Kustomization`
-qui pointe vers `kubernetes/vps/projects` est la seule ligne à ajouter à la
-main.
-
-## La commande `kuberpack install`
-
-Une installation qui demande quatre étapes n'est pas une installation. La
-commande prépare le cluster :
+Sans argument dans un terminal, `kuberpack install` lance le questionnaire.
+Pour une installation reproductible ou en CI :
 
 ```bash
 kuberpack install \
-  --gitops-url https://github.com/vous/deploiement.git \
-  --git-token <jeton de lecture> \
-  --registry-token <jeton de build>
+  --cluster production \
+  --gitops-url https://github.com/equipe/deploiement.git \
+  --host kuberpack.exemple.org \
+  --acme-email ops@exemple.org
 ```
 
-C'est tout ce qu'il faut : l'URL du dépôt GitOps dit à la commande où est la
-forge, qui vous êtes, et où sont vos images.
+L'IngressClass est détectée quand elle est unique. Le namespace du contrôleur
+est détecté pour Traefik et ingress-nginx. `--ingress-class` et
+`--ingress-namespace` permettent de sélectionner explicitement un contrôleur
+existant. Les contrôleurs cloud à accès direct aux pods, comme ALB/GCE,
+nécessitent une intégration réseau adaptée et ne sont pas certifiés par ce test.
+`--storage-class` sélectionne un stockage ; sinon le défaut du cluster est
+utilisé. Pour les certificats, choisir un `--issuer` existant ou fournir
+`--acme-email` pour créer l'issuer ACME dédié à Kuberpack.
 
-| Ce que l'URL dit | La commande en déduit |
-| --- | --- |
-| `https://github.com/vous/deploiement.git` | forge `https://github.com`, utilisateur `vous`, registre `ghcr.io` (`vous`) |
-| `https://gitlab.com/groupe/equipe/deploiement.git` | forge `https://gitlab.com`, utilisateur `groupe`, registre `gitlab.com` (`groupe`) |
-| `https://git.exemple.org/equipe/deploiement.git` | forge `https://git.exemple.org`, utilisateur `equipe`, registre `git.exemple.org` (`equipe`) |
+En environnement local, `--tls=false` conserve l'ingress HTTP ;
+`--ingress=false --tls=false --infisical=false --node-port 30080` permet
+un control plane sans exposition par ingress. Les adresses privées de forge
+ou de registre peuvent nécessiter `--allow-private-build-egress`.
+`--ca-file` fournit la CA de la forge au clone initial et à Flux ; les nœuds
+et les images de build doivent également faire confiance à ce registre.
 
-Le jeton de l'API de la plateforme, lui, n'est pas demandé : la commande en
-génère un (`kp_…`) et ne l'affiche qu'une fois, à la fin. Les jetons de la
-forge, eux, ne sont jamais écrits dans la sortie : ils vont droit dans les
-Secrets du cluster.
+`--file plateforme.yaml` charge les choix non secrets, avec validation stricte.
+Les flags explicites priment sur ce fichier. Ne pas y mettre de jetons.
+Fournir des credentials distincts via `KUBERPACK_GIT_TOKEN` (écriture GitOps et
+API de forge), `KUBERPACK_REGISTRY_TOKEN` (images seulement) et, pour des sources
+privées, `KUBERPACK_BUILDER_GIT_TOKEN` (lecture seulement). Ce dernier peut être
+omis pour les dépôts publics. L’installateur refuse un même jeton pour plusieurs
+de ces rôles. Une clé API séparée est générée si elle n’est pas fournie.
+Des chaînes différentes ne prouvent pas les scopes : les permissions réelles
+doivent être limitées chez le fournisseur. Voir [sécurité](security.md).
 
-`--git-url`, `--registry-url` et `--registry-user` existent toujours, pour les
-forges que l'URL ne dit pas (un registre ailleurs que la forge, un groupe
-GitLab imbriqué). Ils ne sont plus nécessaires dans le cas courant.
+Les images peuvent être sélectionnées avec `--image`, `--builder-image` et
+`--buildkit-image` ; utiliser une version publiée correspondant au CLI,
+épinglée par digest en production. Les règles d’admission du builder exigent
+Kubernetes 1.30 ou plus récent et sont activées par défaut. Les NetworkPolicies
+des projets nécessitent un CNI qui les applique effectivement.
+L'installateur prépare les Secrets de pull du control plane et du builder
+avec les identifiants du registre fourni, y compris pour leur premier
+démarrage sur des nœuds sans images préchargées.
+Les limites mémoire initiales sont de 3 Gio pour le builder et son scan,
+et de 4 Gio pour BuildKit. Elles sont réglables avec `--builder-memory` et
+`--buildkit-memory` selon les nœuds disponibles.
 
-Elle fait trois choses :
+## Les étapes
 
-| | |
-| --- | --- |
-| les services du cluster | cert-manager (les certificats), l'opérateur CloudNativePG (les bases), son plugin barman (les sauvegardes) — épinglés, et idempotents : un service déjà là est mis à la version de la plateforme |
-| les secrets | le jeton de lecture, celui de l'API, celui du builder, celui du registre, et les identifiants du dépôt GitOps |
-| les ressources Flux | la source qui surveille le dépôt GitOps, et le `Kustomization` qui applique les projets |
+1. Inspecter le cluster et vérifier que le dossier GitOps est dédié à cette
+   installation et à l'identité de ce cluster.
+2. Préparer les namespaces et les Secrets. Un jeton d'API existant est
+   conservé ; les mots de passe et clés de chiffrement ne sont pas régénérés.
+3. Réutiliser Flux, ou installer sa version épinglée avec contrôle du SHA-256
+   des manifests téléchargés. Un Flux partagé n'est pas mis à niveau.
+4. Réutiliser les opérateurs présents, ou installer cert-manager,
+   CloudNativePG et son plugin de sauvegarde Barman.
+5. Installer Infisical et son opérateur, créer le projet de secrets, une
+   identité Kubernetes de lecture dédiée et l'accès du compte humain initial.
+6. Publier le socle dans Git et confier ses releases à Flux.
+7. Attendre les réconciliations et vérifier la santé et l'authentification API.
 
-`--dry-run` dit ce qui serait fait, et ne touche à rien. Les services du
-cluster se refusent avec `--cluster-services=false` quand le cluster les a
-déjà (un opérateur installé à la main, un ingress déjà en place).
+Les étapes relisent l'état réel à chaque exécution. Une Lease empêche deux
+installateurs de modifier la même installation simultanément. Après une
+interruption, relancer la même commande. Une installation Helm interrompue
+est reprise ; le hook initial Infisical peut être rejoué si nécessaire.
 
-Les services du cluster sont ceux que la plateforme attend :
+Les identifiants restent dans les Secrets Kubernetes. La sortie indique où
+récupérer le jeton d'API et les identifiants initiaux Infisical ; elle n'affiche
+pas leurs valeurs. Le profil CLI est aussi enregistré localement en mode
+0600 dans `~/.config/kuberpack/clusters/<cluster>.env`, sans écraser un profil
+différent. La sortie donne la commande pour l'activer. La sauvegarde des
+Secrets et des volumes reste nécessaire.
+`install` ne constitue pas une commande de rotation ni de restauration.
 
-| Service | Version | Pourquoi |
-| --- | --- | --- |
-| cert-manager | v1.18.2 | les certificats TLS des applications |
-| cloudnative-pg | 0.29.1 (l'opérateur 1.30.1) | les bases PostgreSQL des add-ons |
-| plugin-barman-cloud | 0.8.1 | les sauvegardes des bases, vers le stockage objet du projet |
+`--dry-run` inspecte le cluster et décrit les étapes sans écrire dans le
+cluster ou dans Git. Il ne simule pas tous les appels Helm et Infisical.
 
-L'ingress et le stockage ne sont pas installés : ils sont propres au cluster,
-et l'opérateur choisit les siens.
+## GitOps et coexistence avec Helmfile
 
-## Les secrets : Infisical
+Par défaut, Kuberpack réserve uniquement :
 
-Les secrets des applications ne passent pas par Kuberpack. Quand une
-application déclare `secrets:`, la plateforme génère un objet
-`InfisicalStaticSecret` qui synchronise les valeurs depuis l'instance
-Infisical vers un Secret Kubernetes. Les valeurs ne sont ni dans le dépôt
-Git, ni dans la base SQLite, ni dans le control plane.
+```text
+clusters/production/kuberpack/
+  installation.yaml       choix non secrets et identité du cluster
+  charts/                 charts Kuberpack embarqués
+  platform/               releases et socle gérés par Kuberpack
+  projects/               projets issus des kuberpack.yaml
+```
 
-L'installation d'Infisical sur le cluster est décrite dans
-[infisical.md](infisical.md). Elle tient dans la commande
-`kuberpack install` : l'opérateur n'écrit aucun YAML.
+`--gitops-root` change ce périmètre. La racine du dépôt n'est jamais ajoutée
+à une réconciliation globale. Une seconde Kustomization du même chemin est
+refusée. Le socle utilise `prune: false` pour préserver ses volumes et les
+composants partagés ; les projets disposent de leur propre périmètre de prune.
+Retirer un composant du socle demande donc une opération explicite.
 
-Le parcours complet, du cluster vide à l'application qui tourne :
+Un dépôt applicatif peut contenir simultanément :
+
+```text
+mon-projet/
+  kuberpack.yaml           services avec l'abstraction Kuberpack
+  helmfile.yaml            releases complexes gérées directement par Helmfile
+  charts/                 charts personnalisés
+```
+
+`project compile` lit seulement le manifeste demandé. Il ne lance pas
+Helmfile et ne réécrit pas ses fichiers. `helmfile sync` ou votre CI conserve
+la responsabilité de ces releases. Pour une release donnée, choisir un seul
+responsable : Helmfile ou Kuberpack/Flux. Les services nécessaires déjà gérés
+ailleurs sont réutilisés, sans changement de leurs valeurs ni de leur version.
+Éviter de placer vos propres fichiers dans les répertoires générés ci-dessus.
+
+## Après l'installation
+
+Configurer le CLI avec l'URL indiquée et son jeton d'API. Le développeur
+n'a ensuite besoin d'aucun kubeconfig :
 
 ```bash
-kuberpack install \
-  --gitops-url https://github.com/vous/deploiement.git \
-  --git-token <jeton de lecture> \
-  --registry-token <jeton de build>
-kuberpack project init          # écrit kuberpack.yaml, ou l'utilisateur l'écrit
-kuberpack project compile       # compile le manifeste et pousse
+infisical login --domain https://infisical.exemple.org
+# Charger les secrets dans le projet indiqué par l'installation.
+kuberpack project init
+kuberpack project compile
+kuberpack apps
 ```
 
-## Ce que Kuberpack ne fait pas
-
-- Il ne crée pas vos dépôts applicatifs.
-- Il n'écrit aucun fichier dans vos dépôts applicatifs.
-- Il ne gère pas vos clusters : il écrit des objets Kubernetes, c'est tout.
-
-C'est ce qui permet de l'installer n'importe où : un cluster EKS avec GitHub
-et GHCR, un GKE avec GitLab, un k3s à la maison avec Forgejo — le code est le
-même, seuls les trois variables d'environnement changent.
+L'accès humain initial est celui de l'administrateur créé par le bootstrap.
+L'attribution des accès aux autres développeurs reste une action de gestion
+dans Infisical. Voir aussi l'[exemple Stirling PDF](../examples/stirling-pdf/README.md).

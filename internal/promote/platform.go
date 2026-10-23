@@ -21,6 +21,9 @@ type Platform struct {
 	SourceNamespace     string
 	ReleaseNamespace    string
 	IngressClassName    string
+	IngressNamespace    string
+	IngressPodSelector  map[string]string
+	VolumeStorageClass  string
 	ImagePullSecret     string
 	IngressTLS          bool
 	ExternalDNSTarget   string
@@ -34,6 +37,7 @@ type Platform struct {
 	// application namespaces grant it the right to write the secret that
 	// pulls the images of the registry.
 	ControlPlaneNamespace string
+	BuildNamespace        string
 	NetworkPolicy         bool
 	// Infisical: where app secrets are synced from. Empty ProjectID disables
 	// the generated InfisicalStaticSecret.
@@ -42,6 +46,9 @@ type Platform struct {
 	InfisicalPath      string
 	InfisicalDir       string
 	InfisicalNamespace string
+	// InfisicalOperatorScope keeps the managed secrets operator restricted to
+	// the namespaces explicitly provisioned by project manifests.
+	InfisicalOperatorScope bool
 	// PostgresImage is the image of the PostgreSQL databases of the
 	// projects. It is a digest: an addon is pinned like an application.
 	PostgresImage string
@@ -110,6 +117,12 @@ func (p Platform) withDefaults() Platform {
 	if p.IngressClassName == "" {
 		p.IngressClassName = "traefik"
 	}
+	if len(p.IngressPodSelector) == 0 {
+		p.IngressPodSelector = map[string]string{"app.kubernetes.io/name": "traefik"}
+		if strings.Contains(p.IngressClassName, "nginx") {
+			p.IngressPodSelector = map[string]string{"app.kubernetes.io/name": "ingress-nginx", "app.kubernetes.io/component": "controller"}
+		}
+	}
 	if p.ImagePullSecret == "" {
 		p.ImagePullSecret = "forgejo-registry-pull"
 	}
@@ -128,6 +141,9 @@ func (p Platform) withDefaults() Platform {
 	}
 	if p.ControlPlaneNamespace == "" {
 		p.ControlPlaneNamespace = "kuberpack"
+	}
+	if p.BuildNamespace == "" {
+		p.BuildNamespace = "kuberpack-build"
 	}
 	if p.InfisicalAuthRef == "" {
 		p.InfisicalAuthRef = "contabo-vps"

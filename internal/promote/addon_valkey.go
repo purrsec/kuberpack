@@ -130,7 +130,7 @@ func (valkeyEngine) Render(dir string, spec AddonSpec, platform Platform) (Addon
 	if err := writeAddonFiles(dir, addonFile{
 		name: "networkpolicy.yaml",
 		content: addonNetworkPolicy(name, namespace, entry.Kind, sanitizeName(spec.Name),
-			sanitizeName(spec.Project), []int{entry.Port}, ""),
+			sanitizeName(spec.Project), []int{entry.Port}, "", spec),
 	}); err != nil {
 		return AddonResult{}, err
 	}

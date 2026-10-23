@@ -95,6 +95,7 @@ func (s *Server) alignTrack(ctx context.Context, app store.App) {
 		Provider:            s.cfg.Provider,
 		RegistryURL:         s.cfg.RegistryURL,
 		RegistryUser:        s.cfg.RegistryUser,
+		RegistryToken:       s.cfg.RegistryToken,
 		ImageName:           app.Name,
 		Token:               s.cfg.Token,
 		Owner:               owner,
