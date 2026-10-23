@@ -27,6 +27,7 @@ reprise, une fois les preuves rejouées.
 | Image CP | Shell et outils de build présents | Runtime scratch contenant Kuberpack, Git natif/HTTPS et ses bibliothèques ; hooks Git désactivés |
 | Dispatcher builder | Création de Jobs dans un namespace Pod Security permissif | Admission API pour Jobs, Pods et `pods/ephemeralcontainers`, images/commandes/arguments et volumes bornés ; privilèges, jetons et accès hôte refusés |
 | Credentials | Le PAT GitOps était réellement copié dans le Secret builder | Credential de source privé distinct, registre distinct, séparation bloquante par défaut, absence de repli implicite pour la clé API |
+| Autorité GitOps | Le CP écrivait le chart et les Kustomizations qui pilotent Flux | Dépôt applicatif séparé, écrit par le CP ; chart et Flux restent dans le dépôt de la plateforme, possédé par l’installateur |
 | Clones/registre | Credential de plateforme transmis à une origine tierce ou au registre | Clones publics anonymes, auth privée limitée à son origine, registre authentifié uniquement avec son credential dédié |
 | Infisical | Manager ClusterRole avec Secrets et TokenRequests sur tout le cluster | Roles dans la liste exacte des namespaces gérés, scope GitOps mis à jour à la compilation/suppression ; web et données sans jeton monté |
 | Entrées API | Concaténations YAML, symlinks, corps/logs insuffisamment bornés | Validation des scalaires/chemins, refus des symlinks, limites de lecture et de connexions ; observation liée aux UIDs réels des workloads |
@@ -97,6 +98,20 @@ sont capturées en mémoire et ne sont pas imprimées.
    assuré par une identité distincte, avec un schéma étroit et un contrôle de
    propriété. Un simple `serviceAccountName` sur une Kustomization ne suffit pas
    si le CP peut modifier le dépôt du socle qui définit ce compte et ses droits.
+
+   **Progression — dépôt séparé livré et validé.** `--gitops-apps-url` crée un
+   dépôt applicatif que seul le control plane écrit ; le dépôt de la plateforme
+   (chart, Flux, socle) reste possédé par l’installateur. Le chart `stateless`
+   reste dans le dépôt de la plateforme et les HelmRelease le référencent par
+   la source de la plateforme, donc le CP ne peut plus modifier le chart qu’il
+   fait appliquer. Le contrôle a été rejoué sur le banc Docker avec deux dépôts :
+   installation, réinstallation sans commit, secret humain, compilation
+   idempotente et coexistence Helmfile passent. **Reste la seconde moitié du
+   chantier** : une Kustomization par projet avec un ServiceAccount borné à son
+   namespace, et un provisionneur distinct pour namespaces/RBAC. Tant que la
+   Kustomization des projets s’exécute avec l’identité globale de Flux, le CP
+   peut encore écrire un manifeste dans le dépôt applicatif et obtenir des
+   droits dans le namespace (mais plus dans le socle).
 
 2. **Élevé — Secrets et autorisation par projet.** La clé API est administrateur
    global, l’identité/operator Infisical est partagé, et les manifestes utilisent

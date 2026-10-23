@@ -40,7 +40,8 @@ Pour une installation reproductible ou en CI :
 ```bash
 kuberpack install \
   --cluster production \
-  --gitops-url https://github.com/equipe/deploiement.git \
+  --gitops-url https://github.com/equipe/socle.git \
+  --gitops-apps-url https://github.com/equipe/applications.git \
   --host kuberpack.exemple.org \
   --acme-email ops@exemple.org
 ```
@@ -116,19 +117,37 @@ cluster ou dans Git. Il ne simule pas tous les appels Helm et Infisical.
 
 ## GitOps et coexistence avec Helmfile
 
-Par défaut, Kuberpack réserve uniquement :
+Avec `--gitops-apps-url`, le dépôt de la plateforme et celui des applications
+sont séparés. L'installateur écrit le socle dans le premier ; le control plane
+n'écrit que le second :
 
 ```text
+socle/                                  # installateur uniquement
 clusters/production/kuberpack/
   installation.yaml       choix non secrets et identité du cluster
   charts/                 charts Kuberpack embarqués
   platform/               releases et socle gérés par Kuberpack
+
+applications/                           # control plane uniquement
+  kuberpack-apps.yaml     identité du dépôt applicatif
   projects/               projets issus des kuberpack.yaml
 ```
 
-`--gitops-root` change ce périmètre. La racine du dépôt n'est jamais ajoutée
-à une réconciliation globale. Une seconde Kustomization du même chemin est
-refusée. Le socle utilise `prune: false` pour préserver ses volumes et les
+Le chart `stateless` reste dans le dépôt du socle : les HelmRelease
+applicatives le référencent par la source de la plateforme, donc le control
+plane ne peut pas modifier le chart qu'il fait appliquer. Un dépôt applicatif
+doit être vide (un README d'initialisation est accepté) et dédié à une seule
+installation. `--gitops-apps-root` place les projets dans un sous-dossier du
+dépôt applicatif ; sans lui, ils sont à la racine.
+
+Sans `--gitops-apps-url`, le layout historique à un seul dépôt reste supporté :
+la plateforme et les projets partagent `--gitops-root`. Ce mode est conservé
+pour les installations existantes ; une nouvelle installation doit séparer les
+deux dépôts.
+
+`--gitops-root` change le périmètre du socle. La racine du dépôt n'est jamais
+ajoutée à une réconciliation globale. Une seconde Kustomization du même chemin
+est refusée. Le socle utilise `prune: false` pour préserver ses volumes et les
 composants partagés ; les projets disposent de leur propre périmètre de prune.
 Retirer un composant du socle demande donc une opération explicite.
 

@@ -26,9 +26,11 @@ et [validation VPS](install-vps-2026-10-22.md).
 La [passe de sécurité du 23 octobre](security-audit-2026-10-23.md) durcit
 l’isolation réseau des services, la séparation des credentials, l’image du
 control plane, l’admission des Jobs du builder et les entrées de l’API. Elle
-est validée sur le banc Docker. Elle ne fait pas de Kuberpack une plateforme
-multi-tenant : l’autorité GitOps du CP et le partage des identités Infisical
-restent les risques critiques documentés dans cet audit.
+est validée sur le banc Docker. Le dépôt GitOps de la plateforme est séparé de
+celui des applications : le CP n’écrit plus le chart ni les Kustomizations.
+L’isolation multi-tenant reste incomplète : les applications sont encore
+réconciliées par l’identité globale de Flux, et les identités Infisical sont
+partagées. Ces risques sont documentés dans l’audit.
 
 ## Fait
 
@@ -41,7 +43,7 @@ restent les risques critiques documentés dans cet audit.
 - La compilation du manifeste arme le pipeline : app SQLite (`<projet>-<service>`), secret HMAC, webhook Forgejo, premier build, et `values_path` du service (le digest est épinglé dans le projet, pas dans l’ancien arbre `apps/`).
 - Le `values.yaml` d’un service est régénéré à chaque compilation : le manifeste pilote le runtime, l’`image` et le `track` épinglés sont conservés.
 - Addons : les moteurs sont pluggables (`AddonEngine` + un registre). Moteurs disponibles : `cnpg` (PostgreSQL), `valkey` (cache), `mongo`, `rustfs` (S3) et `volume` (disque, notamment SQLite). Les variables et volumes des dépendances sont fournis par leurs moteurs ; `backup.s3` peut référencer le stockage objet du projet. Un service déclare les addons qu’il utilise (`services.*.addons`) et reçoit leur environnement ; la `NetworkPolicy` les autorise.
-- Le control plane écrit son chart dans le dépôt GitOps au démarrage : le chart appliqué est celui qu’il connaît (les valeurs qu’il écrit n’iraient pas dans un chart obsolète).
+- Deux dépôts GitOps sont supportés : le socle (chart, Flux, installation) reste possédé par l’installateur, les applications (projets, valeurs, previews) vivent dans un dépôt que seul le control plane écrit. Sans dépôt applicatif séparé, le layout historique à un seul dépôt reste accepté.
 - La forge git est un **provider** (`internal/git`) : Forgejo, GitHub et GitLab sont implémentés, un seul registre les choisit (`KUBERPACK_GIT_PROVIDER`). Le registre d'images est configurable séparément de la forge (`KUBERPACK_REGISTRY_URL`).
 - Les credentials sont séparés : écriture GitOps et API de forge, lecture des sources privées du builder, publication au registre et clé d’administration Kuberpack. L’installateur refuse les réutilisations ; les builds refusent par défaut un credential identique à celui du control plane. Voir [sécurité](security.md).
 - Une application **tierce** se déploie avec son URL de dépôt : `repository: https://github.com/miniflux/v2`. La forge de l'URL est déduite, le dépôt public est lu en anonyme, le webhook est impossible (un avertissement, pas une erreur), et l'image est publiée dans le registre de la plateforme.
@@ -66,6 +68,6 @@ restent les risques critiques documentés dans cet audit.
 ## Pas fait / hors ce dépôt
 
 - UI web : le CLI (`kuberpack apps`, `app`, `builds`, `logs`, `redeploy`, `project`) couvre le pilotage courant ; une interface web reste à faire.
-- Isolation multi-tenant : le CP peut encore écrire le dépôt qui pilote Flux, la clé API est administrateur global et les projets partagent le projet/chemin Infisical. L’ordre de travail est dans [l’audit sécurité](security-audit-2026-10-23.md).
+- Isolation multi-tenant : le CP écrit le dépôt applicatif que Flux réconcilie encore avec l’identité globale de Flux, la clé API est administrateur global et les projets partagent le projet/chemin Infisical. L’ordre de travail est dans [l’audit sécurité](security-audit-2026-10-23.md).
 - `wattchman.fr` est encore Railway (hors kuberpack).
 - UI de logs sur `serve` : hors produit.
