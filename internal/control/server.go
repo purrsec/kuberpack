@@ -68,6 +68,14 @@ type Config struct {
 	WebhookURL    string
 	GitOpsURL     string
 	GitOpsBranch  string
+	// AppsSource is the Flux GitRepository that carries the applications
+	// repository. With tenant isolation, each project gets its own
+	// Kustomization that references it.
+	AppsSource string
+	// TenantIsolation makes the control plane provision one namespace,
+	// ServiceAccount and Flux Kustomization per project. The application
+	// Kustomization then applies with the tenant identity, not cluster-admin.
+	TenantIsolation bool
 	// ChartPath is the stateless chart on the disk of the control plane.
 	// Rendering never depends on a chart the control plane could rewrite.
 	ChartPath string

@@ -15,6 +15,7 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/promote"
 	"gopkg.in/yaml.v3"
 	"helm.sh/helm/v3/pkg/chart/loader"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -347,10 +348,17 @@ func (i *installation) publishPlatform(ctx context.Context) error {
 			return err
 		}
 	}
-	for _, scope := range []struct {
+	scopes := []struct {
 		name, path, source string
 		prune              bool
-	}{{"kuberpack-platform", i.c.PlatformPath(), i.c.Source, false}, {"kuberpack-projects", i.c.ProjectsPath(), appsSource, true}} {
+	}{{"kuberpack-platform", i.c.PlatformPath(), i.c.Source, false}}
+	if !i.c.SplitApps() {
+		scopes = append(scopes, struct {
+			name, path, source string
+			prune              bool
+		}{"kuberpack-projects", i.c.ProjectsPath(), appsSource, true})
+	}
+	for _, scope := range scopes {
 		// Refuse another reconciler of this path instead of racing two prune inventories.
 		gvr := schema.GroupVersionResource{Group: "kustomize.toolkit.fluxcd.io", Version: "v1", Resource: "kustomizations"}
 		all, err := i.dyn.Resource(gvr).List(ctx, metav1.ListOptions{})
@@ -385,6 +393,28 @@ func (i *installation) publishPlatform(ctx context.Context) error {
 			obj.Object["spec"].(map[string]any)["healthChecks"] = health
 		}
 		if err := i.apply(ctx, obj); err != nil {
+			return err
+		}
+	}
+	if i.c.SplitApps() {
+		// The historical global projects Kustomization applies every project
+		// with the identity of Flux. Tenant isolation replaces it with one
+		// Kustomization per project, created by the control plane. It is
+		// suspended, not deleted: deleting a Kustomization with prune would
+		// delete the namespaces and workloads of its inventory.
+		gvr := schema.GroupVersionResource{Group: "kustomize.toolkit.fluxcd.io", Version: "v1", Resource: "kustomizations"}
+		old, err := i.dyn.Resource(gvr).Namespace(i.c.Namespace).Get(ctx, "kuberpack-projects", metav1.GetOptions{})
+		if err == nil {
+			if err := unstructured.SetNestedField(old.Object, true, "spec", "suspend"); err != nil {
+				return err
+			}
+			if err := unstructured.SetNestedField(old.Object, false, "spec", "prune"); err != nil {
+				return err
+			}
+			if _, err := i.dyn.Resource(gvr).Namespace(i.c.Namespace).Update(ctx, old, metav1.UpdateOptions{}); err != nil {
+				return err
+			}
+		} else if !apierrors.IsNotFound(err) {
 			return err
 		}
 	}

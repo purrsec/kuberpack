@@ -79,13 +79,24 @@ def main():
                 result[identity] = hashlib.sha256(json.dumps(state, sort_keys=True).encode()).hexdigest()
         return result
 
+    def external_fingerprint():
+        # The independent Helmfile application is fully compared. cert-manager
+        # is a reused operator: its webhook CA rotates and its configuration is
+        # mutated by the controller itself. Compare its identities, not its
+        # live data, so a rotation is not mistaken for a platform write.
+        result = dict(fingerprint(["helmfile-apps"]))
+        for obj in kubectl("get", "secrets,deployments,configmaps,pvc", "-n", "external-cert-manager")["items"]:
+            identity = "external-cert-manager/" + obj["kind"] + "/" + obj["metadata"]["name"]
+            result[identity] = obj["metadata"]["uid"]
+        return result
+
     run([args.helmfile, "-f", project_dir / "helmfile.yaml", "sync"], ops, quiet=True)
     ca_exists = subprocess.run(["kubectl", "get", "secret", "kuberpack-fixture-ca", "-n", "external-cert-manager"], env=ops, capture_output=True)
     if ca_exists.returncode:
         run(["kubectl", "create", "secret", "tls", "kuberpack-fixture-ca", "-n", "external-cert-manager", "--cert=" + str(ROOT / "testenv/pki/ca.crt"), "--key=" + str(ROOT / "testenv/pki/ca.key")], ops, quiet=True)
     run(["kubectl", "apply", "--field-manager=install-test-fixture", "-f", "-"], ops, quiet=True, input=json.dumps({"apiVersion": "cert-manager.io/v1", "kind": "ClusterIssuer", "metadata": {"name": "install-test-ca"}, "spec": {"ca": {"secretName": "kuberpack-fixture-ca"}}}))
     run(["kubectl", "wait", "--for=condition=Ready", "clusterissuer/install-test-ca", "--timeout=60s"], ops, quiet=True)
-    external_before = fingerprint(["helmfile-apps", "external-cert-manager"])
+    external_before = external_fingerprint()
     helmfile_before = hashlib.sha256((project_dir / "helmfile.yaml").read_bytes()).hexdigest()
     print("Independent Helmfile app and cert-manager installed", flush=True)
 
@@ -180,6 +191,25 @@ policies:
     else:
         raise RuntimeError("secret-backed application did not become healthy")
     assert '"changed":false' in run([cli, "project", "compile", "-f", manifest], developer)
+
+    # The project is applied by Flux with its own tenant identity, not with
+    # the identity that provisions the cluster.
+    tenant_sa = "kuberpack-tenant-" + args.project
+    tenant_kustomization = "kuberpack-project-" + args.project
+    kubectl("get", "serviceaccount", tenant_sa, "-n", "kuberpack")
+    kubectl("get", "kustomization", tenant_kustomization, "-n", "kuberpack")
+    kubectl("get", "rolebinding", "kuberpack-tenant", "-n", args.project)
+    namespace = kubectl("get", "namespace", args.project)
+    if namespace["metadata"]["labels"].get("kuberpack.io/project") != args.project:
+        raise RuntimeError("the project namespace does not carry its ownership label")
+    global_projects = subprocess.run(["kubectl", "get", "kustomization", "kuberpack-projects", "-n", "kuberpack"], env=ops, capture_output=True)
+    if global_projects.returncode == 0:
+        raise RuntimeError("the global cluster-admin projects Kustomization must be removed in tenant mode")
+    allowed = subprocess.run(["kubectl", "auth", "can-i", "get", "pods", "-n", args.project, "--as", "system:serviceaccount:kuberpack:" + tenant_sa], env=ops, capture_output=True, text=True)
+    denied = subprocess.run(["kubectl", "auth", "can-i", "get", "pods", "-n", "kube-system", "--as", "system:serviceaccount:kuberpack:" + tenant_sa], env=ops, capture_output=True, text=True)
+    if allowed.stdout.strip() != "yes" or denied.stdout.strip() != "no":
+        raise RuntimeError("the tenant identity is not limited to its namespace")
+
     before_reinstall = fingerprint(["kuberpack", "infisical", "kuberpack-build"])
     # Confirm install itself is idempotent in Git, in addition to app compile.
     def git_revision(repository):
@@ -193,9 +223,9 @@ policies:
     for key, value in before_reinstall.items():
         if "/Secret/" in key or "/PersistentVolumeClaim/" in key:
             assert after_reinstall.get(key) == value, f"credential or PVC changed on reinstall: {key}"
-    assert fingerprint(["helmfile-apps", "external-cert-manager"]) == external_before, "external Helmfile resources changed"
+    assert external_fingerprint() == external_before, "external Helmfile resources changed"
     assert hashlib.sha256((project_dir / "helmfile.yaml").read_bytes()).hexdigest() == helmfile_before
-    result = {"installation": "ready", "reinstall": "passed", "interruption_recovery": bool(args.interrupt), "human_secret_upload": "passed", "application_secret_digest": "matched", "compile_idempotence": "passed", "helmfile_coexistence": "passed"}
+    result = {"installation": "ready", "reinstall": "passed", "interruption_recovery": bool(args.interrupt), "human_secret_upload": "passed", "application_secret_digest": "matched", "compile_idempotence": "passed", "helmfile_coexistence": "passed", "tenant_isolation": "passed"}
     (workspace / "result.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result), flush=True)
     print("Test artifacts:", workspace, flush=True)

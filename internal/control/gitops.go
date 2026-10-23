@@ -155,6 +155,11 @@ func (s *Server) handleGitOpsPush(ctx context.Context, payload pushPayload) erro
 	// The reconciliation is the same as the one of the API path: the
 	// manifest decides which apps exist, which webhooks and which builds.
 	for _, project := range result.Projects {
+		if err := s.ensureProjectTenant(ctx, project.Project, project.Namespace); err != nil {
+			s.publishStatusOnCommit(ctx, owner, repo, payload.After, git.StatusFailure,
+				"tenant: "+err.Error())
+			return err
+		}
 		if err := s.reconcileApps(ctx, project.Project, project.Apps); err != nil {
 			s.publishStatusOnCommit(ctx, owner, repo, payload.After, git.StatusFailure,
 				"reconcile: "+err.Error())
@@ -162,11 +167,26 @@ func (s *Server) handleGitOpsPush(ctx context.Context, payload pushPayload) erro
 		}
 	}
 	for _, project := range result.Removed {
+		namespace := project
+		if apps, lookupErr := s.cfg.Store.AppsByProject(ctx, project); lookupErr == nil && len(apps) > 0 {
+			namespace = apps[0].Namespace
+		}
 		if err := s.reconcileApps(ctx, project, nil); err != nil {
 			s.publishStatusOnCommit(ctx, owner, repo, payload.After, git.StatusFailure,
 				"reconcile: "+err.Error())
 			return err
 		}
+		if err := s.deleteProjectTenant(ctx, project, namespace); err != nil {
+			s.publishStatusOnCommit(ctx, owner, repo, payload.After, git.StatusFailure,
+				"tenant: "+err.Error())
+			return err
+		}
+	}
+
+	if err := s.syncProjectTenantScope(ctx); err != nil {
+		s.publishStatusOnCommit(ctx, owner, repo, payload.After, git.StatusFailure,
+			"infisical scope: "+err.Error())
+		return err
 	}
 
 	// A refused project is not deployed. The developer must know why: the

@@ -48,11 +48,22 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "compile failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
+	// The project is applied by Flux with its own tenant identity. The
+	// namespace and the identity must exist before the application is
+	// reconciled.
+	if err := s.ensureProjectTenant(r.Context(), res.Project, res.Namespace); err != nil {
+		http.Error(w, "the manifest was applied, but its tenant could not be provisioned: "+err.Error(), http.StatusBadGateway)
+		return
+	}
 	// The manifest is the source of truth: the declared services become apps
 	// with a webhook and a build. The GitOps is already written, so a retry
 	// of the same manifest arms the pipeline.
 	if err := s.reconcileApps(r.Context(), res.Project, res.Apps); err != nil {
 		http.Error(w, "the manifest was applied, but the build pipeline could not be armed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	if err := s.syncProjectTenantScope(r.Context()); err != nil {
+		http.Error(w, "the project was applied, but the Infisical scope could not be updated: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	writeJSON(w, http.StatusCreated, projectJSON(res))
@@ -98,6 +109,10 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 	// A project that holds a database is not removed silently: the caller
 	// asks for it explicitly.
 	force := r.URL.Query().Get("force") == "true" || r.URL.Query().Get("force") == "1"
+	namespace := name
+	if apps, lookupErr := s.cfg.Store.AppsByProject(r.Context(), name); lookupErr == nil && len(apps) > 0 {
+		namespace = apps[0].Namespace
+	}
 	res, err := promote.DeleteProject(r.Context(), promote.ProjectRequest{
 		GitOpsURL:    s.cfg.GitOpsURL,
 		GitOpsBranch: s.cfg.GitOpsBranch,
@@ -114,6 +129,14 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 	// The apps of a deleted project lose their webhook and their secret.
 	if err := s.reconcileApps(r.Context(), name, nil); err != nil {
 		http.Error(w, "delete failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	if err := s.deleteProjectTenant(r.Context(), name, namespace); err != nil {
+		http.Error(w, "the project was removed, but its tenant could not be cleaned: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	if err := s.syncProjectTenantScope(r.Context()); err != nil {
+		http.Error(w, "the project was removed, but the Infisical scope could not be updated: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	writeJSON(w, http.StatusOK, projectJSON(res))

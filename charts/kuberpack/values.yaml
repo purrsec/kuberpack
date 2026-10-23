@@ -137,3 +137,8 @@ buildQuota:
 # digest, and the deadline of the build Job. Raise it for slow toolchains
 # (a first Python build downloads a large base image).
 wait: 15m
+
+# Tenant isolation: one Flux Kustomization and one namespace-scoped
+# ServiceAccount per project. The platform repository stays installer-owned;
+# the control plane provisions the tenant identity and its Kustomization.
+tenantIsolation: false

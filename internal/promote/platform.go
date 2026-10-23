@@ -77,6 +77,10 @@ type Platform struct {
 	PreviewDatabaseClass   string
 	// ProjectsDir is where project manifests and their compiled artifacts live.
 	ProjectsDir string
+	// TenantIsolation compiles projects so that Flux applies them with a
+	// per-project ServiceAccount. The namespace is then created by the
+	// control plane provisioner, not by the project Kustomization.
+	TenantIsolation bool
 	// AddonImages holds the image of each addon engine, by engine name.
 	AddonImages map[string]string
 	// PostgresStorage is the size of the volume of the PostgreSQL

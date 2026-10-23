@@ -757,15 +757,25 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 	}
 	resources = append(resources, activated...)
 	resources = append(resources, addons...)
-	// The namespace of the project is created by the project itself: Flux
-	// applies it with the rest.
-	if err := writeFile(filepath.Join(projectDir, "namespace.yaml"), RenderProjectNamespace(namespace, project)); err != nil {
-		return nil, nil, nil, err
+	// The namespace of the project is created by the project itself in the
+	// historical layout. With tenant isolation, the control plane creates it
+	// before Flux: the per-project ServiceAccount cannot create a Namespace.
+	prefix := []string{"networkpolicy.yaml"}
+	if p.TenantIsolation {
+		namespacePath := filepath.Join(projectDir, "namespace.yaml")
+		if err := os.Remove(namespacePath); err != nil && !os.IsNotExist(err) {
+			return nil, nil, nil, err
+		}
+	} else {
+		if err := writeFile(filepath.Join(projectDir, "namespace.yaml"), RenderProjectNamespace(namespace, project)); err != nil {
+			return nil, nil, nil, err
+		}
+		prefix = []string{"namespace.yaml", "networkpolicy.yaml"}
 	}
 	if err := writeFile(filepath.Join(projectDir, "networkpolicy.yaml"), RenderProjectDefaultDeny(namespace)); err != nil {
 		return nil, nil, nil, err
 	}
-	parentYAML := RenderParentKustomization(namespace, append([]string{"namespace.yaml", "networkpolicy.yaml"}, resources...))
+	parentYAML := RenderParentKustomization(namespace, append(prefix, resources...))
 	if err := os.WriteFile(filepath.Join(projectDir, "kustomization.yaml"), []byte(parentYAML), 0o644); err != nil {
 		return nil, nil, nil, err
 	}

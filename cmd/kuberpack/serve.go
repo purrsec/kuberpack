@@ -160,6 +160,8 @@ func runServe(args []string) error {
 		WebhookURL:               strings.TrimSpace(*webhookURL),
 		GitOpsURL:                *gitopsURL,
 		GitOpsBranch:             *gitopsBranch,
+		AppsSource:               getenv("KUBERPACK_APPS_SOURCE", "kuberpack-gitops"),
+		TenantIsolation:          getenvBool("KUBERPACK_TENANT_ISOLATION", false),
 		ChartPath:                *chartPath,
 		WriteCharts:              getenvBool("KUBERPACK_WRITE_CHARTS", true),
 		// The chart of the control plane itself. The platform writes it in
@@ -223,6 +225,7 @@ func platformFromEnv() promote.Platform {
 		TraefikEntrypoint:      getenv("KUBERPACK_TRAEFIK_ENTRYPOINT", "websecure"),
 		TraefikCertResolver:    getenv("KUBERPACK_CERT_RESOLVER", "letsencrypt"),
 		NetworkPolicy:          getenvBool("KUBERPACK_NETWORK_POLICY", true),
+		TenantIsolation:        getenvBool("KUBERPACK_TENANT_ISOLATION", false),
 		PreviewDomain:          getenv("KUBERPACK_PREVIEW_DOMAIN", "preview.host.bzh"),
 		InfisicalAuthRef:       getenv("KUBERPACK_INFISICAL_AUTH_REF", "contabo-vps"),
 		InfisicalProjectID:     strings.TrimSpace(os.Getenv("KUBERPACK_INFISICAL_PROJECT_ID")),

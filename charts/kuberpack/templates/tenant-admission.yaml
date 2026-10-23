@@ -1,0 +1,158 @@
+{{- if .Values.tenantIsolation }}
+{{- if not (semverCompare ">=1.30-0" .Capabilities.KubeVersion.Version) }}
+{{- fail "tenant isolation requires Kubernetes >= 1.30 with ValidatingAdmissionPolicy" }}
+{{- end }}
+{{- $root := . }}
+# The control plane provisions the tenant resources itself. These policies
+# bound what it may create: another operator or administrator is not affected,
+# and the control plane cannot name a privileged identity or another role.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ .Release.Namespace }}-kuberpack-tenant-namespaces
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [namespaces]
+  matchConditions:
+    - name: control-plane
+      expression: request.userInfo.username == 'system:serviceaccount:{{ .Release.Namespace }}:kuberpack'
+  validations:
+    - expression: >-
+        has(object.metadata.labels) &&
+        'kuberpack.io/project' in object.metadata.labels &&
+        object.metadata.labels['kuberpack.io/project'] != '' &&
+        object.metadata.name != 'default' &&
+        !object.metadata.name.startsWith('kube-') &&
+        object.metadata.name != 'flux-system' &&
+        object.metadata.name != 'infisical'
+      message: The control plane may only create a project namespace with its ownership label
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ .Release.Namespace }}-kuberpack-tenant-namespaces
+spec:
+  policyName: {{ .Release.Namespace }}-kuberpack-tenant-namespaces
+  validationActions: [Deny]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ .Release.Namespace }}-kuberpack-tenant-serviceaccounts
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Release.Namespace }}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [serviceaccounts]
+  matchConditions:
+    - name: control-plane
+      expression: request.userInfo.username == 'system:serviceaccount:{{ .Release.Namespace }}:kuberpack'
+  validations:
+    - expression: >-
+        object.metadata.name.startsWith('kuberpack-tenant-') &&
+        has(object.automountServiceAccountToken) &&
+        !object.automountServiceAccountToken &&
+        (!has(object.secrets) || object.secrets.size() == 0) &&
+        (!has(object.imagePullSecrets) || object.imagePullSecrets.size() == 0)
+      message: The control plane may only create token-less tenant identities
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ .Release.Namespace }}-kuberpack-tenant-serviceaccounts
+spec:
+  policyName: {{ .Release.Namespace }}-kuberpack-tenant-serviceaccounts
+  validationActions: [Deny]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ .Release.Namespace }}-kuberpack-tenant-rolebindings
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - key: kuberpack.io/project
+          operator: Exists
+    resourceRules:
+      - apiGroups: [rbac.authorization.k8s.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [rolebindings]
+  matchConditions:
+    - name: control-plane
+      expression: request.userInfo.username == 'system:serviceaccount:{{ .Release.Namespace }}:kuberpack'
+  validations:
+    - expression: >-
+        object.roleRef.kind == 'ClusterRole' &&
+        object.roleRef.name == 'kuberpack-tenant' &&
+        object.subjects.size() == 1 &&
+        object.subjects[0].kind == 'ServiceAccount' &&
+        object.subjects[0].name.startsWith('kuberpack-tenant-') &&
+        object.subjects[0].namespace == '{{ .Release.Namespace }}'
+      message: The control plane may only bind the tenant role to a tenant identity
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ .Release.Namespace }}-kuberpack-tenant-rolebindings
+spec:
+  policyName: {{ .Release.Namespace }}-kuberpack-tenant-rolebindings
+  validationActions: [Deny]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ .Release.Namespace }}-kuberpack-tenant-kustomizations
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Release.Namespace }}
+    resourceRules:
+      - apiGroups: [kustomize.toolkit.fluxcd.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [kustomizations]
+  matchConditions:
+    - name: control-plane
+      expression: request.userInfo.username == 'system:serviceaccount:{{ .Release.Namespace }}:kuberpack'
+  validations:
+    - expression: >-
+        object.metadata.name.startsWith('kuberpack-project-') &&
+        has(object.metadata.labels) &&
+        'kuberpack.io/project' in object.metadata.labels &&
+        object.metadata.labels['kuberpack.io/project'] != '' &&
+        'kuberpack.io/target-namespace' in object.metadata.labels &&
+        object.spec.serviceAccountName == 'kuberpack-tenant-' + object.metadata.labels['kuberpack.io/project'] &&
+        object.spec.targetNamespace == object.metadata.labels['kuberpack.io/target-namespace'] &&
+        object.spec.prune == true &&
+        object.spec.sourceRef.kind == 'GitRepository' &&
+        object.spec.sourceRef.name == 'kuberpack-apps'
+      message: The control plane may only create tenant-scoped project Kustomizations
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ .Release.Namespace }}-kuberpack-tenant-kustomizations
+spec:
+  policyName: {{ .Release.Namespace }}-kuberpack-tenant-kustomizations
+  validationActions: [Deny]
+{{- end }}

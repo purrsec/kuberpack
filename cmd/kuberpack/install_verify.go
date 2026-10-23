@@ -25,6 +25,13 @@ func (i *installation) platformValues(ctx context.Context) (map[string]any, erro
 		add("KUBERPACK_SELF_CHART_REF", i.c.ChartPath("kuberpack"))
 	}
 	add("KUBERPACK_WRITE_CHARTS", strconv.FormatBool(!i.c.SplitApps()))
+	add("KUBERPACK_TENANT_ISOLATION", strconv.FormatBool(i.c.SplitApps()))
+	add("KUBERPACK_APPS_SOURCE", func() string {
+		if i.c.SplitApps() {
+			return "kuberpack-apps"
+		}
+		return i.c.Source
+	}())
 	add("KUBERPACK_INFISICAL_DIR", i.c.ProjectsPath())
 	add("KUBERPACK_CONTROL_PLANE_NAMESPACE", i.c.Namespace)
 	add("KUBERPACK_INGRESS_CLASS", i.c.IngressClass)
@@ -104,7 +111,7 @@ func (i *installation) platformValues(ctx context.Context) (map[string]any, erro
 			return ""
 		}()},
 		"nodePort":           map[string]any{"enabled": i.c.NodePort != 0, "port": i.c.NodePort},
-		"buildNetworkPolicy": map[string]any{"enabled": !i.c.PrivateBuildEgress}, "extraEnv": env,
+		"buildNetworkPolicy": map[string]any{"enabled": !i.c.PrivateBuildEgress}, "tenantIsolation": i.c.SplitApps(), "extraEnv": env,
 		"buildAdmission": buildAdmission,
 	}, nil
 }
@@ -119,10 +126,18 @@ func (i *installation) verify(ctx context.Context) error {
 	}{
 		{schema.GroupVersionResource{Group: "source.toolkit.fluxcd.io", Version: "v1", Resource: "gitrepositories"}, i.c.Source},
 		{schema.GroupVersionResource{Group: "kustomize.toolkit.fluxcd.io", Version: "v1", Resource: "kustomizations"}, "kuberpack-platform"},
-		{schema.GroupVersionResource{Group: "kustomize.toolkit.fluxcd.io", Version: "v1", Resource: "kustomizations"}, "kuberpack-projects"},
 		{schema.GroupVersionResource{Group: "helm.toolkit.fluxcd.io", Version: "v2", Resource: "helmreleases"}, "kuberpack"},
 	} {
 		if err := i.waitReady(ctx, item.gvr, i.c.Namespace, item.name); err != nil {
+			return err
+		}
+	}
+	if i.c.SplitApps() {
+		if err := i.waitReady(ctx, schema.GroupVersionResource{Group: "source.toolkit.fluxcd.io", Version: "v1", Resource: "gitrepositories"}, i.c.Namespace, "kuberpack-apps"); err != nil {
+			return err
+		}
+	} else {
+		if err := i.waitReady(ctx, schema.GroupVersionResource{Group: "kustomize.toolkit.fluxcd.io", Version: "v1", Resource: "kustomizations"}, i.c.Namespace, "kuberpack-projects"); err != nil {
 			return err
 		}
 	}

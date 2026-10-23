@@ -79,3 +79,84 @@ roleRef:
   kind: ClusterRole
   name: {{ .Release.Namespace }}-kuberpack-node-metrics
 {{- end }}
+{{- if .Values.tenantIsolation }}
+---
+# The tenant identity is bound in a project namespace. A RoleBinding to a
+# ClusterRole only grants the namespaced resources of that namespace: the
+# tenant cannot reach another namespace or a cluster-scoped resource.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kuberpack-tenant
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+---
+# The control plane provisions namespaces, tenant identities, their bindings
+# and one Flux Kustomization per project. A ValidatingAdmissionPolicy bounds
+# what it may create: it cannot name another identity or another role.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Namespace }}-kuberpack-provisioner
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get, list, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [serviceaccounts]
+    verbs: [get, list, create, update, delete]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [rolebindings]
+    verbs: [get, list, create, update, delete]
+  # A RoleBinding may only reference a role the binder can grant. The
+  # control plane may bind the tenant role, and nothing else.
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [clusterroles]
+    resourceNames: [kuberpack-tenant]
+    verbs: [bind]
+  - apiGroups: [kustomize.toolkit.fluxcd.io]
+    resources: [kustomizations]
+    verbs: [get, list, create, update, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Namespace }}-kuberpack-provisioner
+subjects:
+  - kind: ServiceAccount
+    name: kuberpack
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Namespace }}-kuberpack-provisioner
+---
+# The Infisical operator scope is a ConfigMap in the control namespace. The
+# control plane updates it directly: no global projects Kustomization keeps
+# cluster-wide rights just to carry one ConfigMap.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kuberpack-infisical-scope
+  namespace: {{ .Release.Namespace }}
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get, list, create, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kuberpack-infisical-scope
+  namespace: {{ .Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: kuberpack
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kuberpack-infisical-scope
+{{- end }}
