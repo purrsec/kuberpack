@@ -25,10 +25,10 @@ func (i *installation) infisicalScopePlatform() promote.Platform {
 // create their namespaced Roles, including on a replacement cluster.
 func (i *installation) seedInfisicalOperatorScope(ctx context.Context) (map[string]any, error) {
 	p := i.infisicalScopePlatform()
-	if err := promote.SyncInfisicalOperatorScope(i.work, p); err != nil {
+	if err := promote.SyncInfisicalOperatorScope(i.appsDir(), p); err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(filepath.Join(i.work, filepath.FromSlash(p.ProjectsDirPath()), promote.InfisicalOperatorScopeFile))
+	data, err := os.ReadFile(filepath.Join(i.appsDir(), filepath.FromSlash(p.ProjectsDirPath()), promote.InfisicalOperatorScopeFile))
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +40,7 @@ func (i *installation) seedInfisicalOperatorScope(ctx context.Context) (map[stri
 	if err := yaml.Unmarshal([]byte(desired.Data["values.yaml"]), &values); err != nil {
 		return nil, err
 	}
-	namespaces, err := promote.InfisicalOperatorNamespaces(i.work, p)
+	namespaces, err := promote.InfisicalOperatorNamespaces(i.appsDir(), p)
 	if err != nil {
 		return nil, err
 	}

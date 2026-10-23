@@ -66,7 +66,13 @@ type Config struct {
 	WebhookURL    string
 	GitOpsURL     string
 	GitOpsBranch  string
-	ChartPath     string
+	// ChartPath is the stateless chart on the disk of the control plane.
+	// Rendering never depends on a chart the control plane could rewrite.
+	ChartPath string
+	// WriteCharts keeps the historical behaviour where the control plane
+	// publishes its chart into the repository it writes. A split platform
+	// sets it to false: the platform repository is installer-owned.
+	WriteCharts bool
 	// SelfChartPath is the chart of the control plane itself, on the disk
 	// of the control plane. The platform writes it in the GitOps
 	// repository: the deployment of the platform must never drift from

@@ -31,8 +31,11 @@ func runInstall(args []string) error {
 	fs.StringVar(&c.GitProvider, "git-provider", "", "forgejo, github or gitlab (inferred for public providers)")
 	fs.StringVar(&c.GitURL, "git-url", "", "forge base URL")
 	fs.StringVar(&c.GitUser, "git-user", "", "forge user")
-	fs.StringVar(&c.GitOpsURL, "gitops-url", "", "existing GitOps repository URL")
+	fs.StringVar(&c.GitOpsURL, "gitops-url", "", "existing GitOps repository URL (platform: chart and Flux)")
 	fs.StringVar(&c.GitOpsBranch, "gitops-branch", c.GitOpsBranch, "GitOps branch")
+	fs.StringVar(&c.AppsURL, "gitops-apps-url", "", "applications GitOps repository URL, writable by the control plane (defaults to --gitops-url)")
+	fs.StringVar(&c.AppsBranch, "gitops-apps-branch", "", "applications GitOps branch (defaults to --gitops-branch)")
+	fs.StringVar(&c.AppsRoot, "gitops-apps-root", "", "applications root in their repository (default: repository root, or --gitops-root for a single repository)")
 	fs.StringVar(&c.Root, "gitops-root", "", "dedicated directory (default clusters/<cluster>/kuberpack)")
 	fs.StringVar(&c.Source, "gitops-source", c.Source, "Flux GitRepository name")
 	fs.StringVar(&creds.Git, "git-token", creds.Git, "forge token (prefer KUBERPACK_GIT_TOKEN)")
@@ -117,6 +120,21 @@ func runInstall(args []string) error {
 	}
 	if c.Root == "" {
 		c.Root = "clusters/" + c.Cluster + "/kuberpack"
+	}
+	// A single repository keeps the historical layout. A separate
+	// applications repository has its own root, usually its root directory.
+	if c.AppsURL == "" {
+		c.AppsURL = c.GitOpsURL
+		c.AppsRoot = c.Root
+	}
+	if c.AppsBranch == "" {
+		c.AppsBranch = c.GitOpsBranch
+	}
+	if c.SplitApps() && c.AppsRoot == c.Root {
+		c.AppsRoot = ""
+	}
+	if !c.SplitApps() && c.AppsRoot == "" {
+		c.AppsRoot = c.Root
 	}
 	if c.GitURL == "" {
 		c.GitURL = forgeBaseURL(c.GitOpsURL)

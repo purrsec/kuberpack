@@ -20,9 +20,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-func (i *installation) git(ctx context.Context, args ...string) (string, error) {
+func (i *installation) gitAt(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = i.work
+	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=http.extraHeader", "GIT_CONFIG_VALUE_0="+strings.TrimPrefix(fetch.AuthArgs(gitprovider.AuthScheme(i.c.GitProvider), i.credentials.Git)[1], "http.extraHeader="), "GIT_CONFIG_KEY_1=user.name", "GIT_CONFIG_VALUE_1=Kuberpack", "GIT_CONFIG_KEY_2=user.email", "GIT_CONFIG_VALUE_2=kuberpack@localhost")
 	if i.c.CAFile != "" {
 		cmd.Env = append(cmd.Env, "GIT_SSL_CAINFO="+i.c.CAFile)
@@ -34,14 +34,40 @@ func (i *installation) git(ctx context.Context, args ...string) (string, error) 
 	return strings.TrimSpace(string(out)), nil
 }
 
+func (i *installation) appsDir() string {
+	if i.appsWork != "" {
+		return i.appsWork
+	}
+	return i.work
+}
+
+func (i *installation) git(ctx context.Context, args ...string) (string, error) {
+	return i.gitAt(ctx, i.work, args...)
+}
+
+func (i *installation) gitApps(ctx context.Context, args ...string) (string, error) {
+	return i.gitAt(ctx, i.appsDir(), args...)
+}
+
 func (i *installation) prepareRepository(ctx context.Context) error {
-	work := i.work
-	i.work = filepath.Dir(work)
-	_, err := i.git(ctx, "clone", "--branch", i.c.GitOpsBranch, "--single-branch", i.c.GitOpsURL, work)
-	i.work = work
-	if err != nil {
+	parent := filepath.Dir(i.work)
+	if _, err := i.gitAt(ctx, parent, "clone", "--branch", i.c.GitOpsBranch, "--single-branch", i.c.GitOpsURL, i.work); err != nil {
 		return err
 	}
+	i.appsWork = i.work
+	if i.c.SplitApps() {
+		i.appsWork = filepath.Join(parent, "apps")
+		if _, err := i.gitAt(ctx, parent, "clone", "--branch", i.c.AppsBranch, "--single-branch", i.c.AppsURL, i.appsWork); err != nil {
+			return err
+		}
+		if err := i.checkAppsRepository(ctx); err != nil {
+			return err
+		}
+	}
+	return i.checkPlatformRepository(ctx)
+}
+
+func (i *installation) checkPlatformRepository(ctx context.Context) error {
 	root := filepath.Join(i.work, filepath.FromSlash(i.c.Root))
 	marker := filepath.Join(root, "installation.yaml")
 	if _, err := os.Stat(marker); os.IsNotExist(err) {
@@ -77,6 +103,46 @@ func (i *installation) prepareRepository(ctx context.Context) error {
 	return nil
 }
 
+func (i *installation) checkAppsRepository(ctx context.Context) error {
+	root := filepath.Join(i.appsWork, filepath.FromSlash(i.c.AppsRoot))
+	marker := filepath.Join(root, "kuberpack-apps.yaml")
+	if _, err := os.Stat(marker); os.IsNotExist(err) {
+		entries, err := os.ReadDir(root)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		for _, entry := range entries {
+			switch entry.Name() {
+			case ".git", "README.md", "LICENSE", ".gitignore", ".github":
+				continue
+			default:
+				return fmt.Errorf("applications GitOps repository %s is not empty and is not owned by Kuberpack; use a dedicated empty repository", i.c.AppsURL)
+			}
+		}
+	} else if err != nil {
+		return err
+	} else {
+		var previous struct {
+			ClusterUID string `yaml:"clusterUID"`
+		}
+		data, err := os.ReadFile(marker)
+		if err != nil {
+			return err
+		}
+		if err := yaml.Unmarshal(data, &previous); err != nil {
+			return err
+		}
+		ns, err := i.kube.CoreV1().Namespaces().Get(ctx, "kube-system", metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		if previous.ClusterUID != "" && previous.ClusterUID != string(ns.UID) {
+			return fmt.Errorf("applications GitOps repository %s belongs to another cluster; use a dedicated repository or restore the cluster deliberately", i.c.AppsURL)
+		}
+	}
+	return nil
+}
+
 func (i *installation) write(name string, value any) error {
 	data, err := yaml.Marshal(value)
 	if err != nil {
@@ -84,12 +150,32 @@ func (i *installation) write(name string, value any) error {
 	}
 	return i.writeBytes(name, data)
 }
+
+func (i *installation) writeApps(name string, value any) error {
+	data, err := yaml.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return i.writeBytesApps(name, data)
+}
+
 func (i *installation) writeBytes(name string, data []byte) error {
+	return writeRepoFile(i.work, i.c.Root, name, data)
+}
+
+func (i *installation) writeBytesApps(name string, data []byte) error {
+	return writeRepoFile(i.appsDir(), i.c.AppsRoot, name, data)
+}
+
+func writeRepoFile(work, root, name string, data []byte) error {
 	clean := filepath.ToSlash(filepath.Clean(name))
-	if !strings.HasPrefix(clean, strings.TrimSuffix(i.c.Root, "/")+"/") {
+	if filepath.IsAbs(name) || clean == ".." || strings.HasPrefix(clean, "../") {
 		return fmt.Errorf("refusing to write outside installation scope: %s", name)
 	}
-	current := i.work
+	if root != "" && !strings.HasPrefix(clean, strings.TrimSuffix(root, "/")+"/") {
+		return fmt.Errorf("refusing to write outside installation scope: %s", name)
+	}
+	current := work
 	for _, part := range strings.Split(clean, "/") {
 		current = filepath.Join(current, part)
 		entry, err := os.Lstat(current)
@@ -100,7 +186,7 @@ func (i *installation) writeBytes(name string, data []byte) error {
 			return fmt.Errorf("refusing to follow GitOps symlink: %s", name)
 		}
 	}
-	full := filepath.Join(i.work, filepath.FromSlash(name))
+	full := filepath.Join(work, filepath.FromSlash(clean))
 	if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
 		return err
 	}
@@ -128,12 +214,12 @@ func (i *installation) publishPlatform(ctx context.Context) error {
 		return err
 	}
 	projects := i.c.ProjectsPath() + "/kustomization.yaml"
-	if _, err := os.Stat(filepath.Join(i.work, projects)); os.IsNotExist(err) {
-		if err := i.write(projects, kustomization(nil)); err != nil {
+	if _, err := os.Stat(filepath.Join(i.appsDir(), projects)); os.IsNotExist(err) {
+		if err := i.writeApps(projects, kustomization(nil)); err != nil {
 			return err
 		}
 	}
-	if err := promote.SyncInfisicalOperatorScope(i.work, i.infisicalScopePlatform()); err != nil {
+	if err := promote.SyncInfisicalOperatorScope(i.appsDir(), i.infisicalScopePlatform()); err != nil {
 		return err
 	}
 	values, err := i.platformValues(ctx)
@@ -210,6 +296,12 @@ func (i *installation) publishPlatform(ctx context.Context) error {
 	if err := i.write(i.c.Root+"/installation.yaml", map[string]any{"clusterUID": string(ns.UID), "config": i.c}); err != nil {
 		return err
 	}
+	if i.c.SplitApps() {
+		marker := filepath.ToSlash(filepath.Join(i.c.AppsRoot, "kuberpack-apps.yaml"))
+		if err := i.writeApps(marker, map[string]any{"clusterUID": string(ns.UID), "config": i.c}); err != nil {
+			return err
+		}
+	}
 	status, err := i.git(ctx, "status", "--porcelain", "--", i.c.Root)
 	if err != nil {
 		return err
@@ -225,16 +317,40 @@ func (i *installation) publishPlatform(ctx context.Context) error {
 			return err
 		}
 	}
+	if i.c.SplitApps() {
+		if _, err := i.gitApps(ctx, "add", "-A"); err != nil {
+			return err
+		}
+		status, err := i.gitApps(ctx, "status", "--porcelain")
+		if err != nil {
+			return err
+		}
+		if status != "" {
+			if _, err := i.gitApps(ctx, "-c", "commit.gpgsign=false", "commit", "-m", "kuberpack: reconcile applications "+i.c.Cluster); err != nil {
+				return err
+			}
+			if _, err := i.gitApps(ctx, "push", "origin", "HEAD:"+i.c.AppsBranch); err != nil {
+				return err
+			}
+		}
+	}
 	if err := i.ensureHelm(ctx, clusterService{Name: "kuberpack", Chart: "kuberpack", Namespace: i.c.Namespace, Values: values}, loaded, nil); err != nil {
 		return err
 	}
 	if err := ensureFluxSource(ctx, i.config, i.c.Namespace, i.c.Source, i.c.GitOpsURL, i.c.GitOpsBranch); err != nil {
 		return err
 	}
+	appsSource := i.c.Source
+	if i.c.SplitApps() {
+		appsSource = "kuberpack-apps"
+		if err := ensureFluxSource(ctx, i.config, i.c.Namespace, appsSource, i.c.AppsURL, i.c.AppsBranch); err != nil {
+			return err
+		}
+	}
 	for _, scope := range []struct {
-		name, path string
-		prune      bool
-	}{{"kuberpack-platform", i.c.PlatformPath(), false}, {"kuberpack-projects", i.c.ProjectsPath(), true}} {
+		name, path, source string
+		prune              bool
+	}{{"kuberpack-platform", i.c.PlatformPath(), i.c.Source, false}, {"kuberpack-projects", i.c.ProjectsPath(), appsSource, true}} {
 		// Refuse another reconciler of this path instead of racing two prune inventories.
 		gvr := schema.GroupVersionResource{Group: "kustomize.toolkit.fluxcd.io", Version: "v1", Resource: "kustomizations"}
 		all, err := i.dyn.Resource(gvr).List(ctx, metav1.ListOptions{})
@@ -255,7 +371,7 @@ func (i *installation) publishPlatform(ctx context.Context) error {
 		if scope.prune {
 			interval = "30s"
 		}
-		obj := object("kustomize.toolkit.fluxcd.io/v1", "Kustomization", i.c.Namespace, scope.name, map[string]any{"interval": interval, "path": "./" + scope.path, "prune": scope.prune, "sourceRef": map[string]any{"kind": "GitRepository", "name": i.c.Source}, "timeout": i.c.Timeout})
+		obj := object("kustomize.toolkit.fluxcd.io/v1", "Kustomization", i.c.Namespace, scope.name, map[string]any{"interval": interval, "path": "./" + scope.path, "prune": scope.prune, "sourceRef": map[string]any{"kind": "GitRepository", "name": scope.source}, "timeout": i.c.Timeout})
 		if scope.prune {
 			obj.Object["spec"].(map[string]any)["dependsOn"] = []any{map[string]any{"name": "kuberpack-platform"}}
 		}

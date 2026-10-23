@@ -270,7 +270,7 @@ func (s *Server) resolveRegistry(ctx context.Context) {
 // old chart is a platform that drifts: the volume of the cache of the
 // builder, for instance, would not exist.
 func (s *Server) ensureChart(ctx context.Context) error {
-	if s.cfg.GitOpsURL == "" || strings.TrimSpace(s.cfg.ChartPath) == "" {
+	if !s.cfg.WriteCharts || s.cfg.GitOpsURL == "" || strings.TrimSpace(s.cfg.ChartPath) == "" {
 		return nil
 	}
 	var charts []promote.ChartSpec

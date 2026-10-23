@@ -13,14 +13,22 @@ import (
 // Config contains only non-secret installation choices. It is persisted in the
 // dedicated GitOps tree, separately from application manifests and Helmfiles.
 type Config struct {
-	Cluster            string            `yaml:"cluster"`
-	Namespace          string            `yaml:"namespace"`
-	BuildNamespace     string            `yaml:"buildNamespace"`
-	GitProvider        string            `yaml:"gitProvider"`
-	GitURL             string            `yaml:"gitURL"`
-	GitUser            string            `yaml:"gitUser"`
-	GitOpsURL          string            `yaml:"gitopsURL"`
-	GitOpsBranch       string            `yaml:"gitopsBranch"`
+	Cluster        string `yaml:"cluster"`
+	Namespace      string `yaml:"namespace"`
+	BuildNamespace string `yaml:"buildNamespace"`
+	GitProvider    string `yaml:"gitProvider"`
+	GitURL         string `yaml:"gitURL"`
+	GitUser        string `yaml:"gitUser"`
+	GitOpsURL      string `yaml:"gitopsURL"`
+	GitOpsBranch   string `yaml:"gitopsBranch"`
+	// AppsURL is the repository the control plane may write: project
+	// manifests, values and previews. It is separate from the platform
+	// repository so that a compromised control plane cannot rewrite the
+	// chart or the Flux configuration that grants cluster rights. Empty
+	// keeps the historical single-repository layout.
+	AppsURL            string            `yaml:"appsURL,omitempty"`
+	AppsBranch         string            `yaml:"appsBranch,omitempty"`
+	AppsRoot           string            `yaml:"appsRoot,omitempty"`
 	Root               string            `yaml:"root"`
 	Source             string            `yaml:"source"`
 	RegistryURL        string            `yaml:"registryURL"`
@@ -50,9 +58,37 @@ type Config struct {
 	Timeout            string            `yaml:"timeout"`
 }
 
-func (c Config) ProjectsPath() string         { return path.Join(c.Root, "projects") }
+// ProjectsPath is where project manifests live in the applications
+// repository. The platform repository no longer contains projects when the
+// two-repository layout is used.
+func (c Config) ProjectsPath() string         { return path.Join(c.AppsRoot, "projects") }
 func (c Config) PlatformPath() string         { return path.Join(c.Root, "platform") }
 func (c Config) ChartPath(name string) string { return path.Join(c.Root, "charts", name) }
+
+// SplitApps reports whether the applications live in their own repository.
+func (c Config) SplitApps() bool {
+	return c.AppsURL != "" && c.AppsURL != c.GitOpsURL
+}
+
+func validRelativeRoot(root string) bool {
+	if root == "" {
+		return true
+	}
+	if path.Clean(root) != root || strings.HasPrefix(root, "/") || root == "." || root == ".." || strings.HasPrefix(root, "../") || strings.Contains(root, "\\") {
+		return false
+	}
+	for _, segment := range strings.Split(root, "/") {
+		if segment == ".git" {
+			return false
+		}
+	}
+	return true
+}
+
+func validHTTPURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && u.Host != "" && (u.Scheme == "https" || u.Scheme == "http") && u.User == nil
+}
 
 func (c Config) Validate() error {
 	for _, item := range []struct{ name, value string }{{"cluster", c.Cluster}, {"namespace", c.Namespace}, {"build namespace", c.BuildNamespace}, {"source", c.Source}} {
@@ -63,17 +99,23 @@ func (c Config) Validate() error {
 	if c.Namespace == c.BuildNamespace {
 		return fmt.Errorf("control plane and build namespaces must differ")
 	}
-	if c.Root == "" || path.Clean(c.Root) != c.Root || strings.HasPrefix(c.Root, "/") || c.Root == "." || c.Root == ".." || strings.HasPrefix(c.Root, "../") || strings.Contains(c.Root, "\\") {
+	if !validRelativeRoot(c.Root) || c.Root == "" {
 		return fmt.Errorf("root must be a dedicated relative GitOps directory without traversal")
 	}
-	for _, segment := range strings.Split(c.Root, "/") {
-		if segment == ".git" {
-			return fmt.Errorf("GitOps root cannot contain .git")
-		}
-	}
-	u, err := url.Parse(c.GitOpsURL)
-	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil {
+	if !validHTTPURL(c.GitOpsURL) {
 		return fmt.Errorf("gitops URL must be HTTP(S), without embedded credentials")
+	}
+	if c.AppsURL != "" && !validHTTPURL(c.AppsURL) {
+		return fmt.Errorf("applications GitOps URL must be HTTP(S), without embedded credentials")
+	}
+	if c.AppsURL != "" && (c.AppsBranch == "" || strings.HasPrefix(c.AppsBranch, "-")) {
+		return fmt.Errorf("applications GitOps branch is required")
+	}
+	if !validRelativeRoot(c.AppsRoot) {
+		return fmt.Errorf("applications root must be a relative GitOps directory without traversal")
+	}
+	if c.AppsURL != "" && c.AppsURL == c.GitOpsURL && c.AppsRoot != c.Root {
+		return fmt.Errorf("a single GitOps repository must use the same root for the platform and its applications")
 	}
 	if c.GitOpsBranch == "" || strings.HasPrefix(c.GitOpsBranch, "-") {
 		return fmt.Errorf("gitops branch is required")

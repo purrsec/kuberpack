@@ -38,6 +38,7 @@ type installation struct {
 	dyn           dynamic.Interface
 	timeout       time.Duration
 	work          string
+	appsWork      string
 	projectID     string
 	fluxNamespace string
 	managedFlux   []byte

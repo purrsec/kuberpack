@@ -90,14 +90,16 @@ def main():
     print("Independent Helmfile app and cert-manager installed", flush=True)
 
     context = ssl.create_default_context(cafile=str(ROOT / "testenv/pki/ca.crt"))
-    request = urllib.request.Request(values["FORGEJO_URL"] + "/api/v1/user/repos", json.dumps({"name": "install-audit", "private": True, "auto_init": True, "default_branch": "main"}).encode(), {"Content-Type": "application/json", "Authorization": "token " + values["FORGEJO_CONTROL_TOKEN"]})
-    try:
-        urllib.request.urlopen(request, context=context).close()
-    except urllib.error.HTTPError as error:
-        if error.code != 409:
-            raise RuntimeError(f"test repository creation: HTTP {error.code}") from None
+    for repository in ("install-audit", "install-audit-apps"):
+        request = urllib.request.Request(values["FORGEJO_URL"] + "/api/v1/user/repos", json.dumps({"name": repository, "private": True, "auto_init": True, "default_branch": "main"}).encode(), {"Content-Type": "application/json", "Authorization": "token " + values["FORGEJO_CONTROL_TOKEN"]})
+        try:
+            urllib.request.urlopen(request, context=context).close()
+        except urllib.error.HTTPError as error:
+            if error.code != 409:
+                raise RuntimeError(f"test repository creation: HTTP {error.code}") from None
 
-    install = [cli, "install", "--cluster", args.cluster, "--gitops-url", values["FORGEJO_URL"] + "/kuberpack/install-audit.git", "--host", "kuberpack.172.29.90.11.nip.io", "--issuer", "install-test-ca", "--ca-file", ROOT / "testenv/pki/ca.crt", "--image", args.control_image, "--builder-image", "docker.io/kuberpack-test/builder:dev", "--buildkit-image", "docker.io/kuberpack-test/buildkit:dev", "--node-port", "30080", "--allow-private-build-egress", "--webhook-url", "http://172.29.90.11:30080/hooks/forgejo"]
+    install = [cli, "install", "--cluster", args.cluster, "--gitops-url", values["FORGEJO_URL"] + "/kuberpack/install-audit.git", "--gitops-apps-url", values["FORGEJO_URL"] + "/kuberpack/install-audit-apps.git", "--host", "kuberpack.172.29.90.11.nip.io", "--issuer", "install-test-ca", "--ca-file", ROOT / "testenv/pki/ca.crt", "--image", args.control_image, "--builder-image", "docker.io/kuberpack-test/builder:dev", "--buildkit-image", "docker.io/kuberpack-test/buildkit:dev", "--node-port", "30080", "--allow-private-build-egress", "--webhook-url", "http://172.29.90.11:30080/hooks/forgejo"]
+    apps_repository = "install-audit-apps"
     if args.interrupt:
         with (workspace / "interrupted.log").open("w") as output:
             process = subprocess.Popen([str(x) for x in install], env=ops, stdout=output, stderr=subprocess.STDOUT)
@@ -180,13 +182,13 @@ policies:
     assert '"changed":false' in run([cli, "project", "compile", "-f", manifest], developer)
     before_reinstall = fingerprint(["kuberpack", "infisical", "kuberpack-build"])
     # Confirm install itself is idempotent in Git, in addition to app compile.
-    def git_revision():
-        request = urllib.request.Request(values["FORGEJO_URL"] + "/api/v1/repos/kuberpack/install-audit/branches/main", headers={"Authorization": "token " + values["FORGEJO_CONTROL_TOKEN"]})
+    def git_revision(repository):
+        request = urllib.request.Request(values["FORGEJO_URL"] + "/api/v1/repos/kuberpack/" + repository + "/branches/main", headers={"Authorization": "token " + values["FORGEJO_CONTROL_TOKEN"]})
         with urllib.request.urlopen(request, context=context) as response:
             return json.load(response)["commit"]["id"]
-    before_revision = git_revision()
+    before_revision = (git_revision("install-audit"), git_revision(apps_repository))
     run(install, ops)
-    assert git_revision() == before_revision, "reinstall produced a GitOps change"
+    assert (git_revision("install-audit"), git_revision(apps_repository)) == before_revision, "reinstall produced a GitOps change"
     after_reinstall = fingerprint(["kuberpack", "infisical", "kuberpack-build"])
     for key, value in before_reinstall.items():
         if "/Secret/" in key or "/PersistentVolumeClaim/" in key:

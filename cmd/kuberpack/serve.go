@@ -139,6 +139,7 @@ func runServe(args []string) error {
 		GitOpsURL:                *gitopsURL,
 		GitOpsBranch:             *gitopsBranch,
 		ChartPath:                *chartPath,
+		WriteCharts:              getenvBool("KUBERPACK_WRITE_CHARTS", true),
 		// The chart of the control plane itself. The platform writes it in
 		// the GitOps repository: the deployment of the platform follows
 		// the image that runs it.

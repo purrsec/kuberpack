@@ -21,7 +21,11 @@ import (
 func (i *installation) platformValues(ctx context.Context) (map[string]any, error) {
 	env := []any{}
 	add := func(name, value string) { env = append(env, map[string]any{"name": name, "value": value}) }
-	add("KUBERPACK_SELF_CHART_REF", i.c.ChartPath("kuberpack"))
+	if !i.c.SplitApps() {
+		add("KUBERPACK_SELF_CHART_REF", i.c.ChartPath("kuberpack"))
+	}
+	add("KUBERPACK_WRITE_CHARTS", strconv.FormatBool(!i.c.SplitApps()))
+	add("KUBERPACK_INFISICAL_DIR", i.c.ProjectsPath())
 	add("KUBERPACK_CONTROL_PLANE_NAMESPACE", i.c.Namespace)
 	add("KUBERPACK_INGRESS_CLASS", i.c.IngressClass)
 	add("KUBERPACK_INGRESS_NAMESPACE", i.c.IngressNamespace)
@@ -80,12 +84,18 @@ func (i *installation) platformValues(ctx context.Context) (map[string]any, erro
 	if i.c.BuildkitImage != "" {
 		buildAdmission["buildkitImage"] = i.c.BuildkitImage
 	}
+	gitopsURL, gitopsBranch := i.c.GitOpsURL, i.c.GitOpsBranch
+	appsDir := i.c.Root + "/apps"
+	if i.c.SplitApps() {
+		gitopsURL, gitopsBranch = i.c.AppsURL, i.c.AppsBranch
+		appsDir = i.c.ProjectsPath()
+	}
 	return map[string]any{
 		"image": i.c.Image, "builderImage": i.c.BuilderImage, "buildNamespace": i.c.BuildNamespace, "storageClass": i.c.StorageClass,
 		"imagePullSecrets": []any{map[string]any{"name": "kuberpack-pull"}},
 		"builderResources": map[string]any{"cpu": "2", "memory": i.c.BuilderMemory}, "buildkitResources": map[string]any{"cpu": "2", "memory": i.c.BuildkitMemory},
 		"gitProvider": i.c.GitProvider, "gitURL": i.c.GitURL, "registryURL": i.c.RegistryURL, "registryUser": i.c.RegistryUser,
-		"gitopsURL": i.c.GitOpsURL, "gitopsBranch": i.c.GitOpsBranch, "gitopsApps": i.c.Root + "/apps", "gitopsProjects": i.c.ProjectsPath(), "gitopsChart": "./" + i.c.ChartPath("stateless"), "gitopsSource": i.c.Source, "gitopsSourceNamespace": i.c.Namespace,
+		"gitopsURL": gitopsURL, "gitopsBranch": gitopsBranch, "gitopsApps": appsDir, "gitopsProjects": i.c.ProjectsPath(), "gitopsChart": "./" + i.c.ChartPath("stateless"), "gitopsSource": i.c.Source, "gitopsSourceNamespace": i.c.Namespace,
 		"host": i.c.Host, "previewDomain": "preview." + i.c.Host, "webhookURL": webhook,
 		"ingress": map[string]any{"enabled": i.c.Ingress, "className": i.c.IngressClass, "tls": i.c.TLS, "issuer": func() string {
 			if i.c.TLS {
