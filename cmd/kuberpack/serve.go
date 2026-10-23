@@ -180,6 +180,7 @@ func runServe(args []string) error {
 		GitOpsBranch:             *gitopsBranch,
 		AppsSource:               getenv("KUBERPACK_APPS_SOURCE", "kuberpack-gitops"),
 		TenantIsolation:          getenvBool("KUBERPACK_TENANT_ISOLATION", false),
+		Reloader:                 getenvBool("KUBERPACK_RELOADER", false),
 		ChartPath:                *chartPath,
 		WriteCharts:              getenvBool("KUBERPACK_WRITE_CHARTS", true),
 		// The chart of the control plane itself. The platform writes it in

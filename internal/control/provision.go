@@ -125,14 +125,28 @@ func (s *Server) ensureTenantServiceAccount(ctx context.Context, namespace, name
 }
 
 func (s *Server) ensureTenantRoleBinding(ctx context.Context, namespace, serviceAccount, controlNamespace string) error {
+	if err := s.ensureRoleBinding(ctx, namespace, tenantClusterRole, tenantClusterRole, serviceAccount, controlNamespace); err != nil {
+		return err
+	}
+	if s.cfg.Reloader {
+		// The reloader has its own identity. The control plane only grants
+		// it the Secrets and Deployments of this namespace; it never reads
+		// a Secret itself.
+		if err := s.ensureRoleBinding(ctx, namespace, "kuberpack-reloader", "kuberpack-reloader-tenant", "kuberpack-reloader", controlNamespace); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Server) ensureRoleBinding(ctx context.Context, namespace, name, role, serviceAccount, controlNamespace string) error {
 	client := s.cfg.Kube.RbacV1().RoleBindings(namespace)
-	name := tenantClusterRole
 	desired := &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 		Subjects: []rbacv1.Subject{{
 			Kind: "ServiceAccount", Name: serviceAccount, Namespace: controlNamespace,
 		}},
-		RoleRef: rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: tenantClusterRole},
+		RoleRef: rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: role},
 	}
 	current, err := client.Get(ctx, name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
@@ -218,8 +232,10 @@ func (s *Server) deleteProjectTenant(ctx context.Context, project, namespace str
 	if strings.TrimSpace(namespace) == "" {
 		return nil
 	}
-	if err := s.cfg.Kube.RbacV1().RoleBindings(namespace).Delete(ctx, tenantClusterRole, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
-		return err
+	for _, binding := range []string{tenantClusterRole, "kuberpack-reloader"} {
+		if err := s.cfg.Kube.RbacV1().RoleBindings(namespace).Delete(ctx, binding, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
 	}
 	current, err := s.cfg.Kube.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {

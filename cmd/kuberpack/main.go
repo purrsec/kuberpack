@@ -53,6 +53,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "kuberpack: %v\n", err)
 			os.Exit(1)
 		}
+	case "reloader":
+		if err := runReloader(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "kuberpack: %v\n", err)
+			os.Exit(1)
+		}
 	case "doctor":
 		if err := runDoctor(os.Args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "kuberpack: %v\n", err)
@@ -114,6 +119,7 @@ Usage:
   kuberpack app logs <name> [-f] [--tail N] [--since 10m] [--previous]
   kuberpack app builds|build-logs|redeploy [flags] <name>
   kuberpack doctor network --context NAME [--detect-only | --yes]
+  kuberpack reloader          (restarts pods whose synchronised Secret changed)
   kuberpack builder           (inside a Kuberpack Kubernetes Job)
 
 promote:

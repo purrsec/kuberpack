@@ -1,0 +1,98 @@
+{{- if .Values.reloader.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kuberpack-reloader
+  namespace: {{ .Release.Namespace }}
+---
+# The reloader discovers the project namespaces by their label. It does not
+# read Secrets at the cluster level: a RoleBinding in each project namespace
+# grants it the Secrets and Deployments of that namespace only.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Namespace }}-kuberpack-reloader
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Namespace }}-kuberpack-reloader
+subjects:
+  - kind: ServiceAccount
+    name: kuberpack-reloader
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Namespace }}-kuberpack-reloader
+---
+# Bound by the control plane in each project namespace. The reloader reads a
+# Secret only to compare the version annotation written by the Infisical
+# operator; it never copies or logs its value.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kuberpack-reloader-tenant
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch, patch, update]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kuberpack-reloader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: kuberpack-reloader
+    app.kubernetes.io/part-of: kuberpack
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kuberpack-reloader
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kuberpack-reloader
+        app.kubernetes.io/part-of: kuberpack
+    spec:
+      serviceAccountName: kuberpack-reloader
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: reloader
+          image: {{ .Values.image | quote }}
+          imagePullPolicy: IfNotPresent
+          command: ["/usr/bin/kuberpack", "reloader", "--interval", "30s"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+{{- end }}

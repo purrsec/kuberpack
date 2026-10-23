@@ -114,7 +114,7 @@ rules:
   # control plane may bind the tenant role, and nothing else.
   - apiGroups: [rbac.authorization.k8s.io]
     resources: [clusterroles]
-    resourceNames: [kuberpack-tenant]
+    resourceNames: [kuberpack-tenant, kuberpack-reloader-tenant]
     verbs: [bind]
   - apiGroups: [kustomize.toolkit.fluxcd.io]
     resources: [kustomizations]

@@ -154,3 +154,8 @@ wait: 15m
 # ServiceAccount per project. The platform repository stays installer-owned;
 # the control plane provisions the tenant identity and its Kustomization.
 tenantIsolation: false
+
+# The secret reloader restarts the workloads whose synchronised Secret changed.
+# It runs with its own identity and a RoleBinding in each project namespace.
+reloader:
+  enabled: false

@@ -51,7 +51,7 @@ gérés par un Helmfile indépendant ne sont pas remplacés par cette passe.
 | Connexions réellement permises/refusées entre applications | Voisin déclaré, pod déclaré, DNS et listener auxiliaire autorisés ; port non déclaré, voisin non déclaré, sens inverse, autre service, autre projet et ingress sans egress source refusés. Infisical : web sans jeton, operator limité aux Secrets du projet, sans jeton Flux ni Secrets système. Les namespaces temporaires de ce test ont été supprimés. |
 | `doctor network` sur le banc k3s `v1.37.1+k3s1` | Moteur kube-router/k3s détecté ; contrôle positif joignable, puis deny-all bloqué, verdict « appliquée » ; namespace temporaire supprimé. Aucun Secret lu. |
 | Isolation des projets sur le banc Docker | `tenant_isolation=passed` : namespace possédé, ServiceAccount sans jeton, RoleBinding limité à `kuberpack-tenant`, Kustomization Flux par projet, identité autorisée dans son namespace et refusée dans `kube-system`. |
-| Rotation réelle d’un secret Infisical | Le Secret Kubernetes a été mis à jour, mais le Deployment n’a pas été redémarré (`AFFECTED DEPLOYMENTS 0`, pod inchangé) : **non corrigé**, reloader ou redémarrage explicite requis. |
+| Rotation réelle d’un secret Infisical | Pod remplacé par `kuberpack-reloader` après la rotation ; l’empreinte servie par HTTPS correspond à la nouvelle valeur. Le Secret seul ne suffisait pas (`AFFECTED DEPLOYMENTS 0`) : le reloader est requis. |
 
 Le parcours d’installation a été rejoué avec un projet applicatif neuf
 (`security-install-20261023`) : le secret chargé par le CLI Infisical est
@@ -193,25 +193,25 @@ sont capturées en mémoire et ne sont pas imprimées.
    leurs clusters réels. Le mode standard d'EKS continue de n'isoler que les
    pods sélectionnés, et une policy additive peut encore rouvrir le réseau.
 
-7. **Moyen — Rotation des secrets runtime.** Le replay sur l’application de test
-   déjà lancée a montré qu’une nouvelle valeur synchronisée ne redémarre pas le
-   pod recevant sa valeur par variable d’environnement. Le scénario d’installation
-   final utilise donc un projet applicatif neuf. Il ne démontre pas une rotation
-   automatique des secrets d’un processus existant.
+7. **Moyen — Rotation des secrets runtime.** Le replay initial sur
+   l’application de test avait montré qu’une nouvelle valeur synchronisée ne
+   redémarre pas le pod qui la reçoit par variable d’environnement.
 
-   **Partiel — l’annotation ne suffit pas.** Le compilateur pose
-   `secrets.infisical.com/auto-reload` sur le Deployment d’un service de projet
-   qui déclare des clés, et le chart `stateless` 0.1.8 reporte l’annotation.
-   L’operator Infisical épinglé (0.11.13) met bien à jour le Secret lors d’une
-   rotation réelle sur le banc Docker, mais **le Deployment n’a pas été
-   redémarré** (`AFFECTED DEPLOYMENTS 0`, pod inchangé, ancienne valeur toujours
-   dans l’environnement). L’annotation native ne garantit donc pas le rollout
-   dans ce scénario. La rotation automatique reste ouverte : elle exige un
-   reloader qui observe le Secret (identité et RBAC séparés, pas de lecture par
-   le CP) ou un redémarrage explicite de l’application. Le contrôle a aussi
-   montré qu’une application à volume persistant utilise `Recreate` et subit
-   une brève indisponibilité. La rotation d’un mot de passe côté serveur de
-   bases de données reste manuelle des deux côtés.
+   **Corrigé et validé sur le banc.** L’annotation native
+   `secrets.infisical.com/auto-reload` seule ne suffisait pas : l’operator
+   mettait à jour le Secret sans redémarrer le Deployment (`AFFECTED
+   DEPLOYMENTS 0`). Un composant dédié, `kuberpack-reloader`, tourne désormais
+   avec son propre ServiceAccount ; le provisionneur lui donne un RoleBinding
+   dans chaque namespace de projet, limité aux Secrets et Deployments de ce
+   namespace. Il compare l’etag `secrets.infisical.com/version` du Secret
+   consommé et pose `kuberpack.io/secret-revision` sur le template du
+   Deployment, ce qui déclenche le rollout. Le control plane ne lit aucun
+   Secret. Rejeu Docker : rotation réelle, pod remplacé, empreinte servie par
+   HTTPS égale à la nouvelle valeur. Limites : un redémarrage initial au
+   premier passage, pas de reloader en mode mono-dépôt historique, volume
+   persistant en `Recreate` (brève indisponibilité), mot de passe de base de
+   données toujours manuel des deux côtés. Le projet/chemin Infisical partagé
+   reste le risque 2.
 
 8. **Moyen — Résilience API/SSRF.** Les limites ajoutées ne constituent pas une
    politique complète de quotas par utilisateur, d’anti-rejeu ou d’egress du CP.

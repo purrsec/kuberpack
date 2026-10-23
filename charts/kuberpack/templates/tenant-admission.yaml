@@ -99,12 +99,14 @@ spec:
   validations:
     - expression: >-
         object.roleRef.kind == 'ClusterRole' &&
-        object.roleRef.name == 'kuberpack-tenant' &&
         object.subjects.size() == 1 &&
         object.subjects[0].kind == 'ServiceAccount' &&
-        object.subjects[0].name.startsWith('kuberpack-tenant-') &&
-        object.subjects[0].namespace == '{{ .Release.Namespace }}'
-      message: The control plane may only bind the tenant role to a tenant identity
+        object.subjects[0].namespace == '{{ .Release.Namespace }}' &&
+        ((object.roleRef.name == 'kuberpack-tenant' &&
+          object.subjects[0].name.startsWith('kuberpack-tenant-')) ||
+         (object.roleRef.name == 'kuberpack-reloader-tenant' &&
+          object.subjects[0].name == 'kuberpack-reloader'))
+      message: The control plane may only bind the tenant or reloader role to its dedicated identity
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1
@@ -154,5 +156,39 @@ metadata:
   name: {{ .Release.Namespace }}-kuberpack-tenant-kustomizations
 spec:
   policyName: {{ .Release.Namespace }}-kuberpack-tenant-kustomizations
+  validationActions: [Deny]
+---
+# The control plane never needs a RoleBinding in its own namespace. Allowing
+# one would let a compromised control plane read the platform Secrets, so the
+# operation is refused outright.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ .Release.Namespace }}-kuberpack-control-rolebindings
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Release.Namespace }}
+    resourceRules:
+      - apiGroups: [rbac.authorization.k8s.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [rolebindings]
+  matchConditions:
+    - name: control-plane
+      expression: request.userInfo.username == 'system:serviceaccount:{{ .Release.Namespace }}:kuberpack'
+  validations:
+    - expression: "false"
+      message: The control plane must not create RoleBindings in its own namespace
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ .Release.Namespace }}-kuberpack-control-rolebindings
+spec:
+  policyName: {{ .Release.Namespace }}-kuberpack-control-rolebindings
   validationActions: [Deny]
 {{- end }}

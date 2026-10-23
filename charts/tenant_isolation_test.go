@@ -39,6 +39,7 @@ func TestTenantIsolationRendersBoundedRBACAndAdmission(t *testing.T) {
 		"kuberpack-tenant-serviceaccounts",
 		"kuberpack-tenant-rolebindings",
 		"kuberpack-tenant-kustomizations",
+		"kuberpack-control-rolebindings",
 	} {
 		if !strings.Contains(admission, name) {
 			t.Fatalf("missing admission policy %s", name)
@@ -60,8 +61,8 @@ func TestTenantIsolationRendersBoundedRBACAndAdmission(t *testing.T) {
 				count++
 			}
 		}
-		if count != 4 {
-			t.Fatalf("%s count = %d, want 4", kind, count)
+		if count != 5 {
+			t.Fatalf("%s count = %d, want 5", kind, count)
 		}
 	}
 }
@@ -81,5 +82,32 @@ func TestTenantIsolationIsOffByDefault(t *testing.T) {
 	}
 	if strings.Contains(files["kuberpack/templates/rbac.yaml"], "kuberpack-tenant") {
 		t.Fatal("tenant RBAC must be opt-in")
+	}
+}
+
+func TestReloaderIsOptInAndHasItsOwnIdentity(t *testing.T) {
+	chart, err := loader.Load("kuberpack")
+	if err != nil {
+		t.Fatal(err)
+	}
+	render := func(values map[string]any) string {
+		v, err := chartutil.ToRenderValues(chart, values, chartutil.ReleaseOptions{Name: "kuberpack", Namespace: "kuberpack", IsInstall: true}, &chartutil.Capabilities{KubeVersion: chartutil.KubeVersion{Version: "v1.36.0"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		files, err := engine.Render(chart, v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return files["kuberpack/templates/reloader.yaml"]
+	}
+	if strings.TrimSpace(render(map[string]any{})) != "" {
+		t.Fatal("the reloader must be opt-in")
+	}
+	body := render(map[string]any{"reloader": map[string]any{"enabled": true}})
+	for _, want := range []string{"name: kuberpack-reloader", "name: kuberpack-reloader-tenant", "kind: ClusterRole", "kind: Deployment"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("reloader manifest does not contain %q", want)
+		}
 	}
 }

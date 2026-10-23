@@ -28,6 +28,7 @@ func (i *installation) platformValues(ctx context.Context) (map[string]any, erro
 	}
 	add("KUBERPACK_WRITE_CHARTS", strconv.FormatBool(!i.c.SplitApps()))
 	add("KUBERPACK_TENANT_ISOLATION", strconv.FormatBool(i.c.SplitApps()))
+	add("KUBERPACK_RELOADER", strconv.FormatBool(i.c.SplitApps()))
 	add("KUBERPACK_APPS_SOURCE", func() string {
 		if i.c.SplitApps() {
 			return "kuberpack-apps"
@@ -129,7 +130,7 @@ func (i *installation) platformValues(ctx context.Context) (map[string]any, erro
 			return ""
 		}()},
 		"nodePort":           map[string]any{"enabled": i.c.NodePort != 0, "port": i.c.NodePort},
-		"buildNetworkPolicy": map[string]any{"enabled": !i.c.PrivateBuildEgress}, "tenantIsolation": i.c.SplitApps(), "extraEnv": env,
+		"buildNetworkPolicy": map[string]any{"enabled": !i.c.PrivateBuildEgress}, "tenantIsolation": i.c.SplitApps(), "reloader": map[string]any{"enabled": i.c.SplitApps()}, "extraEnv": env,
 		"buildAdmission": buildAdmission,
 	}
 	if len(placement) > 0 {

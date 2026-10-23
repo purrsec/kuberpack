@@ -164,10 +164,16 @@ RoleBinding est limité au ClusterRole `kuberpack-tenant`; des
 ValidatingAdmissionPolicy bornent ce que le control plane peut créer. Le
 namespace n'est plus écrit dans le dépôt applicatif.
 
+Un reloader (`kuberpack-reloader`) est installé avec ce mode. Il a son propre
+ServiceAccount et un RoleBinding par namespace de projet, limité aux Secrets et
+Deployments de ce namespace. Il redémarre le Deployment quand l'etag du Secret
+synchronisé change ; le control plane ne lit aucun Secret.
+
 Sur une installation historique à un seul dépôt, l'ancienne Kustomization
 globale des projets est suspendue, jamais supprimée avec `prune` : la supprimer
 effacerait les namespaces et les workloads de son inventaire. Les projets déjà
-compilés sont repris par le control plane au démarrage suivant.
+compilés sont repris par le control plane au démarrage suivant. Le reloader
+n'est pas activé dans ce mode historique.
 
 `--gitops-root` change le périmètre du socle. La racine du dépôt n'est jamais
 ajoutée à une réconciliation globale. Une seconde Kustomization du même chemin
