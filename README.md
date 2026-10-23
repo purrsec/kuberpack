@@ -23,6 +23,7 @@ aussi certains Secrets de registre et ConfigMaps applicatifs dans le cluster.
 | [État du code](docs/status.md) | Implémenté vs contrat |
 | [Vision](docs/vision.md) | Produit et principes |
 | [Architecture](docs/architecture.md) | Plans, sources de vérité, k3s |
+| [Carte de la codebase](docs/codebase.md) | Où vit chaque responsabilité, rôle des charts, trajets |
 | [Flux](docs/flows.md) | Enregistrement, production, previews |
 | [API](docs/api.md) | Contrat HTTP |
 | [Données](docs/data-model.md) | SQLite opérationnel |
