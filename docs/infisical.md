@@ -341,6 +341,11 @@ nouveaux pods lisent les nouvelles valeurs. L'annotation n'est réécrite que
 si l'etag change : une synchronisation sans modification ne redémarre rien.
 L'implémentation est celle de l'operator épinglé ([auto-reload dans
 `internal/services/infisicalstaticsecret`](https://github.com/Infisical/kubernetes-operator/blob/infisical-k8-operator/v0.11.13/internal/services/infisicalstaticsecret/reconciler.go)).
+**Validation du 23 octobre :** sur le banc Docker, le Secret a bien été mis à
+jour après une rotation réelle, mais le Deployment n'a pas été redémarré
+(`AFFECTED DEPLOYMENTS 0`, pod inchangé). L'annotation native ne constitue
+donc pas une garantie ; un reloader dédié ou un redémarrage explicite reste
+nécessaire.
 
 L'annotation n'est posée que sur un service de projet qui déclare des clés.
 Une preview, une application autonome ou un service sans secret ne la porte

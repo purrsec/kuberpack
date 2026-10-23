@@ -157,6 +157,18 @@ la plateforme et les projets partagent `--gitops-root`. Ce mode est conservé
 pour les installations existantes ; une nouvelle installation doit séparer les
 deux dépôts.
 
+Avec les deux dépôts, l'installateur active l'isolation des projets. Le control
+plane crée pour chaque projet un namespace possédé, un ServiceAccount sans jeton
+et une Kustomization Flux qui applique le projet avec cette identité. Le
+RoleBinding est limité au ClusterRole `kuberpack-tenant`; des
+ValidatingAdmissionPolicy bornent ce que le control plane peut créer. Le
+namespace n'est plus écrit dans le dépôt applicatif.
+
+Sur une installation historique à un seul dépôt, l'ancienne Kustomization
+globale des projets est suspendue, jamais supprimée avec `prune` : la supprimer
+effacerait les namespaces et les workloads de son inventaire. Les projets déjà
+compilés sont repris par le control plane au démarrage suivant.
+
 `--gitops-root` change le périmètre du socle. La racine du dépôt n'est jamais
 ajoutée à une réconciliation globale. Une seconde Kustomization du même chemin
 est refusée. Le socle utilise `prune: false` pour préserver ses volumes et les

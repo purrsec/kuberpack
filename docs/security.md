@@ -152,14 +152,16 @@ sa liste de surveillance mise à jour par GitOps. Le manager n’a plus de
 ClusterRole permettant Secrets et TokenRequests dans tout le cluster. Un
 operator externe réutilisé conserve sa configuration externe.
 
-La rotation des secrets runtime utilise la fonctionnalité native de
-l’operator : le compilateur pose `secrets.infisical.com/auto-reload` sur le
-Deployment d’un service de projet qui déclare des clés, et l’operator met à
-jour son template de pod quand le Secret synchronisé change. Aucun
-contrôleur supplémentaire, ServiceAccount, Role ou lecture de Secret n’est
-ajouté côté Kuberpack ; l’operator réutilise les droits qu’il a déjà dans
-les namespaces de son scope. Une application sans secret, une preview ou une
-application autonome ne portent pas l’annotation et ne sont pas redémarrées.
+La rotation des secrets runtime n’est **pas encore automatique**. Le
+compilateur pose `secrets.infisical.com/auto-reload` sur le Deployment d’un
+service de projet qui déclare des clés, et l’operator met bien à jour le
+Secret synchronisé. Mais sur le banc Docker, une rotation réelle n’a pas
+redémarré le Deployment : l’ancienne valeur est restée dans l’environnement
+du pod (`AFFECTED DEPLOYMENTS 0`). L’annotation native ne suffit donc pas
+comme garantie. Il faut un reloader séparé (identité et RBAC dédiés, sans
+lecture des Secrets par le control plane) ou un redémarrage explicite de
+l’application. Une application sans secret, une preview ou une application
+autonome ne portent pas l’annotation.
 
 Le projet/chemin Infisical reste partagé. Un auteur de manifeste autorisé peut
 y demander les noms de clés d’un autre projet. Une isolation entre développeurs

@@ -50,6 +50,8 @@ gérés par un Helmfile indépendant ne sont pas remplacés par cette passe.
 | Parcours installation, secrets humains, réinstallation et Helmfile | Passent sur le banc Docker : `installation=ready`, `reinstall=passed`, `human_secret_upload=passed`, `application_secret_digest=matched`, `compile_idempotence=passed`, `helmfile_coexistence=passed`. Après la correction des intervalles Flux, une réinstallation ciblée `--install-only` passe également. |
 | Connexions réellement permises/refusées entre applications | Voisin déclaré, pod déclaré, DNS et listener auxiliaire autorisés ; port non déclaré, voisin non déclaré, sens inverse, autre service, autre projet et ingress sans egress source refusés. Infisical : web sans jeton, operator limité aux Secrets du projet, sans jeton Flux ni Secrets système. Les namespaces temporaires de ce test ont été supprimés. |
 | `doctor network` sur le banc k3s `v1.37.1+k3s1` | Moteur kube-router/k3s détecté ; contrôle positif joignable, puis deny-all bloqué, verdict « appliquée » ; namespace temporaire supprimé. Aucun Secret lu. |
+| Isolation des projets sur le banc Docker | `tenant_isolation=passed` : namespace possédé, ServiceAccount sans jeton, RoleBinding limité à `kuberpack-tenant`, Kustomization Flux par projet, identité autorisée dans son namespace et refusée dans `kube-system`. |
+| Rotation réelle d’un secret Infisical | Le Secret Kubernetes a été mis à jour, mais le Deployment n’a pas été redémarré (`AFFECTED DEPLOYMENTS 0`, pod inchangé) : **non corrigé**, reloader ou redémarrage explicite requis. |
 
 Le parcours d’installation a été rejoué avec un projet applicatif neuf
 (`security-install-20261023`) : le secret chargé par le CLI Infisical est
@@ -109,12 +111,25 @@ sont capturées en mémoire et ne sont pas imprimées.
    la source de la plateforme, donc le CP ne peut plus modifier le chart qu’il
    fait appliquer. Le contrôle a été rejoué sur le banc Docker avec deux dépôts :
    installation, réinstallation sans commit, secret humain, compilation
-   idempotente et coexistence Helmfile passent. **Reste la seconde moitié du
-   chantier** : une Kustomization par projet avec un ServiceAccount borné à son
-   namespace, et un provisionneur distinct pour namespaces/RBAC. Tant que la
-   Kustomization des projets s’exécute avec l’identité globale de Flux, le CP
-   peut encore écrire un manifeste dans le dépôt applicatif et obtenir des
-   droits dans le namespace (mais plus dans le socle).
+   idempotente et coexistence Helmfile passent.
+
+   **Seconde moitié livrée et validée.** Le control plane provisionne, par
+   projet, un namespace possédé (`kuberpack.io/project`), un ServiceAccount
+   sans jeton dans le namespace de contrôle et une Kustomization Flux qui
+   applique le projet avec cette identité. Le RoleBinding ne peut référencer
+   que le ClusterRole `kuberpack-tenant` : le tenant reste dans son namespace.
+   Des ValidatingAdmissionPolicy bornent ce que le CP peut créer (identité,
+   role, schéma de Kustomization, namespace). La Kustomization globale
+   historique est suspendue et non supprimée, pour ne pas pruner son inventaire.
+   Le CP met à jour directement le scope de l’opérateur Infisical, puisqu’il
+   n’y a plus de Kustomization globale pour porter ce ConfigMap. Le banc Docker
+   valide le parcours complet, l’identité limitée à son namespace, la
+   réinstallation sans commit et la coexistence Helmfile (`tenant_isolation:
+   passed`). **Limites restantes** : la migration d’une installation historique
+   doit suspendre l’ancienne Kustomization avant de basculer ; les credentials
+   du CP restent suffisants pour écrire le dépôt applicatif et pour créer les
+   objets de tenant (bornés par l’admission), pas pour le socle ; les identités
+   Infisical et la clé API restent partagées (risque 2).
 
 2. **Élevé — Secrets et autorisation par projet.** La clé API est administrateur
    global, l’identité/operator Infisical est partagé, et les manifestes utilisent
@@ -135,8 +150,9 @@ sont capturées en mémoire et ne sont pas imprimées.
    est refusé. Une adoption volontaire se fait par l’annotation
    `kuberpack.io/adopt=<projet>` ; le layout historique déjà possédé par Flux
    reste accepté pour la migration. Un acteur qui peut déjà modifier les labels
-   Flux ou créer des namespaces a déjà des droits de cluster ; la vérification
-   ne remplace pas le futur provisionneur d’identité distincte.
+   Flux ou créer des namespaces a déjà des droits de cluster. Le provisionneur
+   de tenant crée désormais les namespaces et leurs identities ; son pouvoir
+   est borné par l’admission décrite au risque 1.
 
 4. **Élevé — Sandbox des builds.** BuildKit garde des exceptions rootless,
    `--oci-worker-no-process-sandbox` et le partage d’un noyau avec le cluster.
@@ -183,20 +199,19 @@ sont capturées en mémoire et ne sont pas imprimées.
    final utilise donc un projet applicatif neuf. Il ne démontre pas une rotation
    automatique des secrets d’un processus existant.
 
-   **Corrigé côté compilation, à revalider sur le banc.** Le compilateur pose
-   désormais `secrets.infisical.com/auto-reload` sur le Deployment d’un service
-   de projet qui déclare des clés, et le chart `stateless` 0.1.8 reporte
-   l’annotation. L’operator Infisical épinglé (0.11.13) pose l’etag du Secret
-   synchronisé sur le Deployment et son template de pod, ce qui déclenche le
-   rollout ; il ne le fait que si le Secret a réellement changé et si le pod
-   consomme le Secret. Aucun composant, ServiceAccount ou droit supplémentaire
-   n’est ajouté, et le control plane ne lit toujours aucune valeur. Une
-   application sans secret, une preview et une application autonome ne portent
-   pas l’annotation. Restent à vérifier sur cluster : le rollout effectif après
-   une rotation Infisical, le comportement d’une application à volume
-   persistant (stratégie `Recreate`), et la conservation de l’etag de l’operator
-   lors des upgrades Helm. La rotation d’un mot de passe côté serveur de bases
-   de données reste une opération manuelle des deux côtés.
+   **Partiel — l’annotation ne suffit pas.** Le compilateur pose
+   `secrets.infisical.com/auto-reload` sur le Deployment d’un service de projet
+   qui déclare des clés, et le chart `stateless` 0.1.8 reporte l’annotation.
+   L’operator Infisical épinglé (0.11.13) met bien à jour le Secret lors d’une
+   rotation réelle sur le banc Docker, mais **le Deployment n’a pas été
+   redémarré** (`AFFECTED DEPLOYMENTS 0`, pod inchangé, ancienne valeur toujours
+   dans l’environnement). L’annotation native ne garantit donc pas le rollout
+   dans ce scénario. La rotation automatique reste ouverte : elle exige un
+   reloader qui observe le Secret (identité et RBAC séparés, pas de lecture par
+   le CP) ou un redémarrage explicite de l’application. Le contrôle a aussi
+   montré qu’une application à volume persistant utilise `Recreate` et subit
+   une brève indisponibilité. La rotation d’un mot de passe côté serveur de
+   bases de données reste manuelle des deux côtés.
 
 8. **Moyen — Résilience API/SSRF.** Les limites ajoutées ne constituent pas une
    politique complète de quotas par utilisateur, d’anti-rejeu ou d’egress du CP.
