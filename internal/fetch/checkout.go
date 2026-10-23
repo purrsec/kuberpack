@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+
+	"git.host.bzh/pepe/kuberpack/internal/netguard"
 )
 
 var exactCommitPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
@@ -21,8 +23,21 @@ var exactCommitPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
 // application: a third party repository lives on somebody else's forge. When
 // the token is refused, the clone is retried anonymously, which is enough
 // for a public repository.
+//
+// L'URL vient de la forge, pas d'un manifeste : elle est vérifiée avec la
+// politique d'egress de l'environnement. Un opérateur qui héberge sa forge sur
+// une adresse privée l'ajoute à KUBERPACK_EGRESS_ALLOW.
 func Checkout(ctx context.Context, cloneURL, commitSHA, dest string, extraGitArgs []string) error {
-	err := checkout(ctx, cloneURL, commitSHA, dest, extraGitArgs)
+	return CheckoutWithPolicy(ctx, cloneURL, commitSHA, dest, extraGitArgs, netguard.FromEnvironment())
+}
+
+// CheckoutWithPolicy est Checkout avec une politique explicite. Nil retombe
+// sur l'environnement : jamais sur un clone sans garde.
+func CheckoutWithPolicy(ctx context.Context, cloneURL, commitSHA, dest string, extraGitArgs []string, policy *netguard.Policy) error {
+	if policy == nil {
+		policy = netguard.FromEnvironment()
+	}
+	err := checkout(ctx, cloneURL, commitSHA, dest, extraGitArgs, policy)
 	if err == nil || len(extraGitArgs) == 0 {
 		return err
 	}
@@ -31,14 +46,14 @@ func Checkout(ctx context.Context, cloneURL, commitSHA, dest string, extraGitArg
 	if removeErr := os.RemoveAll(dest); removeErr != nil {
 		return err
 	}
-	retryErr := checkout(ctx, cloneURL, commitSHA, dest, nil)
+	retryErr := checkout(ctx, cloneURL, commitSHA, dest, nil, policy)
 	if retryErr == nil {
 		return nil
 	}
 	return fmt.Errorf("%w (anonymous clone: %v)", err, retryErr)
 }
 
-func checkout(ctx context.Context, cloneURL, commitSHA, dest string, extraGitArgs []string) error {
+func checkout(ctx context.Context, cloneURL, commitSHA, dest string, extraGitArgs []string, policy *netguard.Policy) error {
 	if strings.TrimSpace(cloneURL) == "" {
 		return fmt.Errorf("clone URL is empty")
 	}
@@ -51,6 +66,13 @@ func checkout(ctx context.Context, cloneURL, commitSHA, dest string, extraGitArg
 	}
 	if strings.HasPrefix(cloneURL, "-") || (strings.Contains(cloneURL, "::") && !strings.Contains(cloneURL, "://")) {
 		return fmt.Errorf("clone URL must not select Git options or remote helpers")
+	}
+	// Une URL de dépôt ne doit pas joindre la boucle locale, les métadonnées
+	// du fournisseur ou une adresse privée non déclarée. Git ne passe pas par
+	// notre DialContext : cette vérification (nom + résolution DNS) précède
+	// le clone, et http.followRedirects=false empêche Git de dévier ensuite.
+	if err := policy.CheckRemoteURL(ctx, cloneURL); err != nil {
+		return err
 	}
 	var err error
 	extraGitArgs, err = scopedCloneAuth(cloneURL, extraGitArgs)

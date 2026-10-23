@@ -72,6 +72,39 @@ nodePort:
 buildNetworkPolicy:
   enabled: true
 
+# Accès sortants du control plane. L'allowlist réintroduit une forge, un
+# registre ou un dépôt GitOps hébergé sur une adresse privée (hôtes, IP ou
+# CIDR séparés par des virgules). Vide : seules les adresses publiques sont
+# autorisées. Les adresses configurées par l'opérateur (gitURL, registryURL,
+# gitopsURL) sont ajoutées automatiquement.
+egressAllow: ""
+
+# Limites de la surface API du control plane.
+apiLimits:
+  # Requêtes par minute et par client. Une valeur négative désactive la
+  # limite ; zéro prend la valeur par défaut (1200).
+  ratePerMinute: 1200
+  # Rafale autorisée. Zéro prend un quart de ratePerMinute.
+  burst: 0
+  # Requêtes simultanées. Une valeur négative désactive la borne.
+  maxConcurrency: 128
+  # CIDR des proxys dont X-Forwarded-For est lu, par exemple le réseau des
+  # pods de l'ingress. Vide : l'en-tête est ignoré.
+  trustedProxies: ""
+
+# Egress du control plane. Désactivé par défaut : le control plane doit
+# joindre l'API Kubernetes, les kubelets, Infisical, la forge, le registre et
+# le DNS, dont les adresses dépendent de l'installation. Activez-le avec des
+# listes complètes, sinon la réconciliation s'arrête.
+controlPlaneNetworkPolicy:
+  enabled: false
+  # CIDR privés que le control plane doit joindre (API server, nœuds,
+  # Infisical, forge/registre internes).
+  allowedCIDRs: []
+  allowedPorts: [443, 6443, 8080, 10250]
+  # Règles egress supplémentaires, ajoutées telles quelles.
+  extraEgress: []
+
 # The resources of the builder and of its BuildKit sidecar. They are the size
 # of the machine that builds: a small server builds small applications.
 builderResources:

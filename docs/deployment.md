@@ -52,6 +52,17 @@ Sur GitHub, un jeton fin (*fine-grained*) porte ces deux portées : l’un sur l
 
 Le Secret est monté dans le Job sous `/secrets`. Les fichiers sont nommés d’après les clés du Secret : le builder accepte `git-token` **ou** `kuberpack-builder-git-token`, et `registry-token` **ou** `kuberpack-builder-registry-token` (idem `builds-token` pour l’archive). Un Secret qui n’expose aucune de ces clés fait échouer le build sur `auth`.
 
+### Accès sortants et limites API
+
+Le control plane refuse par défaut un registre ou un dépôt hébergé sur une
+adresse privée, la boucle locale ou le service de métadonnées. Une forge, un
+registre ou un GitOps interne se déclare avec `egressAllow` (ou
+`KUBERPACK_EGRESS_ALLOW` / `--egress-allow`) ; les URL configurées
+(`gitURL`, `registryURL`, `gitopsURL`) sont ajoutées automatiquement.
+L’allowlist est transmise au builder. Les limites HTTP se règlent dans
+`apiLimits` (requêtes par minute et par IP, concurrence, proxys de confiance).
+Détails et exemples : [Durcissement des accès sortants](security-egress-2026-10-23.md).
+
 Archive de builds : `KUBERPACK_BUILDS_GIT_URL` (dépôt dédié, jamais une source Flux). Secret Flux vers Kuberpack : `KUBERPACK_FLUX_WEBHOOK_SECRET`. Previews : `KUBERPACK_PREVIEW_DOMAIN` (défaut `preview.host.bzh`). DNS apps : `KUBERPACK_DNS_TARGET` IPv6 seulement (AAAA). Une IPv4 dans cette variable est ignorée.
 
 Secrets d’app (Stripe, `DATABASE_URL`, …) : Infisical (ou Secret Kubernetes) nommé `app-<name>` dans le namespace `apps`. Kuberpack ne sync pas Infisical ; il déclare seulement `envFrom`. Postgres et autres stateful : GitOps hors chart `stateless`, URL dans ce Secret.

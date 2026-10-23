@@ -1,0 +1,55 @@
+{{- if .Values.controlPlaneNetworkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kuberpack-control-plane-egress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kuberpack.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kuberpack
+  policyTypes: [Egress]
+  egress:
+    # Le DNS du cluster.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # La forge, le registre et le dépôt GitOps publics.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16]
+        - ipBlock:
+            cidr: "::/0"
+            except: ["::/96", "::ffff:0:0/96", "64:ff9b::/96", "64:ff9b:1::/48", "fc00::/7", "fe80::/10"]
+      ports:
+        - { protocol: TCP, port: 80 }
+        - { protocol: TCP, port: 443 }
+    # Les adresses internes de l'installation : API Kubernetes, kubelets,
+    # Infisical, forge ou registre internes. Elles sont explicites : le
+    # control plane ne peut pas les deviner, et une liste incomplète casse la
+    # réconciliation.
+    {{- with .Values.controlPlaneNetworkPolicy.allowedCIDRs }}
+    - to:
+        {{- range . }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        {{- range $.Values.controlPlaneNetworkPolicy.allowedPorts }}
+        - { protocol: TCP, port: {{ . }} }
+        {{- end }}
+    {{- end }}
+    {{- with .Values.controlPlaneNetworkPolicy.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

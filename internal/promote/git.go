@@ -12,6 +12,10 @@ import (
 )
 
 func runGit(ctx context.Context, dir string, args ...string) (string, error) {
+	// Le dépôt GitOps est configuré par l'opérateur ; une redirection HTTP
+	// ou un helper de transport distant n'ont aucune raison d'y intervenir.
+	// Les mêmes gardes que le checkout des sources sont posées ici.
+	args = append([]string{"-c", "http.followRedirects=false", "-c", "protocol.ext.allow=never"}, args...)
 	cmd := exec.CommandContext(ctx, "git", args...)
 	if dir != "" {
 		cmd.Dir = dir

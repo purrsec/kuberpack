@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"git.host.bzh/pepe/kuberpack/internal/netguard"
 )
 
 const maxBody = 1 << 20
@@ -28,6 +30,10 @@ type Registry struct {
 	User       string
 	Token      string
 	HTTPClient *http.Client
+	// Policy garde les accès sortants du client. Nil laisse l'appelant
+	// responsable de l'URL : le registre configuré par l'opérateur est une
+	// adresse de confiance, celui d'un manifeste ne l'est pas.
+	Policy *netguard.Policy
 }
 
 func New(baseURL, user, token string) (*Registry, error) {
@@ -43,11 +49,22 @@ func New(baseURL, user, token string) (*Registry, error) {
 		return nil, fmt.Errorf("registry token is empty")
 	}
 	return &Registry{
-		BaseURL:    baseURL,
-		User:       strings.TrimSpace(user),
-		Token:      strings.TrimSpace(token),
-		HTTPClient: &http.Client{Timeout: 30 * time.Second},
+		BaseURL: baseURL,
+		User:    strings.TrimSpace(user),
+		Token:   strings.TrimSpace(token),
 	}, nil
+}
+
+// client choisit le client HTTP : un client injecté (test), la politique
+// d'egress si elle est posée, ou le client par défaut.
+func (r *Registry) client() *http.Client {
+	if r.HTTPClient != nil {
+		return r.HTTPClient
+	}
+	if r.Policy != nil {
+		return r.Policy.HTTPClient(30 * time.Second)
+	}
+	return &http.Client{Timeout: 30 * time.Second}
 }
 
 // ManifestDigest returns Docker-Content-Digest for repository:tag.
@@ -147,10 +164,7 @@ func (r *Registry) request(ctx context.Context, method, path, accept, authorizat
 	req.Header.Set("Accept", accept)
 	req.Header.Set("Authorization", authorization)
 
-	httpClient := r.HTTPClient
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
+	httpClient := r.client()
 	res, err := httpClient.Do(req)
 	if err != nil {
 		return nil, nil, err

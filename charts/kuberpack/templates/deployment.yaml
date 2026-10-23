@@ -114,6 +114,16 @@ spec:
             - name: KUBERPACK_MIN_FREE_DISK
               value: {{ . | quote }}
             {{- end }}
+            - name: KUBERPACK_EGRESS_ALLOW
+              value: {{ .Values.egressAllow | default "" | quote }}
+            - name: KUBERPACK_API_RATE_LIMIT
+              value: {{ .Values.apiLimits.ratePerMinute | default 1200 | quote }}
+            - name: KUBERPACK_API_RATE_BURST
+              value: {{ .Values.apiLimits.burst | default 0 | quote }}
+            - name: KUBERPACK_API_MAX_CONCURRENCY
+              value: {{ .Values.apiLimits.maxConcurrency | default 128 | quote }}
+            - name: KUBERPACK_TRUSTED_PROXIES
+              value: {{ .Values.apiLimits.trustedProxies | default "" | quote }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

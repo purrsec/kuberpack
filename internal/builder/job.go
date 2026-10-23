@@ -55,6 +55,10 @@ type Request struct {
 	// BuildsGitAuthScheme is how the forge of the builds repository
 	// authenticates a clone. It is not a secret.
 	BuildsGitAuthScheme string
+	// EgressAllow est l'allowlist d'accès sortants du control plane. Le
+	// builder clone le dépôt de l'application : il doit appliquer la même
+	// politique, sans quoi une forge interne serait refusée.
+	EgressAllow string
 
 	StartCmd      string
 	RootDirectory string
@@ -455,6 +459,9 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 		// when the node cannot hold it. Active BuildKit layers must count:
 		// garbage collection cannot reclaim them during the build.
 		{Name: "KUBERPACK_BUILD_DISK_NEED", Value: strconv.FormatInt(workSize.Value()+cacheSize.Value()+tmpSize.Value(), 10)},
+	}
+	if allow := strings.TrimSpace(req.EgressAllow); allow != "" {
+		env = append(env, corev1.EnvVar{Name: "KUBERPACK_EGRESS_ALLOW", Value: allow})
 	}
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{

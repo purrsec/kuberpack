@@ -112,6 +112,7 @@ func (s *Server) alignTrack(ctx context.Context, app store.App) {
 		Port:                app.Port,
 		Healthcheck:         app.Healthcheck,
 		Platform:            s.cfg.Platform,
+		Egress:              s.cfg.Egress,
 	})
 	if err != nil {
 		log.Printf("kuberpack freeze %s at %s: %v", app.Name, sha, err)

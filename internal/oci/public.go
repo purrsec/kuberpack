@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"git.host.bzh/pepe/kuberpack/internal/netguard"
 )
 
 // Endpoints are the two addresses a registry needs: the service that
@@ -74,7 +76,17 @@ func Pin(reference, digest string) string {
 //
 // The service of the registry is asked for a token, the manifest is read,
 // and its digest is returned. Nothing is downloaded.
+//
+// L'hôte vient du manifeste : il n'est pas de confiance. Les accès sont
+// gardés par la politique d'egress de l'environnement.
 func ResolveDigest(ctx context.Context, reference string) (string, error) {
+	return ResolveDigestWithPolicy(ctx, reference, netguard.FromEnvironment())
+}
+
+// ResolveDigestWithPolicy est ResolveDigest avec une politique explicite. Une
+// politique nulle retombe sur KUBERPACK_EGRESS_ALLOW, donc sur une garde
+// restrictive, jamais sur un client libre.
+func ResolveDigestWithPolicy(ctx context.Context, reference string, policy *netguard.Policy) (string, error) {
 	host, repository, tag, err := splitReference(reference)
 	if err != nil {
 		return "", err
@@ -90,7 +102,10 @@ func ResolveDigest(ctx context.Context, reference string) (string, error) {
 			API:  "https://" + host,
 		}
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	if policy == nil {
+		policy = netguard.FromEnvironment()
+	}
+	client := policy.HTTPClient(30 * time.Second)
 	token, err := fetchToken(ctx, client, endpoints.Auth, repository)
 	if err != nil {
 		return "", err

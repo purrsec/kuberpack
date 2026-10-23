@@ -15,6 +15,7 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/fetch"
 	"git.host.bzh/pepe/kuberpack/internal/git"
 	"git.host.bzh/pepe/kuberpack/internal/image"
+	"git.host.bzh/pepe/kuberpack/internal/netguard"
 	"git.host.bzh/pepe/kuberpack/internal/oci"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
 	"git.host.bzh/pepe/kuberpack/internal/strategy"
@@ -71,7 +72,13 @@ type Request struct {
 	// the application.
 	GitOpsAuthArgs []string
 	Environment    string
-	Log            func(string, ...any)
+	// Egress garde les accès sortants déclenchés par le manifeste (clone,
+	// registre). Nil retombe sur la politique de l'environnement.
+	Egress *netguard.Policy
+	// EgressAllow est la même allowlist, sous sa forme texte, pour le Job
+	// du builder : il clone le dépôt de l'application avec la même politique.
+	EgressAllow string
+	Log         func(string, ...any)
 }
 
 // checkout clones the repository of the application. It is a variable so
@@ -179,7 +186,12 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if err != nil {
 		return Result{}, fail.Stage(fail.Clone, err)
 	}
-	if err := checkout(ctx, repo.CloneURL, sha, dest, cloneAuth); err != nil {
+	if req.Egress != nil {
+		err = fetch.CheckoutWithPolicy(ctx, repo.CloneURL, sha, dest, cloneAuth, req.Egress)
+	} else {
+		err = checkout(ctx, repo.CloneURL, sha, dest, cloneAuth)
+	}
+	if err != nil {
 		return Result{}, fail.Stage(fail.Clone, err)
 	}
 	plan, err := strategy.Resolve(dest, kind)
@@ -230,6 +242,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		DeliveryID:          req.DeliveryID,
 		BuildsGitURL:        req.BuildsGitURL,
 		BuildsGitAuthScheme: req.BuildsGitAuthScheme,
+		EgressAllow:         req.EgressAllow,
 		AppName:             req.Name,
 		Environment:         req.Environment,
 	}
@@ -251,6 +264,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if err != nil {
 		return Result{}, fail.Stage(fail.Push, err)
 	}
+	reg.Policy = req.Egress
 	log("waiting for %s:%s", ociRepo, oci.TagForCommit(sha))
 	// The registry can lag behind the Job that just pushed the image: retry
 	// instead of failing the build on a transient hiccup. The budget is

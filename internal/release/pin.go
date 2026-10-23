@@ -45,6 +45,7 @@ func PinExisting(ctx context.Context, req Request) (Result, error) {
 		if err != nil {
 			return Result{}, fail.Stage(fail.Push, err)
 		}
+		reg.Policy = req.Egress
 		digest, err = reg.DigestForCommit(ctx, ociName, sha)
 		if err != nil {
 			return Result{}, fail.Stage(fail.Push, err)

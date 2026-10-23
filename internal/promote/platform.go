@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"git.host.bzh/pepe/kuberpack/internal/netguard"
 )
 
 // Platform is the cluster-shaped GitOps layout. App spec stays small;
@@ -87,6 +89,10 @@ type Platform struct {
 	AddonStorage map[string]string
 	// AddonStorageClass is the storage class of the addon volumes.
 	AddonStorageClass string
+	// Egress garde les accès sortants déclenchés par un manifeste : le
+	// registre d'une image déclarée, par exemple. Nil retombe sur la
+	// politique de l'environnement.
+	Egress *netguard.Policy
 }
 
 func (p Platform) withDefaults() Platform {

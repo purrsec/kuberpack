@@ -7,11 +7,16 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"git.host.bzh/pepe/kuberpack/internal/netguard"
 )
 
 // TestResolveDigestAgainstARegistry stands in for a registry: it hands
 // out a token and answers the manifest with a digest.
 func TestResolveDigestAgainstARegistry(t *testing.T) {
+	// Le serveur de test écoute sur la boucle locale : l'allowlist la
+	// réintroduit, comme un opérateur le ferait pour un registre interne.
+	t.Setenv(netguard.EnvAllow, "127.0.0.1")
 	const digest = "sha256:10164ffe04961b02ebc9fa4da12064eeacb8d3bc3e09ceb059f78ce7aaa83207"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {

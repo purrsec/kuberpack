@@ -2,6 +2,7 @@ package fetch
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -9,6 +10,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"git.host.bzh/pepe/kuberpack/internal/netguard"
 )
 
 func TestCheckoutExactSHA(t *testing.T) {
@@ -28,6 +31,9 @@ func TestCheckoutExactSHA(t *testing.T) {
 }
 
 func TestCheckoutNeverForwardsAuthorizationThroughRedirect(t *testing.T) {
+	// Le serveur de test écoute sur la boucle locale : l'allowlist la
+	// réintroduit, comme un opérateur le ferait pour une forge interne.
+	t.Setenv(netguard.EnvAllow, "127.0.0.1")
 	var forwarded atomic.Int32
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		forwarded.Add(1)
@@ -81,6 +87,7 @@ func git(t *testing.T, dir string, args ...string) string {
 // retried anonymously, which is enough for a public repository. A third
 // party application lives on another forge.
 func TestCheckoutFallsBackToAnonymous(t *testing.T) {
+	t.Setenv(netguard.EnvAllow, "127.0.0.1")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "" {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -98,5 +105,24 @@ func TestCheckoutFallsBackToAnonymous(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "token secret") {
 		t.Fatalf("the token must not appear in the error: %v", err)
+	}
+}
+
+// Une URL de dépôt ne doit pas devenir un chemin vers la boucle locale, les
+// métadonnées du fournisseur ou une adresse privée.
+func TestCheckoutRefusesProhibitedRemoteBeforeGit(t *testing.T) {
+	t.Setenv(netguard.EnvAllow, "")
+	sha := strings.Repeat("a", 40)
+	for _, remote := range []string{
+		"http://127.0.0.1/repo.git",
+		"http://169.254.169.254/latest/meta-data/",
+		"http://metadata.google.internal/computeMetadata/v1/",
+		"https://10.0.0.1/repo.git",
+		"ssh://git@git.host.bzh/pepe/repo.git",
+	} {
+		err := Checkout(context.Background(), remote, sha, filepath.Join(t.TempDir(), "checkout"), nil)
+		if !errors.Is(err, netguard.ErrBlocked) {
+			t.Errorf("%s aurait dû être refusé avant Git: %v", remote, err)
+		}
 	}
 }

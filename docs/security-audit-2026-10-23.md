@@ -174,6 +174,10 @@ sont capturées en mémoire et ne sont pas imprimées.
    Une référence de registre arbitraire mérite une revue SSRF et une politique
    d’origines/réseau. Aucun buffer overflow n’a été démontré ; les bibliothèques
    natives et images tierces n’ont pas fait l’objet d’un audit mémoire exhaustif.
+   Suivi : la passe [Durcissement des accès sortants](security-egress-2026-10-23.md)
+   ajoute une garde SSRF (IP dialée, redirections, allowlist), des limites par
+   IP et une NetworkPolicy d’egress optionnelle du control plane. Il reste un
+   quota par identité, l’anti-rejeu et l’activation de l’egress réseau.
 
 ## Déroulement et limites de cette validation
 

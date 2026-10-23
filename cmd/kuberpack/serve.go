@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/builder"
 	"git.host.bzh/pepe/kuberpack/internal/control"
 	"git.host.bzh/pepe/kuberpack/internal/git"
+	"git.host.bzh/pepe/kuberpack/internal/netguard"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
 	"git.host.bzh/pepe/kuberpack/internal/store"
 	"k8s.io/client-go/kubernetes"
@@ -40,9 +42,27 @@ func runServe(args []string) error {
 	gitopsBranch := fs.String("gitops-branch", getenv("KUBERPACK_GITOPS_BRANCH", "main"), "GitOps branch")
 	chartPath := fs.String("chart", getenv("KUBERPACK_CHART", "charts/stateless"), "path to the stateless Helm chart")
 	waitFor := fs.Duration("wait", 15*time.Minute, "how long to wait for the image digest")
+	egressAllow := fs.String("egress-allow", os.Getenv(netguard.EnvAllow), "hôtes, IP ou CIDR autorisés pour les accès sortants (séparés par des virgules)")
+	apiRateLimit := fs.Int("api-rate-limit", getenvInt("KUBERPACK_API_RATE_LIMIT", control.DefaultAPIRateLimit), "requêtes API par minute et par client (négatif désactive)")
+	apiRateBurst := fs.Int("api-rate-burst", getenvInt("KUBERPACK_API_RATE_BURST", 0), "rafale autorisée par client (0 = quart de la limite)")
+	apiMaxConcurrent := fs.Int("api-max-concurrency", getenvInt("KUBERPACK_API_MAX_CONCURRENCY", control.DefaultAPIMaxConcurrent), "requêtes simultanées (négatif désactive)")
+	trustedProxies := fs.String("trusted-proxies", getenv("KUBERPACK_TRUSTED_PROXIES", ""), "CIDR des proxys dont X-Forwarded-For est lu")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+
+	// La politique d'egress refuse par défaut les adresses internes. Les
+	// adresses configurées par l'opérateur (forge, registre, GitOps) sont de
+	// confiance : une installation interne n'a pas à les déclarer deux fois.
+	egress, err := netguard.Parse(splitList(*egressAllow))
+	if err != nil {
+		return fmt.Errorf("egress-allow: %w", err)
+	}
+	egress = egress.TrustURLs(*gitURL, *registryURL, *gitopsURL, os.Getenv("KUBERPACK_BUILDS_GIT_URL"))
+	// Le builder clone le dépôt de l'application : il reçoit la même
+	// allowlist, augmentée des adresses configurées par l'opérateur.
+	builderEgressAllow := strings.Join(append(splitList(*egressAllow),
+		splitList(configuredEgressHosts(*gitURL, *registryURL, *gitopsURL))...), ",")
 
 	// The read token opens the repositories. The build token pushes the
 	// images: the builder reads them from their own secrets.
@@ -116,6 +136,8 @@ func runServe(args []string) error {
 		}
 	}
 
+	platform := platformFromEnv()
+	platform.Egress = egress
 	srv := control.New(control.Config{
 		Kube:             kubeClient,
 		KubeConfig:       kubeConfig,
@@ -143,12 +165,18 @@ func runServe(args []string) error {
 		// The chart of the control plane itself. The platform writes it in
 		// the GitOps repository: the deployment of the platform follows
 		// the image that runs it.
-		SelfChartPath: getenv("KUBERPACK_SELF_CHART", "/opt/kuberpack/charts/kuberpack"),
-		SelfChartRef:  getenv("KUBERPACK_SELF_CHART_REF", "kubernetes/vps/charts/kuberpack"),
-		Platform:      platformFromEnv(),
-		Wait:          *waitFor,
-		BuildsGitURL:  strings.TrimSpace(os.Getenv("KUBERPACK_BUILDS_GIT_URL")),
-		FluxSecret:    strings.TrimSpace(os.Getenv("KUBERPACK_FLUX_WEBHOOK_SECRET")),
+		SelfChartPath:    getenv("KUBERPACK_SELF_CHART", "/opt/kuberpack/charts/kuberpack"),
+		SelfChartRef:     getenv("KUBERPACK_SELF_CHART_REF", "kubernetes/vps/charts/kuberpack"),
+		Platform:         platform,
+		Egress:           egress,
+		EgressAllow:      builderEgressAllow,
+		APIRateLimit:     *apiRateLimit,
+		APIRateBurst:     *apiRateBurst,
+		APIMaxConcurrent: *apiMaxConcurrent,
+		TrustedProxies:   splitList(*trustedProxies),
+		Wait:             *waitFor,
+		BuildsGitURL:     strings.TrimSpace(os.Getenv("KUBERPACK_BUILDS_GIT_URL")),
+		FluxSecret:       strings.TrimSpace(os.Getenv("KUBERPACK_FLUX_WEBHOOK_SECRET")),
 	})
 	srv.Start(ctx)
 
@@ -224,6 +252,37 @@ func ingressPodSelectorFromEnv() map[string]string {
 	var selector map[string]string
 	_ = json.Unmarshal([]byte(os.Getenv("KUBERPACK_INGRESS_POD_SELECTOR")), &selector)
 	return selector
+}
+
+// configuredEgressHosts rend les hôtes des URL configurées, sous la forme
+// attendue par l'allowlist.
+func configuredEgressHosts(raws ...string) string {
+	var hosts []string
+	for _, raw := range raws {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		if parsed, err := url.Parse(raw); err == nil && parsed.Host != "" {
+			hosts = append(hosts, parsed.Host)
+			continue
+		}
+		hosts = append(hosts, raw)
+	}
+	return strings.Join(hosts, ",")
+}
+
+// getenvInt reads an integer from the environment.
+func getenvInt(key string, fallback int) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(v)
+	if err != nil {
+		return fallback
+	}
+	return value
 }
 
 // getenvFloat reads a number from the environment.

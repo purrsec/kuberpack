@@ -118,10 +118,7 @@ func (r *Registry) exchange(ctx context.Context, challenge bearerChallenge) (str
 	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(user+":"+r.Token)))
 	req.Header.Set("Accept", "application/json")
 
-	httpClient := r.HTTPClient
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
+	httpClient := r.client()
 	res, err := httpClient.Do(req)
 	if err != nil {
 		return "", err

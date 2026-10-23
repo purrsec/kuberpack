@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/netip"
 	"runtime/debug"
 	"sort"
 	"strconv"
@@ -22,6 +23,7 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/fail"
 	"git.host.bzh/pepe/kuberpack/internal/git"
 	"git.host.bzh/pepe/kuberpack/internal/hmacsig"
+	"git.host.bzh/pepe/kuberpack/internal/netguard"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
 	"git.host.bzh/pepe/kuberpack/internal/release"
 	"git.host.bzh/pepe/kuberpack/internal/store"
@@ -113,12 +115,32 @@ type Config struct {
 	// BuilderCacheSize is the size of that volume.
 	BuilderCacheSize         string
 	BuilderCacheStorageClass string
+	// Egress garde les accès sortants déclenchés par un manifeste : clone
+	// d'un dépôt, lecture d'un registre. Nil retombe sur la politique de
+	// l'environnement.
+	Egress *netguard.Policy
+	// EgressAllow est la forme texte de l'allowlist, transmise au builder.
+	EgressAllow string
+	// APIRateLimit est le nombre de requêtes par minute et par client. Zéro
+	// prend la valeur par défaut, une valeur négative désactive la limite.
+	APIRateLimit int
+	// APIRateBurst est la taille de la rafale autorisée. Zéro prend un quart
+	// de APIRateLimit.
+	APIRateBurst int
+	// APIMaxConcurrent borne les requêtes simultanées. Zéro prend la valeur
+	// par défaut, une valeur négative désactive la borne.
+	APIMaxConcurrent int
+	// TrustedProxies sont les CIDR des proxys dont X-Forwarded-For est lu.
+	// Vide : l'en-tête est ignoré et seule l'adresse de connexion compte.
+	TrustedProxies []string
 }
 
 type Server struct {
 	cfg          Config
 	wake         chan struct{}
 	logFollowers chan struct{}
+	limiter      *apiLimiter
+	trusted      []netip.Prefix
 }
 
 func New(cfg Config) *Server {
@@ -134,7 +156,29 @@ func New(cfg Config) *Server {
 	if cfg.ReconcileInterval <= 0 {
 		cfg.ReconcileInterval = 5 * time.Minute
 	}
-	return &Server{cfg: cfg, wake: make(chan struct{}, 1), logFollowers: make(chan struct{}, 8)}
+	// Un zéro signifie « valeur par défaut » ; une valeur négative désactive
+	// explicitement la limite.
+	rateLimit := cfg.APIRateLimit
+	if rateLimit == 0 {
+		rateLimit = DefaultAPIRateLimit
+	}
+	if rateLimit < 0 {
+		rateLimit = 0
+	}
+	maxConcurrent := cfg.APIMaxConcurrent
+	if maxConcurrent == 0 {
+		maxConcurrent = DefaultAPIMaxConcurrent
+	}
+	if maxConcurrent < 0 {
+		maxConcurrent = 0
+	}
+	return &Server{
+		cfg:          cfg,
+		wake:         make(chan struct{}, 1),
+		logFollowers: make(chan struct{}, 8),
+		limiter:      newAPILimiter(rateLimit, cfg.APIRateBurst, maxConcurrent),
+		trusted:      parseTrustedProxies(cfg.TrustedProxies),
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -159,7 +203,9 @@ func (s *Server) Handler() http.Handler {
 	// always a Forgejo.
 	mux.HandleFunc("POST /hooks/git", s.webhook)
 	mux.HandleFunc("POST /hooks/flux", s.fluxHook)
-	return mux
+	// Les limites sont posées avant le routeur : une requête refusée ne fait
+	// pas de travail. /healthz en est exclu.
+	return s.guard(mux)
 }
 
 func (s *Server) Start(ctx context.Context) {
@@ -498,6 +544,8 @@ func (s *Server) processProduction(ctx context.Context, d store.Delivery) {
 		BuildsGitAuthScheme: git.AuthScheme(s.cfg.Provider.Name()),
 		GitOpsAuthArgs:      s.cfg.Provider.CloneAuth(s.cfg.Token),
 		Environment:         "production",
+		Egress:              s.cfg.Egress,
+		EgressAllow:         s.cfg.EgressAllow,
 		Log:                 func(format string, args ...any) { log.Printf(format, args...) },
 	})
 	finished := store.Build{Status: "succeeded", ArchiveURL: archiveURL(s.cfg.BuildsGitURL, name, d.CommitSHA)}

@@ -113,6 +113,8 @@ func (s *Server) processPreview(ctx context.Context, d store.Delivery) {
 		BuildsGitAuthScheme: git.AuthScheme(s.cfg.Provider.Name()),
 		GitOpsAuthArgs:      s.cfg.Provider.CloneAuth(s.cfg.Token),
 		Environment:         "preview",
+		Egress:              s.cfg.Egress,
+		EgressAllow:         s.cfg.EgressAllow,
 		Log:                 func(format string, args ...any) { log.Printf(format, args...) },
 	})
 	finished := store.Build{Status: "succeeded", ArchiveURL: archiveURL(s.cfg.BuildsGitURL, name, d.CommitSHA)}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"git.host.bzh/pepe/kuberpack/internal/git"
+	"git.host.bzh/pepe/kuberpack/internal/netguard"
 	"git.host.bzh/pepe/kuberpack/internal/release"
 	"git.host.bzh/pepe/kuberpack/internal/strategy"
 )
@@ -47,6 +48,7 @@ func runTrigger(args []string) error {
 		return err
 	}
 
+	egress := netguard.FromEnvironment().TrustURLs(*gitURL, *registryURL, *gitopsURL)
 	_, err = release.Run(context.Background(), release.Request{
 		Provider:        provider,
 		RegistryURL:     *registryURL,
@@ -66,6 +68,8 @@ func runTrigger(args []string) error {
 		Wait:            *waitFor,
 		SkipPromote:     *skipPromote,
 		Platform:        platformFromEnv(),
+		Egress:          egress,
+		EgressAllow:     strings.TrimSpace(os.Getenv(netguard.EnvAllow)),
 		Log:             func(format string, args ...any) { fmt.Printf(format+"\n", args...) },
 	})
 	return err
