@@ -22,6 +22,18 @@ type ProjectManifest struct {
 	Services  map[string]Service `yaml:"services,omitempty" json:"services,omitempty"`
 	Addons    map[string]Addon   `yaml:"addons,omitempty" json:"addons,omitempty"`
 	Policies  Policy             `yaml:"policies,omitempty" json:"policies,omitempty"`
+	// Infisical optionally gives this project its own Infisical project,
+	// identity and secret path. Without it, the shared platform project is
+	// used for compatibility. The administrator creates the identity and
+	// grants the operator access; the compiler only references it.
+	Infisical *InfisicalScope `yaml:"infisical,omitempty" json:"infisical,omitempty"`
+}
+
+// InfisicalScope is the per-project secret boundary.
+type InfisicalScope struct {
+	ProjectID string `yaml:"project_id,omitempty" json:"project_id,omitempty"`
+	AuthRef   string `yaml:"auth_ref,omitempty" json:"auth_ref,omitempty"`
+	Path      string `yaml:"path,omitempty" json:"path,omitempty"`
 }
 
 // Service is one application of a project.
@@ -325,9 +337,13 @@ type ProjectApp struct {
 	BuildCommand  string
 	Secrets       []string
 	SecretEnv     string
-	Internet      *bool
-	Peers         []string
-	Namespace     string
+	// Infisical overrides the platform-wide secret scope for this project.
+	InfisicalProjectID string
+	InfisicalAuthRef   string
+	InfisicalPath      string
+	Internet           *bool
+	Peers              []string
+	Namespace          string
 	// ValuesPath is where the digest of the build must be written, relative
 	// to the root of the GitOps repository.
 	ValuesPath string
@@ -601,20 +617,29 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 		servicePeers, policyAddonPeers := projectPeers(peerManifest, addonResults)
 		// The defaults are the ones of the app registration: the manifest
 		// and the API must not disagree about a port or a probe.
+		infisicalProjectID, infisicalAuthRef, infisicalPath := "", "", ""
+		if m.Infisical != nil {
+			infisicalProjectID = strings.TrimSpace(m.Infisical.ProjectID)
+			infisicalAuthRef = strings.TrimSpace(m.Infisical.AuthRef)
+			infisicalPath = strings.TrimSpace(m.Infisical.Path)
+		}
 		spec, err := normalizeSpec(AppSpec{
-			Name:          sname,
-			Hostname:      svc.Hostname,
-			Port:          svc.Port,
-			Healthcheck:   svc.Healthcheck,
-			Replicas:      svc.Replicas,
-			Internet:      net,
-			Peers:         servicePeers,
-			Env:           nil,
-			Secrets:       svc.Secrets,
-			SecretEnv:     svc.SecretEnv,
-			Project:       project,
-			Namespace:     namespace,
-			NetworkPolicy: &isolated,
+			Name:               sname,
+			Hostname:           svc.Hostname,
+			Port:               svc.Port,
+			Healthcheck:        svc.Healthcheck,
+			Replicas:           svc.Replicas,
+			Internet:           net,
+			Peers:              servicePeers,
+			Env:                nil,
+			Secrets:            svc.Secrets,
+			SecretEnv:          svc.SecretEnv,
+			Project:            project,
+			InfisicalProjectID: infisicalProjectID,
+			InfisicalAuthRef:   infisicalAuthRef,
+			InfisicalPath:      infisicalPath,
+			Namespace:          namespace,
+			NetworkPolicy:      &isolated,
 		})
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("service %q: %w", name, err)
@@ -734,7 +759,7 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 			return nil, nil, nil, err
 		}
 		services = append(services, sname)
-		app := projectApp(p, project, sname, svc, namespace, net, servicePeers)
+		app := projectApp(p, project, sname, svc, namespace, net, servicePeers, m.Infisical)
 		app.Image = spec.Image
 		apps = append(apps, app)
 	}
@@ -801,7 +826,7 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 // projectApp is the operational description of a service: what to build and
 // where the digest must land. The defaults are the ones of the app
 // registration: the manifest and the API must not disagree.
-func projectApp(p Platform, project, service string, svc Service, namespace string, internet *bool, peers []string) ProjectApp {
+func projectApp(p Platform, project, service string, svc Service, namespace string, internet *bool, peers []string, infisical *InfisicalScope) ProjectApp {
 	port := svc.Port
 	if port == 0 {
 		port = 8080
@@ -841,6 +866,11 @@ func projectApp(p Platform, project, service string, svc Service, namespace stri
 		// Where the digest of the build lands: the values file of the
 		// service, inside the project.
 		ValuesPath: p.ProjectServiceValuesPath(project, service),
+	}
+	if infisical != nil {
+		app.InfisicalProjectID = strings.TrimSpace(infisical.ProjectID)
+		app.InfisicalAuthRef = strings.TrimSpace(infisical.AuthRef)
+		app.InfisicalPath = strings.TrimSpace(infisical.Path)
 	}
 	if svc.Build != nil {
 		app.RootDirectory = strings.TrimSpace(svc.Build.RootDirectory)

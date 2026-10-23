@@ -73,6 +73,11 @@ type AppSpec struct {
 	// vars of the same name. SecretEnv is the Infisical environment slug.
 	Secrets   []string
 	SecretEnv string
+	// InfisicalProjectID/AuthRef/Path override the platform-wide secret
+	// scope for this project. Empty means the shared platform values.
+	InfisicalProjectID string
+	InfisicalAuthRef   string
+	InfisicalPath      string
 	// InheritSecretFrom drives which Secret a preview inherits in addition to
 	// its exact app-<app>-pr-<n>: "prod" mounts the production Secret
 	// app-<app>, "dev" mounts the shared `dev` Secret (Infisical `dev` env).

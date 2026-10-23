@@ -335,6 +335,32 @@ l’accès au cache déclaré. Voir [les garanties et limites réseau](security.
 
 ---
 
+## Secrets Infisical par projet
+
+Sans bloc `infisical`, un projet utilise le projet, le chemin et l'identité
+Infisical de la plateforme. C'est le mode historique, partagé entre projets.
+
+Un projet peut déclarer sa propre frontière :
+
+```yaml
+infisical:
+  project_id: <uuid-du-projet-infisical>
+  auth_ref: <nom-de-l-InfisicalAuth>
+  path: /projects/mon-projet
+```
+
+L'administrateur crée le projet et l'identité Infisical, accorde à l'opérateur
+l'accès au projet et crée l'`InfisicalAuth` correspondante dans le namespace
+`infisical`. Kuberpack ne fait que référencer ces valeurs dans
+l'`InfisicalStaticSecret` ; il ne détient aucun jeton d'administration
+Infisical et ne lit aucune valeur. `project_id` et `auth_ref` vont ensemble ;
+le chemin doit être absolu et sans traversée. Le nom de l'`auth_ref` doit être
+un label DNS.
+
+Ce mode permet une isolation réelle des secrets entre projets. Le mode partagé
+reste le défaut pour ne pas casser les manifestes existants ; il ne protège pas
+un projet d'un autre auteur de manifeste.
+
 ## 4. Séparation stricte des responsabilités
 
 Kuberpack impose une séparation étanche entre ce qui est sous le contrôle de l'humain et ce qui relève de l'automatisation du control plane :

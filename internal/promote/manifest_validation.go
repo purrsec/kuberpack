@@ -54,6 +54,26 @@ func validateManifestFields(m ProjectManifest) error {
 			return fmt.Errorf("namespace %q: %s", m.Namespace, strings.Join(errs, "; "))
 		}
 	}
+	if m.Infisical != nil {
+		if (strings.TrimSpace(m.Infisical.ProjectID) == "") != (strings.TrimSpace(m.Infisical.AuthRef) == "") {
+			return fmt.Errorf("infisical: project_id and auth_ref must be set together")
+		}
+		for field, value := range map[string]string{"project_id": m.Infisical.ProjectID, "auth_ref": m.Infisical.AuthRef, "path": m.Infisical.Path} {
+			if err := validatePlainScalar("infisical: "+field, value); err != nil {
+				return err
+			}
+		}
+		if ref := strings.TrimSpace(m.Infisical.AuthRef); ref != "" {
+			if errs := validation.IsDNS1123Label(ref); len(errs) > 0 {
+				return fmt.Errorf("infisical: auth_ref %q is not a DNS label", ref)
+			}
+		}
+		if secretPath := strings.TrimSpace(m.Infisical.Path); secretPath != "" {
+			if !strings.HasPrefix(secretPath, "/") || path.Clean(secretPath) != secretPath || strings.Contains(secretPath, "..") {
+				return fmt.Errorf("infisical: path must be an absolute, clean path")
+			}
+		}
+	}
 	for name, addon := range m.Addons {
 		if errs := validation.IsDNS1123Label(name); len(errs) > 0 {
 			return fmt.Errorf("addon %q: %s", name, strings.Join(errs, "; "))
