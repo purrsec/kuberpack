@@ -1,4 +1,4 @@
-package charts
+package provisioning
 
 import (
 	"context"
@@ -32,7 +32,7 @@ const admissionTestBuilderImage = "example.invalid/kuberpack-builder@sha256:aaaa
 
 func renderBuildAdmission(t *testing.T, control, namespace, version string) ([]admissionv1.ValidatingAdmissionPolicy, []admissionv1.ValidatingAdmissionPolicyBinding, error) {
 	t.Helper()
-	chart, err := loader.Load("kuberpack")
+	chart, err := loader.Load("charts/kuberpack")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestBuildAdmissionRequiresSupportedAPIServer(t *testing.T) {
 // l'admission. Sans évaluation CEL locale, le test vérifie le rendu exact des
 // deux côtés : un écart ferait refuser les Jobs légitimes.
 func TestBuildPlacementIsRenderedOnBothSides(t *testing.T) {
-	chart, err := loader.Load("kuberpack")
+	chart, err := loader.Load("charts/kuberpack")
 	if err != nil {
 		t.Fatal(err)
 	}

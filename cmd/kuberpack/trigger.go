@@ -26,7 +26,7 @@ func runTrigger(args []string) error {
 	gitopsURL := fs.String("gitops-url", getenv("KUBERPACK_GITOPS_URL", "https://git.host.bzh/pepe/infra-homelab.git"), "GitOps repository URL")
 	gitopsBranch := fs.String("gitops-branch", getenv("KUBERPACK_GITOPS_BRANCH", "main"), "GitOps branch")
 	valuesPath := fs.String("values-path", getenv("KUBERPACK_VALUES_PATH", ""), "values.yaml path inside the GitOps repository")
-	chartPath := fs.String("chart", getenv("KUBERPACK_CHART", "charts/stateless"), "path to the stateless Helm chart")
+	chartPath := fs.String("chart", getenv("KUBERPACK_CHART", "provisioning/charts/stateless"), "path to the stateless Helm chart")
 	imageRepo := fs.String("image-repository", getenv("KUBERPACK_IMAGE_REPOSITORY", ""), "OCI repository without tag or digest")
 	waitFor := fs.Duration("wait", 15*time.Minute, "how long to wait for the image digest")
 	skipPromote := fs.Bool("skip-promote", false, "dispatch and wait, but do not write GitOps")

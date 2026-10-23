@@ -147,7 +147,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		req.GitOpsBranch = "main"
 	}
 	if req.ChartPath == "" {
-		req.ChartPath = "charts/stateless"
+		req.ChartPath = "provisioning/charts/stateless"
 	}
 	if req.Provider == nil {
 		return Result{}, fail.Text(fail.Clone, "forgejo client is nil")

@@ -1,6 +1,6 @@
 package promote
 
-// These are the defaults of charts/stateless/values.yaml. Capacity and input
+// These are the defaults of provisioning/charts/stateless/values.yaml. Capacity and input
 // validation must include the same values that Helm merges at deployment.
 func effectiveServiceResources(overrides *ServiceResources) ServiceResources {
 	out := ServiceResources{

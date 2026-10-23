@@ -37,8 +37,8 @@ RUN mkdir -p /runtime/home/nonroot /runtime/var/lib/kuberpack /runtime/tmp /runt
 FROM scratch
 COPY --from=runtime-files /runtime/ /
 COPY --from=build --chmod=755 /out/kuberpack /usr/bin/kuberpack
-COPY charts/stateless /opt/kuberpack/charts/stateless
-COPY charts/kuberpack /opt/kuberpack/charts/kuberpack
+COPY provisioning/charts/stateless /opt/kuberpack/charts/stateless
+COPY provisioning/charts/kuberpack /opt/kuberpack/charts/kuberpack
 ENV PATH=/usr/bin \
     HOME=/home/nonroot \
     GIT_EXEC_PATH=/usr/libexec/git-core \

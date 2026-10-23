@@ -1,4 +1,4 @@
-package charts
+package provisioning
 
 import (
 	"errors"
@@ -18,7 +18,7 @@ const rotationTestImage = "example.org/app@sha256:0123456789abcdef0123456789abcd
 // renderStateless rend le chart d'application avec des valeurs de test.
 func renderStateless(t *testing.T, values map[string]any) map[string]string {
 	t.Helper()
-	chart, err := loader.Load("stateless")
+	chart, err := loader.Load("charts/stateless")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestSecretRotationGrantsNoSecretReadPermission(t *testing.T) {
 		}
 	}
 
-	chart, err := loader.Load("kuberpack")
+	chart, err := loader.Load("charts/kuberpack")
 	if err != nil {
 		t.Fatal(err)
 	}

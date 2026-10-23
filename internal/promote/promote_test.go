@@ -93,7 +93,7 @@ func TestRunRejectsIncompleteRequest(t *testing.T) {
 	if _, err := Run(context.Background(), Request{
 		GitOpsURL:  "x",
 		ValuesPath: "../secrets.yaml",
-		ChartPath:  "charts/stateless",
+		ChartPath:  chartDir(t),
 		Image:      mustPin(t),
 	}); err == nil {
 		t.Fatal("expected error for values path escape")
@@ -218,5 +218,5 @@ func chartDir(t *testing.T) string {
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "charts", "stateless"))
+	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "provisioning", "charts", "stateless"))
 }

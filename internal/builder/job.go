@@ -431,7 +431,7 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 	}
 	backoff := int32(0)
 	// Keep finished Jobs long enough to inspect a failure, but not long enough
-	// to exhaust the builder namespace pod quota (see charts/kuberpack quota).
+	// to exhaust the builder namespace pod quota (see provisioning/charts/kuberpack quota).
 	ttl := int32(3600)
 	uid := int64(1000)
 	allowEscalation, noEscalation := true, false

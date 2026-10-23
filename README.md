@@ -69,7 +69,7 @@ n'a pas besoin de kubeconfig. Voir les [états de déploiement](docs/api.md#cons
 
 ## Code
 
-CLI `kuberpack` : pin d’un digest dans le dépôt GitOps. Chart Helm `charts/stateless` : workload HTTP restreint.
+CLI `kuberpack` : pin d’un digest dans le dépôt GitOps. Chart Helm `provisioning/charts/stateless` : workload HTTP restreint.
 
 ```bash
 make test
@@ -78,7 +78,7 @@ make build
   --gitops-url https://git.host.bzh/pepe/infra-homelab.git \
   --gitops-branch main \
   --values-path kubernetes/vps/apps/hello-world/values.yaml \
-  --chart charts/stateless \
+  --chart provisioning/charts/stateless \
   --image-repository git.host.bzh/pepe/hello-world \
   --commit-sha <sha> \
   --digest sha256:<digest>

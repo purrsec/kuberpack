@@ -1,4 +1,4 @@
-package charts
+package provisioning
 
 import (
 	"strings"
@@ -14,7 +14,7 @@ import (
 // renderControlPlaneNetworkPolicy rend le template d'egress du control plane.
 func renderControlPlaneNetworkPolicy(t *testing.T, values map[string]any) string {
 	t.Helper()
-	chart, err := loader.Load("kuberpack")
+	chart, err := loader.Load("charts/kuberpack")
 	if err != nil {
 		t.Fatal(err)
 	}

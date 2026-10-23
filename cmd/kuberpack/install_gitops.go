@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	embedded "git.host.bzh/pepe/kuberpack/charts"
 	"git.host.bzh/pepe/kuberpack/internal/fetch"
 	gitprovider "git.host.bzh/pepe/kuberpack/internal/git"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
+	provisioning "git.host.bzh/pepe/kuberpack/provisioning"
 	"gopkg.in/yaml.v3"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -195,18 +195,18 @@ func writeRepoFile(work, root, name string, data []byte) error {
 }
 
 func (i *installation) copyCharts() error {
-	return fs.WalkDir(embedded.Files, ".", func(name string, entry fs.DirEntry, err error) error {
+	return fs.WalkDir(provisioning.Files, ".", func(name string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if entry.IsDir() {
 			return nil
 		}
-		data, err := embedded.Files.ReadFile(name)
+		data, err := provisioning.Files.ReadFile(name)
 		if err != nil {
 			return err
 		}
-		return i.writeBytes(i.c.Root+"/charts/"+name, data)
+		return i.writeBytes(i.c.Root+"/"+name, data)
 	})
 }
 

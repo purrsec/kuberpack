@@ -146,7 +146,7 @@ trigger (FORGEJO_TOKEN, write:repository):
   --start-cmd string       optional Railpack start command
   --gitops-url string      (default KUBERPACK_GITOPS_URL)
   --values-path string     (default <KUBERPACK_GITOPS_APPS>/<repository>/values.yaml)
-  --chart string           (default charts/stateless)
+  --chart string           (default provisioning/charts/stateless)
   --wait duration          (default 15m)
   --skip-promote
 

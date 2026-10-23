@@ -1,4 +1,4 @@
-package charts
+package provisioning
 
 import (
 	"errors"
@@ -14,7 +14,7 @@ import (
 )
 
 func TestNodeMetricsPermissionCannotProxyOrExecuteCommands(t *testing.T) {
-	chart, err := loader.Load("kuberpack")
+	chart, err := loader.Load("charts/kuberpack")
 	if err != nil {
 		t.Fatal(err)
 	}

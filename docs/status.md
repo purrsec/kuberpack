@@ -63,7 +63,7 @@ risques sont documentés dans l’audit.
 - Webhook sur le dépôt GitOps : un push qui change un manifeste recompile le projet (le manifeste est lu depuis le dépôt, jamais réécrit). Le statut de commit sur le push dit si le manifeste compile.
 - Flux : un `Kustomization` par arbre. Les projets (`kubernetes/vps/projects`) exigent leur propre `Kustomization` : sans lui, un projet compilé n’est jamais appliqué.
 - SQLite WAL + secrets HMAC en fichiers (`--data`). Pas de secret dans SQLite. Pas de clé SSH : clone HTTPS par jeton (control plane et builder).
-- Chart Helm `charts/stateless` avec Helm test HTTP. Les HelmRelease générées activent le test pour les services non suspendus et utilisent `upgrade.remediation.strategy: rollback`. Les projets utilisent des `secretKeyRef` obligatoires pour les seules clés déclarées. Les anciens services autonomes conservent leur `envFrom` optionnel.
+- Chart Helm `provisioning/charts/stateless` avec Helm test HTTP. Les HelmRelease générées activent le test pour les services non suspendus et utilisent `upgrade.remediation.strategy: rollback`. Les projets utilisent des `secretKeyRef` obligatoires pour les seules clés déclarées. Les anciens services autonomes conservent leur `envFrom` optionnel.
 - Préviews `autodeploy_pr` : branche GitOps `previews`, release `<app>-pr-<n>`, hôte `pr-<n>.<app>.<preview-domain>`, forks refusés, GC TTL, statut Forgejo `kuberpack/preview`.
 - Builder Railpack (Job k3s) : sidecar BuildKit rootless, Trivy, Syft, tag `sha-<commit>` uniquement. `uv` n’est pas un exécuteur séparé ; Railpack consomme `uv.lock`.
 - Archive de build optionnelle : `KUBERPACK_BUILDS_GIT_URL` (no-op si vide). Ce dépôt ne doit jamais être une source Flux.

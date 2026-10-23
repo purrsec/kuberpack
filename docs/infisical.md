@@ -357,7 +357,7 @@ parle à Infisical et le seul à écrire le Secret, dans les namespaces que son
 scope GitOps lui donne déjà.
 
 Une installation existante doit recevoir le chart à jour (`kuberpack
-install`, qui recopie `charts/stateless` dans le dépôt GitOps) avant que
+install`, qui recopie `provisioning/charts/stateless` dans le dépôt GitOps) avant que
 l'annotation ne soit rendue. Vérification :
 
 ```bash

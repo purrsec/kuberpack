@@ -40,7 +40,7 @@ func runServe(args []string) error {
 	webhookURL := fs.String("webhook-url", getenv("KUBERPACK_WEBHOOK_URL", ""), "public URL for POST /hooks/forgejo")
 	gitopsURL := fs.String("gitops-url", getenv("KUBERPACK_GITOPS_URL", "https://git.host.bzh/pepe/infra-homelab.git"), "GitOps repository URL")
 	gitopsBranch := fs.String("gitops-branch", getenv("KUBERPACK_GITOPS_BRANCH", "main"), "GitOps branch")
-	chartPath := fs.String("chart", getenv("KUBERPACK_CHART", "charts/stateless"), "path to the stateless Helm chart")
+	chartPath := fs.String("chart", getenv("KUBERPACK_CHART", "provisioning/charts/stateless"), "path to the stateless Helm chart")
 	waitFor := fs.Duration("wait", 15*time.Minute, "how long to wait for the image digest")
 	egressAllow := fs.String("egress-allow", os.Getenv(netguard.EnvAllow), "hôtes, IP ou CIDR autorisés pour les accès sortants (séparés par des virgules)")
 	apiRateLimit := fs.Int("api-rate-limit", getenvInt("KUBERPACK_API_RATE_LIMIT", control.DefaultAPIRateLimit), "requêtes API par minute et par client (négatif désactive)")

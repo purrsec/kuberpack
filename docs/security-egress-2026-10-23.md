@@ -123,7 +123,7 @@ concurrence HTTP ne compte pas les builds, qui ne sont pas des requêtes.
 
 ## NetworkPolicy d’egress du control plane
 
-`charts/kuberpack/templates/controlplane-networkpolicy.yaml` est **désactivée
+`provisioning/charts/kuberpack/templates/controlplane-networkpolicy.yaml` est **désactivée
 par défaut** (`controlPlaneNetworkPolicy.enabled: false`). Le control plane
 doit joindre :
 
@@ -161,7 +161,7 @@ Jobs de build.
 go test ./internal/netguard ./internal/oci ./internal/fetch ./internal/release \
         ./internal/promote ./internal/control ./cmd/kuberpack
 go test -race ./internal/netguard ./internal/oci ./internal/control
-helm template charts/kuberpack --set image=x --set gitURL=https://git.example.com \
+helm template provisioning/charts/kuberpack --set image=x --set gitURL=https://git.example.com \
      --set gitopsURL=https://git.example.com/o/r.git --set host=kuberpack.example.com
 ```
 

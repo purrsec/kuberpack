@@ -1,4 +1,4 @@
-package charts
+package provisioning
 
 import (
 	"errors"
@@ -14,7 +14,7 @@ import (
 )
 
 func TestTenantIsolationRendersBoundedRBACAndAdmission(t *testing.T) {
-	chart, err := loader.Load("kuberpack")
+	chart, err := loader.Load("charts/kuberpack")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestTenantIsolationRendersBoundedRBACAndAdmission(t *testing.T) {
 }
 
 func TestTenantIsolationIsOffByDefault(t *testing.T) {
-	chart, err := loader.Load("kuberpack")
+	chart, err := loader.Load("charts/kuberpack")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestTenantIsolationIsOffByDefault(t *testing.T) {
 }
 
 func TestReloaderIsOptInAndHasItsOwnIdentity(t *testing.T) {
-	chart, err := loader.Load("kuberpack")
+	chart, err := loader.Load("charts/kuberpack")
 	if err != nil {
 		t.Fatal(err)
 	}

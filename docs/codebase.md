@@ -1,7 +1,7 @@
 # Carte de la codebase
 
 Ce document est destiné à un développeur qui arrive dans le dépôt. Il explique
-où chaque responsabilité vit, pourquoi `charts/` contient aussi du Go, et
+où chaque responsabilité vit, pourquoi `provisioning/` contient aussi du Go, et
 comment les morceaux s'enchaînent. Le contrat produit reste
 [architecture.md](architecture.md) ; ici, on parle du code.
 
@@ -32,7 +32,7 @@ Kuberpack a **trois plans** et **deux boucles** :
                                    ▼
                     ┌──────────────────────────────┐
                     │ cluster de production        │
-                    │ charts/stateless + Helm      │
+                    │ provisioning/charts/stateless │
                     └──────────────────────────────┘
 ```
 
@@ -45,8 +45,8 @@ Deux dépôts Git sont utilisés :
 
 Deux charts Helm sont livrés :
 
-- `charts/kuberpack` : le socle (control plane, RBAC, admission, reloader) ;
-- `charts/stateless` : une application HTTP (Deployment, Service, Ingress,
+- `provisioning/charts/kuberpack` : le socle (control plane, RBAC, admission, reloader) ;
+- `provisioning/charts/stateless` : une application HTTP (Deployment, Service, Ingress,
   NetworkPolicy, test Helm).
 
 ## Arborescence
@@ -54,7 +54,7 @@ Deux charts Helm sont livrés :
 ```text
 cmd/kuberpack/        point d'entrée CLI et composition des commandes
 internal/             logique métier, packages importables
-charts/               charts Helm embarqués + tests Go des charts
+provisioning/         charts Helm embarqués + tests Go des charts
 testenv/              banc Docker (Forgejo + k3s) pour les tests réels
 examples/             manifestes d'exemple
 docs/                 contrat, exploitation, audits
@@ -112,32 +112,35 @@ Règle de dépendance : `cmd` dépend de `internal` ; `internal/control` dépend
 `promote`, `store`, `release`, `builder`, etc. Aucun package `internal` ne doit
 importer `cmd`.
 
-### `charts/` : pourquoi ce dossier contient du Go
+### `provisioning/` : le domaine, et `charts/` l'artefact
 
-`charts/` est **à la fois** un package Go et deux charts Helm :
+Le dossier est nommé par sa **finalité** — provisionner la plateforme et les
+applications — et non par le seul format de ses fichiers. Les charts Helm sont
+un sous-dossier :
 
 ```text
-charts/
-  embed.go                  package charts ; //go:embed kuberpack stateless
-  kuberpack/                chart du socle
-  stateless/                chart d'une application
+provisioning/
+  embed.go                  package provisioning ; //go:embed charts/...
+  charts/
+    kuberpack/              chart du socle
+    stateless/              chart d'une application
   *_test.go                 tests Go qui rendent/valident les charts
 ```
 
-`charts/embed.go` :
+`provisioning/embed.go` :
 
 ```go
-//go:embed all:kuberpack all:stateless
+//go:embed all:charts/kuberpack all:charts/stateless
 var Files embed.FS
 ```
 
 Conséquence : le CLI et l'image du control plane **embarquent** les charts. Un
 `kuberpack install` n'a pas besoin d'un checkout du dépôt ni de Helmfile. Les
-fichiers `charts/*_test.go` sont des tests, pas du code runtime : ils vivent là
-parce qu'ils chargent les charts avec `loader.Load("kuberpack")` et vérifient le
+fichiers `provisioning/*_test.go` sont des tests, pas du code runtime : ils vivent là
+parce qu'ils chargent les charts avec `loader.Load("charts/kuberpack")` et vérifient le
 rendu, le RBAC ou l'admission sur un vrai serveur API.
 
-#### `charts/kuberpack` : le socle
+#### `provisioning/charts/kuberpack` : le socle
 
 C'est le chart qui installe le control plane et son environnement immédiat.
 
@@ -156,11 +159,11 @@ C'est le chart qui installe le control plane et son environnement immédiat.
 Ce chart est **possédé par l'installateur**. En mode deux dépôts, le control
 plane ne l'écrit pas (`KUBERPACK_WRITE_CHARTS=false`). C'est pour cela qu'un
 changement de template doit être accompagné d'un **bump de version** dans
-`charts/kuberpack/Chart.yaml` : le HelmRelease utilise
+`provisioning/charts/kuberpack/Chart.yaml` : le HelmRelease utilise
 `reconcileStrategy: ChartVersion`, et Flux ne réapplique pas un chart dont la
 version n'a pas changé.
 
-#### `charts/stateless` : une application
+#### `provisioning/charts/stateless` : une application
 
 C'est le chart utilisé par chaque `HelmRelease` applicative. Il ne connaît pas
 Kuberpack : il reçoit des valeurs générées par `internal/promote`.
@@ -182,7 +185,7 @@ control plane compromis de modifier le chart qu'il fait appliquer.
 #### Cycle de vie des charts
 
 ```text
-charts/ (dans le binaire)
+provisioning/charts/ (dans le binaire)
    │ go:embed
    ▼
 kuberpack install
@@ -192,8 +195,9 @@ Flux HelmRelease "kuberpack"  ──▶ chart kuberpack (socle)
 Flux HelmRelease "<service>"  ──▶ chart stateless (application)
 ```
 
-`charts/kuberpack` est appliqué par la Kustomization `kuberpack-platform`.
-`charts/stateless` est référencé par chaque HelmRelease applicative via
+`provisioning/charts/kuberpack` est appliqué par la Kustomization
+`kuberpack-platform`. `provisioning/charts/stateless` est référencé par chaque
+HelmRelease applicative via
 `gitopsChart` (par défaut `./<root>/charts/stateless`). Le control plane ne
 réécrit plus ces fichiers en mode deux dépôts.
 
@@ -255,10 +259,10 @@ relance avec la même commande.
 | Nouveau comportement de build | `internal/buildexec`, `internal/builder` |
 | Nouvelle forge | `internal/git/` + `internal/forgejo/` si l'API est Gitea |
 | Nouveau réglage d'installation | `internal/install/config.go`, `cmd/kuberpack/install_options.go`, values du chart |
-| Nouveau template Kubernetes | `charts/kuberpack` (socle) ou `charts/stateless` (application), + bump de version |
-| Nouveau test de chart | `charts/*_test.go` |
-| Nouvelle règle réseau | `internal/promote/*networkpolicy*`, `charts/stateless/templates/networkpolicy.yaml` |
-| Nouvelle règle de sécurité | `docs/security.md`, `charts/kuberpack/templates/*admission*`, tests |
+| Nouveau template Kubernetes | `provisioning/charts/kuberpack` (socle) ou `provisioning/charts/stateless` (application), + bump de version |
+| Nouveau test de chart | `provisioning/*_test.go` |
+| Nouvelle règle réseau | `internal/promote/*networkpolicy*`, `provisioning/charts/stateless/templates/networkpolicy.yaml` |
+| Nouvelle règle de sécurité | `docs/security.md`, `provisioning/charts/kuberpack/templates/*admission*`, tests |
 
 ## Conventions à garder
 
@@ -280,8 +284,8 @@ relance avec la même commande.
 - Les étapes d'installation sont dans `cmd/kuberpack/install_*.go` alors que
   `internal/install` ne porte que la configuration et le playbook. Les déplacer
   rendrait le point d'entrée plus lisible.
-- Les tests de charts sont à la racine de `charts/` ; un sous-dossier
-  `charts/tests/` serait plus explicite, mais le package Go doit rester
+- Les tests de charts sont à la racine de `provisioning/` ; un sous-dossier
+  `provisioning/tests/` serait plus explicite, mais le package Go doit rester
   importable par le CLI.
 - `internal/promote/project.go` est le plus gros fichier du dépôt (compilateur
   complet). Un découpage par domaine (services, addons, secrets, réseau) serait
