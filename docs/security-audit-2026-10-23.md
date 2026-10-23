@@ -125,6 +125,16 @@ sont capturées en mémoire et ne sont pas imprimées.
    SA externe privilégié n’y réside. Le provisionneur doit refuser l’adoption
    implicite de tels namespaces avant d’y étendre les droits Infisical.
 
+   **Corrigé côté compilation.** Le namespace généré porte
+   `kuberpack.io/project=<projet>`. Avant toute écriture, l’API et la
+   recompilation par webhook lisent le namespace réel : un namespace qui
+   appartient à un autre projet, à un autre propriétaire ou à un usage inconnu
+   est refusé. Une adoption volontaire se fait par l’annotation
+   `kuberpack.io/adopt=<projet>` ; le layout historique déjà possédé par Flux
+   reste accepté pour la migration. Un acteur qui peut déjà modifier les labels
+   Flux ou créer des namespaces a déjà des droits de cluster ; la vérification
+   ne remplace pas le futur provisionneur d’identité distincte.
+
 4. **Élevé — Sandbox des builds.** BuildKit garde des exceptions rootless,
    `--oci-worker-no-process-sandbox` et le partage d’un noyau avec le cluster.
    L’admission réduit les possibilités du dispatcher ; elle ne protège pas
