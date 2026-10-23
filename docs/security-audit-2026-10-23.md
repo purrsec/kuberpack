@@ -135,11 +135,12 @@ sont capturées en mémoire et ne sont pas imprimées.
    n’y a plus de Kustomization globale pour porter ce ConfigMap. Le banc Docker
    valide le parcours complet, l’identité limitée à son namespace, la
    réinstallation sans commit et la coexistence Helmfile (`tenant_isolation:
-   passed`). **Limites restantes** : la migration d’une installation historique
-   doit suspendre l’ancienne Kustomization avant de basculer ; les credentials
-   du CP restent suffisants pour écrire le dépôt applicatif et pour créer les
-   objets de tenant (bornés par l’admission), pas pour le socle ; les identités
-   Infisical et la clé API restent partagées (risque 2).
+   passed`). Le layout à un seul dépôt n’est plus accepté à l’installation :
+   une installation historique doit créer le dépôt applicatif, y déplacer ses
+   projets et relancer `kuberpack install`. L’ancienne Kustomization globale est
+   suspendue avant la bascule. Les credentials du CP restent suffisants pour
+   écrire le dépôt applicatif et pour créer les objets de tenant (bornés par
+   l’admission), pas pour le socle.
 
 2. **Élevé — Secrets et autorisation par projet.** La clé API est administrateur
    global, l’identité/operator Infisical est partagé, et les manifestes utilisent

@@ -152,10 +152,10 @@ doit être vide (un README d'initialisation est accepté) et dédié à une seul
 installation. `--gitops-apps-root` place les projets dans un sous-dossier du
 dépôt applicatif ; sans lui, ils sont à la racine.
 
-Sans `--gitops-apps-url`, le layout historique à un seul dépôt reste supporté :
-la plateforme et les projets partagent `--gitops-root`. Ce mode est conservé
-pour les installations existantes ; une nouvelle installation doit séparer les
-deux dépôts.
+`--gitops-apps-url` est **requis** : la plateforme et les applications ne
+peuvent plus partager un dépôt. Une installation historique à un seul dépôt
+doit créer un dépôt applicatif, y déplacer ses projets, puis relancer
+`kuberpack install` avec les deux URLs.
 
 Avec les deux dépôts, l'installateur active l'isolation des projets. Le control
 plane crée pour chaque projet un namespace possédé, un ServiceAccount sans jeton

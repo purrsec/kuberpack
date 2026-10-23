@@ -116,17 +116,20 @@ func (c Config) Validate() error {
 	if !validHTTPURL(c.GitOpsURL) {
 		return fmt.Errorf("gitops URL must be HTTP(S), without embedded credentials")
 	}
-	if c.AppsURL != "" && !validHTTPURL(c.AppsURL) {
+	if c.AppsURL == "" {
+		return fmt.Errorf("an applications GitOps repository is required (--gitops-apps-url); the single-repository layout is no longer supported")
+	}
+	if !validHTTPURL(c.AppsURL) {
 		return fmt.Errorf("applications GitOps URL must be HTTP(S), without embedded credentials")
 	}
-	if c.AppsURL != "" && (c.AppsBranch == "" || strings.HasPrefix(c.AppsBranch, "-")) {
+	if c.AppsURL == c.GitOpsURL {
+		return fmt.Errorf("the applications repository must differ from the platform repository")
+	}
+	if c.AppsBranch == "" || strings.HasPrefix(c.AppsBranch, "-") {
 		return fmt.Errorf("applications GitOps branch is required")
 	}
 	if !validRelativeRoot(c.AppsRoot) {
 		return fmt.Errorf("applications root must be a relative GitOps directory without traversal")
-	}
-	if c.AppsURL != "" && c.AppsURL == c.GitOpsURL && c.AppsRoot != c.Root {
-		return fmt.Errorf("a single GitOps repository must use the same root for the platform and its applications")
 	}
 	if c.GitOpsBranch == "" || strings.HasPrefix(c.GitOpsBranch, "-") {
 		return fmt.Errorf("gitops branch is required")

@@ -31,7 +31,7 @@ func TestSplitApplicationsRepositoryKeepsThePlatformChartOutOfReach(t *testing.T
 	}
 }
 
-func TestSingleRepositoryKeepsItsHistoricalRoot(t *testing.T) {
+func TestSingleRepositoryIsRefused(t *testing.T) {
 	c := Config{
 		Cluster:        "demo",
 		Namespace:      "kuberpack",
@@ -47,18 +47,12 @@ func TestSingleRepositoryKeepsItsHistoricalRoot(t *testing.T) {
 		Image:          "example.test/kuberpack:test",
 		BuilderImage:   "example.test/builder:test",
 	}
-	if c.SplitApps() {
-		t.Fatal("the same repository must keep the historical layout")
-	}
-	if err := c.Validate(); err != nil {
-		t.Fatalf("single repository configuration must be valid: %v", err)
-	}
-	if got, want := c.ProjectsPath(), "clusters/demo/kuberpack/projects"; got != want {
-		t.Fatalf("projects path = %q, want %q", got, want)
+	if err := c.Validate(); err == nil {
+		t.Fatal("the single-repository layout must be refused")
 	}
 }
 
-func TestSingleRepositoryCannotUseTwoDifferentRoots(t *testing.T) {
+func TestSingleRepositoryWithDifferentRootsIsRefused(t *testing.T) {
 	c := Config{
 		Cluster:        "demo",
 		Namespace:      "kuberpack",
@@ -88,6 +82,8 @@ func TestBuilderPlacementIsOptionalAndValidated(t *testing.T) {
 			GitProvider:    "forgejo",
 			GitOpsURL:      "https://git.example.test/team/platform.git",
 			GitOpsBranch:   "main",
+			AppsURL:        "https://git.example.test/team/applications.git",
+			AppsBranch:     "main",
 			Root:           "clusters/demo/kuberpack",
 			Source:         "kuberpack-gitops",
 			Image:          "example.test/kuberpack:test",

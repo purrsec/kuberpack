@@ -231,7 +231,7 @@ func TestInstallerPassesTheBuildPlacementToTheChart(t *testing.T) {
 	base := setup.Config{
 		Cluster: "demo", Namespace: "kuberpack", BuildNamespace: "kuberpack-build",
 		GitProvider: "forgejo", GitURL: "https://git.example.test", GitOpsURL: "https://git.example.test/team/platform.git",
-		GitOpsBranch: "main", Root: "clusters/demo/kuberpack", Source: "kuberpack-gitops",
+		GitOpsBranch: "main", AppsURL: "https://git.example.test/team/applications.git", AppsBranch: "main", Root: "clusters/demo/kuberpack", Source: "kuberpack-gitops",
 		Image: "example.test/kuberpack:test", BuilderImage: "example.test/builder:test",
 	}
 	i := &installation{c: base, kube: fake.NewSimpleClientset()}

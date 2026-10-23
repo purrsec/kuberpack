@@ -129,20 +129,17 @@ func runInstall(args []string) error {
 	if c.Root == "" {
 		c.Root = "clusters/" + c.Cluster + "/kuberpack"
 	}
-	// A single repository keeps the historical layout. A separate
-	// applications repository has its own root, usually its root directory.
-	if c.AppsURL == "" {
-		c.AppsURL = c.GitOpsURL
-		c.AppsRoot = c.Root
-	}
 	if c.AppsBranch == "" {
 		c.AppsBranch = c.GitOpsBranch
 	}
-	if c.SplitApps() && c.AppsRoot == c.Root {
-		c.AppsRoot = ""
+	if c.AppsURL == "" {
+		return fmt.Errorf("--gitops-apps-url is required: the platform and applications repositories must differ")
 	}
-	if !c.SplitApps() && c.AppsRoot == "" {
-		c.AppsRoot = c.Root
+	if c.AppsURL == c.GitOpsURL {
+		return fmt.Errorf("--gitops-apps-url must differ from --gitops-url")
+	}
+	if c.AppsRoot == c.Root {
+		c.AppsRoot = ""
 	}
 	if c.GitURL == "" {
 		c.GitURL = forgeBaseURL(c.GitOpsURL)
