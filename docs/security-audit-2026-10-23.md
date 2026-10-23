@@ -152,6 +152,18 @@ sont capturées en mémoire et ne sont pas imprimées.
    compris) et choisir les dépôts, images ou chemins Infisical qu’il référence :
    il borne l’API, pas un auteur de manifeste hostile.
 
+   **Progression — périmètre Infisical par projet disponible.** Un manifeste
+   peut déclarer `infisical.project_id`, `infisical.auth_ref` et
+   `infisical.path`; le compilateur génère alors l’`InfisicalStaticSecret` avec
+   ces valeurs au lieu du projet/chemin/identité partagés. L’administrateur
+   crée le projet et l’identité Infisical et accorde l’opérateur ; Kuberpack ne
+   détient aucun jeton d’administration Infisical. Le mode partagé reste le
+   défaut pour les manifestes existants : une installation qui n’adopte pas ce
+   bloc n’a pas de frontière de secrets entre projets. Un CP compromis peut
+   référencer une autre `auth_ref` déjà existante : l’administrateur doit
+   créer une identité par projet et ne pas laisser d’identité plus large
+   disponible.
+
 3. **Élevé — Ownership des namespaces externes.** Le compilateur empêche le
    partage entre projets Kuberpack et protège les namespaces connus/configurés.
    Il ne prouve pas qu’un namespace arbitraire préexistant est libre ou qu’aucun
