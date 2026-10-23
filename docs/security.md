@@ -112,12 +112,36 @@ reste l’addon du même namespace). Si l’API du cluster est un endpoint hors 
 réseau des pods, la règle basée sur `kube-system` peut ne pas la couvrir
 selon le CNI ; ce point doit être validé sur EKS/GKE.
 
+## Moteur réseau et preuve d'application
+
 Les policies sont additives et exigent un CNI qui les applique réellement.
-Le banc Docker valide k3s/kube-router ; EKS/GKE nécessitent leur propre validation.
-`internet: true` permet de joindre le domaine public d’un autre projet. Les
-policies natives ne couvrent pas tous les flux avec le nœud ou localhost.
-Les namespaces de contrôleurs externes personnalisés doivent être exclus du
-provisionnement. Les Helmfiles indépendants restent sous leur propre gestion.
+Un objet `NetworkPolicy` visible dans l'API ne prouve rien : le kubelet ne
+l'applique pas. `internet: true` permet de joindre le domaine public d'un autre
+projet. Les policies natives ne couvrent pas tous les flux avec le nœud ou
+localhost. Les namespaces de contrôleurs externes personnalisés doivent être
+exclus du provisionnement. Les Helmfiles indépendants restent sous leur propre
+gestion.
+
+`kuberpack install` détecte le moteur réseau dans `kube-system` (k3s/kube-router,
+Calico, Cilium/GKE Dataplane V2, AWS VPC CNI, Azure NPM) et affiche ses preuves.
+Si le moteur est inconnu, désactivé ou en mode audit, l'installateur affiche un
+avertissement explicite : l'application des policies n'est pas établie.
+
+`kuberpack doctor network --context <contexte> --yes` va plus loin : il crée
+un namespace temporaire, un pod cible, des pods clients et une policy
+deny-all, observe un refus réel, puis supprime le namespace. Le contexte est
+obligatoire et toute probe exige `--yes`, avec un message renforcé pour un
+contexte de production. La commande ne lit aucun Secret et refuse de conclure
+si le contrôle positif échoue. Elle reste une preuve ponctuelle : une policy
+additive peut rouvrir le réseau après le test.
+
+La matrice détaillée (EKS VPC CNI standard/strict, GKE Dataplane V2/Calico,
+k3s/kube-router), les limites et les commandes manuelles sont dans
+[network-matrix.md](network-matrix.md). Le banc Docker k3s `v1.37.1+k3s1` a
+exécuté `doctor network` le 23 octobre 2026 (joignable avant deny-all, bloqué
+après, namespace supprimé) en plus des scénarios de `security-smoke.py`.
+EKS, GKE et AKS n'ont pas été exécutés dans cette passe et restent à valider
+sur leurs clusters.
 
 ## Infisical
 

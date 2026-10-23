@@ -49,6 +49,7 @@ gérés par un Helmfile indépendant ne sont pas remplacés par cette passe.
 | Rendus des charts Infisical officiels épinglés | Scopes exacts et absence de jetons runtime vérifiés |
 | Parcours installation, secrets humains, réinstallation et Helmfile | Passent sur le banc Docker : `installation=ready`, `reinstall=passed`, `human_secret_upload=passed`, `application_secret_digest=matched`, `compile_idempotence=passed`, `helmfile_coexistence=passed`. Après la correction des intervalles Flux, une réinstallation ciblée `--install-only` passe également. |
 | Connexions réellement permises/refusées entre applications | Voisin déclaré, pod déclaré, DNS et listener auxiliaire autorisés ; port non déclaré, voisin non déclaré, sens inverse, autre service, autre projet et ingress sans egress source refusés. Infisical : web sans jeton, operator limité aux Secrets du projet, sans jeton Flux ni Secrets système. Les namespaces temporaires de ce test ont été supprimés. |
+| `doctor network` sur le banc k3s `v1.37.1+k3s1` | Moteur kube-router/k3s détecté ; contrôle positif joignable, puis deny-all bloqué, verdict « appliquée » ; namespace temporaire supprimé. Aucun Secret lu. |
 
 Le parcours d’installation a été rejoué avec un projet applicatif neuf
 (`security-install-20261023`) : le secret chargé par le CLI Infisical est
@@ -80,6 +81,8 @@ python3 testenv/scripts/install-smoke.py \
   --helmfile /tmp/helmfile
 python3 testenv/scripts/security-smoke.py \
   --kubeconfig "$HOME/.kube/k3s-test.yaml"
+go run ./cmd/kuberpack doctor network --context default \
+  --kubeconfig "$HOME/.kube/k3s-test.yaml" --yes
 ```
 
 Le projet `security-install-20261023` est la fixture du dernier passage ; un
@@ -159,6 +162,20 @@ sont capturées en mémoire et ne sont pas imprimées.
    workflow peut rouvrir le réseau. Internet autorisé permet d’atteindre une
    application publique d’un autre projet ; nœud et localhost gardent des
    exceptions au modèle natif.
+
+   **Progression — détection et probe livrées.** `kuberpack install` détecte
+   désormais le moteur réseau (k3s/kube-router, Calico, Cilium/GKE Dataplane V2,
+   AWS VPC CNI, Azure NPM) et avertit si l'application n'est pas établie.
+   `kuberpack doctor network --context <contexte> --yes` observe un refus réel
+   pod à pod dans un namespace temporaire, puis nettoie tout ; il refuse le
+   contexte implicite, exige `--yes` et ne lit aucun Secret. La
+   [matrice réseau](network-matrix.md) documente EKS VPC CNI standard/strict,
+   GKE Dataplane V2/Calico, k3s et les policies additives. La commande est
+   couverte par des tests unitaires avec fake client et a été rejouée sur le
+   banc Docker k3s `v1.37.1+k3s1` le 23 octobre 2026 (joignable avant deny-all,
+   bloqué après, namespace supprimé) ; EKS, GKE et AKS restent à valider sur
+   leurs clusters réels. Le mode standard d'EKS continue de n'isoler que les
+   pods sélectionnés, et une policy additive peut encore rouvrir le réseau.
 
 7. **Moyen — Rotation des secrets runtime.** Le replay sur l’application de test
    déjà lancée a montré qu’une nouvelle valeur synchronisée ne redémarre pas le

@@ -76,7 +76,12 @@ Les images peuvent être sélectionnées avec `--image`, `--builder-image` et
 `--buildkit-image` ; utiliser une version publiée correspondant au CLI,
 épinglée par digest en production. Les règles d’admission du builder exigent
 Kubernetes 1.30 ou plus récent et sont activées par défaut. Les NetworkPolicies
-des projets nécessitent un CNI qui les applique effectivement.
+des projets nécessitent un CNI qui les applique effectivement. L'installateur
+détecte le moteur réseau et affiche ses preuves ; si le moteur est inconnu ou
+désactivé, il avertit explicitement. Après l'installation, vérifier le trafic
+réel avec `kuberpack doctor network --context <contexte> --yes` (namespace
+temporaire, aucun Secret lu) et consulter la
+[matrice réseau](network-matrix.md).
 L'installateur prépare les Secrets de pull du control plane et du builder
 avec les identifiants du registre fourni, y compris pour leur premier
 démarrage sur des nœuds sans images préchargées.

@@ -53,6 +53,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "kuberpack: %v\n", err)
 			os.Exit(1)
 		}
+	case "doctor":
+		if err := runDoctor(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "kuberpack: %v\n", err)
+			os.Exit(1)
+		}
 	case "builder":
 		if _, err := buildexec.Run(context.Background(), buildexec.Request{
 			CloneURL:                os.Getenv("KUBERPACK_CLONE_URL"),
@@ -108,6 +113,7 @@ Usage:
   kuberpack app status [--json] <name>
   kuberpack app logs <name> [-f] [--tail N] [--since 10m] [--previous]
   kuberpack app builds|build-logs|redeploy [flags] <name>
+  kuberpack doctor network --context NAME [--detect-only | --yes]
   kuberpack builder           (inside a Kuberpack Kubernetes Job)
 
 promote:
@@ -143,6 +149,20 @@ project (KUBERPACK_API_TOKEN, KUBERPACK_API_URL):
   delete  --project name [--force]
 
   Compiles a project manifest into GitOps primitives.
+
+doctor network:
+  --context string        explicit Kubernetes context (required)
+  --kubeconfig string     kubeconfig path (default loading rules)
+  --detect-only           inspect the CNI and print manual commands; no writes
+  --yes                   confirm the temporary namespace and probe pods
+  --image string          busybox image reachable from the target cluster
+  --timeout duration      probe timeout (default 3m)
+
+  Refuses the implicit current context and requires --yes for any probe; a
+  production-looking context is called out explicitly. The probe creates a
+  target pod, client pods and a deny-all policy, observes real traffic, then
+  deletes its temporary namespace. It never reads a Secret. See
+  docs/network-matrix.md.
 
 serve (FORGEJO_TOKEN, KUBERPACK_API_TOKEN, KUBERPACK_BUILDER_IMAGE):
   POST /api/v1/projects      compile a project manifest (Bearer)

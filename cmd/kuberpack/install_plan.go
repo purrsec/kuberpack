@@ -12,6 +12,7 @@ import (
 	"time"
 
 	setup "git.host.bzh/pepe/kuberpack/internal/install"
+	"git.host.bzh/pepe/kuberpack/internal/netcheck"
 	"gopkg.in/yaml.v3"
 	"helm.sh/helm/v3/pkg/cli"
 	authv1 "k8s.io/api/authorization/v1"
@@ -44,6 +45,7 @@ type installation struct {
 	managedFlux   []byte
 	managedCharts []clusterService
 	controlValues map[string]any
+	network       *netcheck.Detection
 	ca            []byte
 }
 
@@ -96,6 +98,7 @@ func executeInstallation(ctx context.Context, c setup.Config, credentials instal
 		fmt.Printf("Cluster API: %s\nGitOps scope: %s\nStorageClass: %s\nIngressClass: %s\n", config.Host, c.Root, i.c.StorageClass, i.c.IngressClass)
 		fmt.Println("Plan: credentials → Flux → missing dependencies → Infisical bootstrap and access → GitOps platform → readiness and authenticated API check")
 		fmt.Println("Existing shared controllers and Helmfile releases are reused; no cluster-wide prune or resource adoption.")
+		i.printNetworkSummary()
 		return nil
 	}
 	if credentials.Git == "" {
@@ -139,6 +142,7 @@ func executeInstallation(ctx context.Context, c setup.Config, credentials instal
 		return err
 	}
 	fmt.Printf("Kuberpack installed. GitOps scope: %s\n", i.c.Root)
+	i.printNetworkSummary()
 	if i.c.Ingress {
 		scheme := "http"
 		if i.c.TLS {
@@ -164,6 +168,7 @@ func (i *installation) preflight(ctx context.Context) error {
 		return fmt.Errorf("Kubernetes API: %w", err)
 	}
 	fmt.Printf("Kubernetes %s at %s\n", version.GitVersion, i.config.Host)
+	i.detectNetwork(ctx)
 	access, err := i.kube.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, &authv1.SelfSubjectAccessReview{Spec: authv1.SelfSubjectAccessReviewSpec{ResourceAttributes: &authv1.ResourceAttributes{Group: "rbac.authorization.k8s.io", Resource: "clusterroles", Verb: "create"}}}, metav1.CreateOptions{})
 	if err != nil {
 		return err
