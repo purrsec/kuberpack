@@ -24,6 +24,7 @@ aussi certains Secrets de registre et ConfigMaps applicatifs dans le cluster.
 | [Vision](docs/vision.md) | Produit et principes |
 | [Architecture](docs/architecture.md) | Plans, sources de vérité, k3s |
 | [Carte de la codebase](docs/codebase.md) | Où vit chaque responsabilité, rôle des charts, trajets |
+| [Tests et gate de release](docs/testing.md) | Niveaux de test, contrat 3-4 min, release gate, nightly |
 | [Flux](docs/flows.md) | Enregistrement, production, previews |
 | [API](docs/api.md) | Contrat HTTP |
 | [Données](docs/data-model.md) | SQLite opérationnel |
