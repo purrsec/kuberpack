@@ -68,7 +68,10 @@ contrôle des images autorisées.
 
 BuildKit rootless garde des exceptions seccomp/AppArmor et utilise
 `--oci-worker-no-process-sandbox`. Cela n’est pas une sandbox forte pour du
-code hostile ; nœuds dédiés ou runtime isolé restent recommandés.
+code hostile. Un chemin opt-in existe : RuntimeClass gVisor/Kata et pool de
+nœuds dédié, configurés par l’installateur et épinglés par l’admission. Il
+n’est pas activé par défaut ; sans RuntimeClass, le noyau reste partagé. Voir
+[Isoler les builds](build-isolation.md).
 
 ## Réseau des apps
 

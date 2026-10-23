@@ -111,6 +111,24 @@ func runServe(args []string) error {
 		runner.BuildkitCPU = strings.TrimSpace(os.Getenv("KUBERPACK_BUILDKIT_CPU"))
 		runner.BuildkitMemory = strings.TrimSpace(os.Getenv("KUBERPACK_BUILDKIT_MEMORY"))
 		runner.BuildkitCache = strings.TrimSpace(os.Getenv("KUBERPACK_BUILDKIT_CACHE"))
+		// Le placement des builds est optionnel. Une valeur fournie est
+		// validée ici : le control plane refuse de démarrer plutôt que de
+		// créer des Jobs sur un nœud ou un runtime non prévus.
+		runtimeClass := strings.TrimSpace(os.Getenv("KUBERPACK_BUILDER_RUNTIME_CLASS"))
+		if err := builder.ValidateRuntimeClass(runtimeClass); err != nil {
+			return fmt.Errorf("KUBERPACK_BUILDER_RUNTIME_CLASS: %w", err)
+		}
+		runner.RuntimeClass = runtimeClass
+		selector, err := builder.ParseNodeSelector(os.Getenv("KUBERPACK_BUILDER_NODE_SELECTOR"))
+		if err != nil {
+			return fmt.Errorf("KUBERPACK_BUILDER_NODE_SELECTOR: %w", err)
+		}
+		runner.NodeSelector = selector
+		tolerations, err := builder.ParseTolerations(os.Getenv("KUBERPACK_BUILDER_TOLERATIONS"))
+		if err != nil {
+			return fmt.Errorf("KUBERPACK_BUILDER_TOLERATIONS: %w", err)
+		}
+		runner.Tolerations = tolerations
 		runner.AcceptedVulnerabilities = splitList(os.Getenv("KUBERPACK_TRIVY_IGNORE"))
 		runner.Timeout = *waitFor
 		jobBuilder = runner

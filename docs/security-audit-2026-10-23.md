@@ -138,9 +138,11 @@ sont capturées en mémoire et ne sont pas imprimées.
 4. **Élevé — Sandbox des builds.** BuildKit garde des exceptions rootless,
    `--oci-worker-no-process-sandbox` et le partage d’un noyau avec le cluster.
    L’admission réduit les possibilités du dispatcher ; elle ne protège pas
-   contre une faille du noyau ou de BuildKit. Prévoir des nœuds dédiés ou un
-   runtime isolé pour du code hostile. Les tags d’images doivent être épinglés
-   en production et les scopes effectifs des credentials vérifiés.
+   contre une faille du noyau ou de BuildKit. Un chemin opt-in (RuntimeClass
+   gVisor/Kata, pool de nœuds dédié, champs épinglés par l’admission) est
+   documenté dans [Isoler les builds](build-isolation.md) ; il n’est pas actif
+   par défaut et ne remplace pas cette limite. Les tags d’images doivent être
+   épinglés en production et les scopes effectifs des credentials vérifiés.
 
 5. **Moyen — Réseau des addons/helpers.** Le refus d’entrée du namespace et les
    policies des services sont actifs ; les pods des addons et leurs helpers

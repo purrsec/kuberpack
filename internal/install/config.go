@@ -2,11 +2,12 @@ package install
 
 import (
 	"fmt"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"net/url"
 	"path"
 	"strings"
 
+	"git.host.bzh/pepe/kuberpack/internal/builder"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
@@ -47,15 +48,24 @@ type Config struct {
 	BuilderMemory      string            `yaml:"builderMemory"`
 	BuildkitMemory     string            `yaml:"buildkitMemory"`
 	BuildkitImage      string            `yaml:"buildkitImage,omitempty"`
-	NodePort           int               `yaml:"nodePort,omitempty"`
-	WebhookURL         string            `yaml:"webhookURL,omitempty"`
-	PrivateBuildEgress bool              `yaml:"privateBuildEgress,omitempty"`
-	ClusterServices    bool              `yaml:"clusterServices"`
-	Infisical          bool              `yaml:"infisical"`
-	InfisicalHost      string            `yaml:"infisicalHost,omitempty"`
-	AdminEmail         string            `yaml:"adminEmail,omitempty"`
-	CAFile             string            `yaml:"-"`
-	Timeout            string            `yaml:"timeout"`
+	// BuilderRuntimeClass donne une sandbox aux Pods de build (gVisor,
+	// Kata). Vide conserve le runtime par défaut et le noyau partagé.
+	BuilderRuntimeClass string `yaml:"builderRuntimeClass,omitempty"`
+	// BuilderNodeSelector est un objet JSON de labels : il place les
+	// builds sur un pool de nœuds dédié. Vide garde le défaut historique.
+	BuilderNodeSelector string `yaml:"builderNodeSelector,omitempty"`
+	// BuilderTolerations est un tableau JSON de tolérances qui permet aux
+	// builds d'occuper le pool tainté. Vide garde le défaut historique.
+	BuilderTolerations string `yaml:"builderTolerations,omitempty"`
+	NodePort           int    `yaml:"nodePort,omitempty"`
+	WebhookURL         string `yaml:"webhookURL,omitempty"`
+	PrivateBuildEgress bool   `yaml:"privateBuildEgress,omitempty"`
+	ClusterServices    bool   `yaml:"clusterServices"`
+	Infisical          bool   `yaml:"infisical"`
+	InfisicalHost      string `yaml:"infisicalHost,omitempty"`
+	AdminEmail         string `yaml:"adminEmail,omitempty"`
+	CAFile             string `yaml:"-"`
+	Timeout            string `yaml:"timeout"`
 }
 
 // ProjectsPath is where project manifests live in the applications
@@ -147,6 +157,18 @@ func (c Config) Validate() error {
 				return fmt.Errorf("invalid builder memory quantity %q", quantity)
 			}
 		}
+	}
+	// Le placement des builds est optionnel, mais une valeur fournie est
+	// validée avant d'écrire le GitOps : un nom de RuntimeClass ou un label
+	// faux ne doit pas être découvert au premier build.
+	if err := builder.ValidateRuntimeClass(c.BuilderRuntimeClass); err != nil {
+		return fmt.Errorf("builder runtime class: %w", err)
+	}
+	if _, err := builder.ParseNodeSelector(c.BuilderNodeSelector); err != nil {
+		return fmt.Errorf("builder node selector: %w", err)
+	}
+	if _, err := builder.ParseTolerations(c.BuilderTolerations); err != nil {
+		return fmt.Errorf("builder tolerations: %w", err)
 	}
 	if c.GitProvider != "github" && c.GitProvider != "gitlab" && c.GitProvider != "forgejo" {
 		return fmt.Errorf("unknown git provider %q", c.GitProvider)

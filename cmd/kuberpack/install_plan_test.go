@@ -226,6 +226,46 @@ func TestInstallerGitOpsIsStableAfterFluxLabelsItsOwnedIssuer(t *testing.T) {
 	}
 }
 
+func TestInstallerPassesTheBuildPlacementToTheChart(t *testing.T) {
+	ctx := context.Background()
+	base := setup.Config{
+		Cluster: "demo", Namespace: "kuberpack", BuildNamespace: "kuberpack-build",
+		GitProvider: "forgejo", GitURL: "https://git.example.test", GitOpsURL: "https://git.example.test/team/platform.git",
+		GitOpsBranch: "main", Root: "clusters/demo/kuberpack", Source: "kuberpack-gitops",
+		Image: "example.test/kuberpack:test", BuilderImage: "example.test/builder:test",
+	}
+	i := &installation{c: base, kube: fake.NewSimpleClientset()}
+	values, err := i.platformValues(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, found := values["builderPlacement"]; found {
+		t.Fatal("le placement est écrit alors qu'aucune valeur n'est fournie")
+	}
+	i.c.BuilderRuntimeClass = "gvisor"
+	i.c.BuilderNodeSelector = `{"kuberpack.dev/build":"true"}`
+	i.c.BuilderTolerations = `[{"key":"dedicated","operator":"Equal","value":"build","effect":"NoSchedule"}]`
+	values, err = i.platformValues(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	placement, ok := values["builderPlacement"].(map[string]any)
+	if !ok {
+		t.Fatalf("placement absent des valeurs du chart: %#v", values["builderPlacement"])
+	}
+	if placement["runtimeClass"] != "gvisor" {
+		t.Fatalf("RuntimeClass non transmis: %#v", placement)
+	}
+	selector, ok := placement["nodeSelector"].(map[string]string)
+	if !ok || selector["kuberpack.dev/build"] != "true" {
+		t.Fatalf("sélecteur non transmis: %#v", placement["nodeSelector"])
+	}
+	tolerations, ok := placement["tolerations"].([]corev1.Toleration)
+	if !ok || len(tolerations) != 1 || tolerations[0].Effect != corev1.TaintEffectNoSchedule {
+		t.Fatalf("tolérances non transmises: %#v", placement["tolerations"])
+	}
+}
+
 func TestInstallerWaitsForNewConfigurationEvenWhenTheOldReleaseIsHealthy(t *testing.T) {
 	ctx := context.Background()
 	release := object("helm.toolkit.fluxcd.io/v2", "HelmRelease", "test", "kuberpack", map[string]any{"values": map[string]any{"image": "old-image"}})

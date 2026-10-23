@@ -84,6 +84,13 @@ Les limites mémoire initiales sont de 3 Gio pour le builder et son scan,
 et de 4 Gio pour BuildKit. Elles sont réglables avec `--builder-memory` et
 `--buildkit-memory` selon les nœuds disponibles.
 
+Le placement des builds est optionnel : `--builder-runtime-class` applique un
+RuntimeClass (gVisor, Kata) au Pod du build, `--builder-node-selector` et
+`--builder-tolerations` reçoivent du JSON pour réserver un pool de nœuds tainté.
+Vide, le comportement reste inchangé : runtime par défaut et nœuds `amd64`
+quelconques. L’installateur valide ces valeurs mais ne crée ni runtime, ni
+pool, ni taint. Voir [Isoler les builds](build-isolation.md).
+
 ## Les étapes
 
 1. Inspecter le cluster et vérifier que le dossier GitOps est dédié à cette

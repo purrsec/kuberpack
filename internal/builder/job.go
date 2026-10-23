@@ -88,6 +88,17 @@ type JobRunner struct {
 	BuilderMemory  string
 	BuildkitCPU    string
 	BuildkitMemory string
+	// RuntimeClass donne une sandbox au Pod du build (gVisor, Kata).
+	// Vide conserve le runtime par défaut : le build partage alors le
+	// noyau du cluster, comme avant ce réglage.
+	RuntimeClass string
+	// NodeSelector place les builds sur des nœuds dédiés. Le builder y
+	// ajoute toujours l'architecture par défaut.
+	NodeSelector map[string]string
+	// Tolerations permet aux builds d'occuper le pool tainté qui les
+	// accueille. Une tolérance sans clé est refusée : elle ouvrirait tous
+	// les taints du cluster.
+	Tolerations []corev1.Toleration
 	// AcceptedVulnerabilities are the CVE the platform accepts. A finding
 	// of the scan that is not in this list stops the build.
 	AcceptedVulnerabilities []string
@@ -396,6 +407,21 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 	if buildkitImage == "" {
 		buildkitImage = defaultBuildkitImage
 	}
+	// Le placement est validé ici aussi : un appelant qui construit un
+	// JobRunner directement ne doit pas pouvoir placer un build sur un
+	// nœud arbitraire avec un RuntimeClass inconnu.
+	runtimeClass := strings.TrimSpace(r.RuntimeClass)
+	if err := ValidateRuntimeClass(runtimeClass); err != nil {
+		return nil, err
+	}
+	nodeSelector, err := NormalizeNodeSelector(r.NodeSelector)
+	if err != nil {
+		return nil, err
+	}
+	tolerations, err := NormalizeTolerations(r.Tolerations)
+	if err != nil {
+		return nil, err
+	}
 	deadline := int64(3600)
 	if r.Timeout > 0 && r.Timeout < time.Hour {
 		deadline = int64(r.Timeout.Seconds())
@@ -463,6 +489,10 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 	if allow := strings.TrimSpace(req.EgressAllow); allow != "" {
 		env = append(env, corev1.EnvVar{Name: "KUBERPACK_EGRESS_ALLOW", Value: allow})
 	}
+	var runtimeClassName *string
+	if runtimeClass != "" {
+		runtimeClassName = &runtimeClass
+	}
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:    namespace,
@@ -491,7 +521,9 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 				}},
 				Spec: corev1.PodSpec{
 					RestartPolicy:                corev1.RestartPolicyNever,
-					NodeSelector:                 map[string]string{"kubernetes.io/arch": "amd64"},
+					NodeSelector:                 nodeSelector,
+					Tolerations:                  tolerations,
+					RuntimeClassName:             runtimeClassName,
 					ServiceAccountName:           "kuberpack-build",
 					AutomountServiceAccountToken: &never,
 					ImagePullSecrets:             []corev1.LocalObjectReference{{Name: pullSecret}},

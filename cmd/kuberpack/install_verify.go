@@ -9,8 +9,10 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
+	"git.host.bzh/pepe/kuberpack/internal/builder"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -97,7 +99,23 @@ func (i *installation) platformValues(ctx context.Context) (map[string]any, erro
 		gitopsURL, gitopsBranch = i.c.AppsURL, i.c.AppsBranch
 		appsDir = i.c.ProjectsPath()
 	}
-	return map[string]any{
+	// Le placement des builds est optionnel. Vide, il n'est pas écrit dans
+	// les valeurs : le chart garde exactement ses défauts historiques.
+	placement := map[string]any{}
+	if runtimeClass := strings.TrimSpace(i.c.BuilderRuntimeClass); runtimeClass != "" {
+		placement["runtimeClass"] = runtimeClass
+	}
+	if selector, err := builder.ParseNodeSelector(i.c.BuilderNodeSelector); err != nil {
+		return nil, err
+	} else if len(selector) > 0 {
+		placement["nodeSelector"] = selector
+	}
+	if tolerations, err := builder.ParseTolerations(i.c.BuilderTolerations); err != nil {
+		return nil, err
+	} else if len(tolerations) > 0 {
+		placement["tolerations"] = tolerations
+	}
+	values := map[string]any{
 		"image": i.c.Image, "builderImage": i.c.BuilderImage, "buildNamespace": i.c.BuildNamespace, "storageClass": i.c.StorageClass,
 		"imagePullSecrets": []any{map[string]any{"name": "kuberpack-pull"}},
 		"builderResources": map[string]any{"cpu": "2", "memory": i.c.BuilderMemory}, "buildkitResources": map[string]any{"cpu": "2", "memory": i.c.BuildkitMemory},
@@ -113,7 +131,11 @@ func (i *installation) platformValues(ctx context.Context) (map[string]any, erro
 		"nodePort":           map[string]any{"enabled": i.c.NodePort != 0, "port": i.c.NodePort},
 		"buildNetworkPolicy": map[string]any{"enabled": !i.c.PrivateBuildEgress}, "tenantIsolation": i.c.SplitApps(), "extraEnv": env,
 		"buildAdmission": buildAdmission,
-	}, nil
+	}
+	if len(placement) > 0 {
+		values["builderPlacement"] = placement
+	}
+	return values, nil
 }
 
 func (i *installation) verify(ctx context.Context) error {

@@ -3,6 +3,10 @@
 {{- fail "builder isolation requires Kubernetes >= 1.30 with ValidatingAdmissionPolicy" }}
 {{- end }}
 {{- $root := . }}
+{{- $buildNodeSelector := dict "kubernetes.io/arch" "amd64" }}
+{{- range $key, $value := $root.Values.builderPlacement.nodeSelector }}
+{{- $_ := set $buildNodeSelector $key $value }}
+{{- end }}
 {{- range $resource := list "jobs" "pods" }}
 {{- $name := printf "%s-kuberpack-build-%s" $root.Release.Namespace $resource }}
 apiVersion: admissionregistration.k8s.io/v1
@@ -36,6 +40,36 @@ spec:
         (!has(variables.p.shareProcessNamespace) || !variables.p.shareProcessNamespace) &&
         (!has(variables.p.ephemeralContainers) || variables.p.ephemeralContainers.size() == 0)
       message: Builds must use their unprivileged identity without a token or host namespaces
+      reason: Forbidden
+    {{- if $root.Values.builderPlacement.runtimeClass }}
+    - expression: >-
+        has(variables.p.runtimeClassName) &&
+        variables.p.runtimeClassName == {{ $root.Values.builderPlacement.runtimeClass | toJson }}
+      message: Builds must use the RuntimeClass configured for the build pool
+      reason: Forbidden
+    {{- else }}
+    - expression: >-
+        (!has(variables.p.runtimeClassName) || variables.p.runtimeClassName == '')
+      message: Builds must not choose another RuntimeClass
+      reason: Forbidden
+    {{- end }}
+    - expression: >-
+        has(variables.p.nodeSelector) &&
+        variables.p.nodeSelector == {{ $buildNodeSelector | toJson }}
+      message: Builds must run on the nodes reserved for the build pool
+      reason: Forbidden
+    - expression: >-
+        (!has(variables.p.tolerations) ||
+         (
+           variables.p.tolerations.size() <= 16 &&
+           variables.p.tolerations.all(t,
+             has(t.key) && t.key != '' &&
+             (!has(t.operator) || t.operator == 'Equal' || t.operator == 'Exists') &&
+             (!has(t.effect) || t.effect == '' || t.effect == 'NoSchedule' || t.effect == 'PreferNoSchedule' || t.effect == 'NoExecute') &&
+             (!has(t.tolerationSeconds) || (has(t.effect) && t.effect == 'NoExecute'))
+           )
+         ))
+      message: Build tolerations must stay bounded and cannot tolerate every taint
       reason: Forbidden
     - expression: >-
         has(variables.p.securityContext) &&

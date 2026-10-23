@@ -78,3 +78,58 @@ func TestSingleRepositoryCannotUseTwoDifferentRoots(t *testing.T) {
 		t.Fatal("a single repository with two roots must be refused")
 	}
 }
+
+func TestBuilderPlacementIsOptionalAndValidated(t *testing.T) {
+	base := func() Config {
+		return Config{
+			Cluster:        "demo",
+			Namespace:      "kuberpack",
+			BuildNamespace: "kuberpack-build",
+			GitProvider:    "forgejo",
+			GitOpsURL:      "https://git.example.test/team/platform.git",
+			GitOpsBranch:   "main",
+			Root:           "clusters/demo/kuberpack",
+			Source:         "kuberpack-gitops",
+			Image:          "example.test/kuberpack:test",
+			BuilderImage:   "example.test/builder:test",
+		}
+	}
+	// Le défaut ne change pas : aucune isolation imposée.
+	if err := base().Validate(); err != nil {
+		t.Fatalf("une installation sans placement doit rester valide: %v", err)
+	}
+	valid := base()
+	valid.BuilderRuntimeClass = "gvisor"
+	valid.BuilderNodeSelector = `{"kuberpack.dev/build":"true"}`
+	valid.BuilderTolerations = `[{"key":"dedicated","operator":"Equal","value":"build","effect":"NoSchedule"}]`
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("un placement valide est refusé: %v", err)
+	}
+	cases := []struct {
+		name      string
+		configure func(*Config)
+	}{
+		{"RuntimeClass avec espace", func(c *Config) { c.BuilderRuntimeClass = "gvisor sandbox" }},
+		{"RuntimeClass avec chemin", func(c *Config) { c.BuilderRuntimeClass = "pools/gvisor" }},
+		{"sélecteur qui n'est pas un objet", func(c *Config) { c.BuilderNodeSelector = `["kuberpack.dev/build"]` }},
+		{"label de nœud invalide", func(c *Config) { c.BuilderNodeSelector = `{"bad key":"true"}` }},
+		{"tolérance qui accepte tous les taints", func(c *Config) {
+			c.BuilderTolerations = `[{"operator":"Exists"}]`
+		}},
+		{"tolérance avec effet inconnu", func(c *Config) {
+			c.BuilderTolerations = `[{"key":"dedicated","operator":"Exists","effect":"Sometimes"}]`
+		}},
+		{"tolérance avec champ inconnu", func(c *Config) {
+			c.BuilderTolerations = `[{"key":"dedicated","operator":"Exists","surprise":true}]`
+		}},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			c := base()
+			test.configure(&c)
+			if err := c.Validate(); err == nil {
+				t.Fatal("configuration de placement invalide acceptée")
+			}
+		})
+	}
+}

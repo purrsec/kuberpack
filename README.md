@@ -27,6 +27,7 @@ aussi certains Secrets de registre et ConfigMaps applicatifs dans le cluster.
 | [API](docs/api.md) | Contrat HTTP |
 | [Données](docs/data-model.md) | SQLite opérationnel |
 | [Builder](docs/builder.md) | Stratégies, tags, scans |
+| [Isolation des builds](docs/build-isolation.md) | RuntimeClass, pool dédié, limites |
 | [Stratégies de build](docs/strategies.md) | `auto` / `uv` / `railpack` : Railpack exécute toujours |
 | [Sécurité](docs/security.md) | Tokens, webhooks, runtime |
 | [Erreurs](docs/errors.md) | Comportement en échec |

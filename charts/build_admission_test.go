@@ -114,6 +114,54 @@ func TestBuildAdmissionRequiresSupportedAPIServer(t *testing.T) {
 	}
 }
 
+// Le chart doit transmettre le placement au control plane et l'épingler dans
+// l'admission. Sans évaluation CEL locale, le test vérifie le rendu exact des
+// deux côtés : un écart ferait refuser les Jobs légitimes.
+func TestBuildPlacementIsRenderedOnBothSides(t *testing.T) {
+	chart, err := loader.Load("kuberpack")
+	if err != nil {
+		t.Fatal(err)
+	}
+	values, err := chartutil.ToRenderValues(chart, map[string]any{
+		"builderImage": admissionTestBuilderImage, "buildNamespace": "build",
+		"builderPlacement": map[string]any{
+			"runtimeClass": "gvisor",
+			"nodeSelector": map[string]any{"kuberpack.dev/build": "true"},
+			"tolerations": []any{map[string]any{
+				"key": "dedicated", "operator": "Equal", "value": "build", "effect": "NoSchedule",
+			}},
+		},
+	}, chartutil.ReleaseOptions{Name: "kuberpack", Namespace: "control", IsInstall: true}, &chartutil.Capabilities{KubeVersion: chartutil.KubeVersion{Version: "v1.37.0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := engine.Render(chart, values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"KUBERPACK_BUILDER_RUNTIME_CLASS",
+		`value: "gvisor"`,
+		"KUBERPACK_BUILDER_NODE_SELECTOR",
+		`value: "{\"kuberpack.dev/build\":\"true\"}"`,
+		"KUBERPACK_BUILDER_TOLERATIONS",
+	} {
+		if !strings.Contains(files["kuberpack/templates/deployment.yaml"], want) {
+			t.Errorf("le control plane ne reçoit pas le placement: %s", want)
+		}
+	}
+	for _, want := range []string{
+		`variables.p.runtimeClassName == "gvisor"`,
+		`variables.p.nodeSelector == {"kubernetes.io/arch":"amd64","kuberpack.dev/build":"true"}`,
+		"variables.p.tolerations.size() <= 16",
+		"has(t.key) && t.key != ''",
+	} {
+		if !strings.Contains(files["kuberpack/templates/build-admission.yaml"], want) {
+			t.Errorf("l'admission n'épingle pas le placement: %s", want)
+		}
+	}
+}
+
 // This opt-in test talks only to the disposable Docker cluster. Test objects
 // are submitted with dry-run, so no untrusted container starts. No Secret is
 // read or created; the admission assertions use only names of fake credentials.
@@ -304,6 +352,13 @@ func buildAdmissionAttacks() []buildAdmissionAttack {
 		{"host PID", func(p *corev1.PodSpec) { p.HostPID = true }},
 		{"host IPC", func(p *corev1.PodSpec) { p.HostIPC = true }},
 		{"shared process namespace", func(p *corev1.PodSpec) { p.ShareProcessNamespace = ptr.To(true) }},
+		{"another runtime class", func(p *corev1.PodSpec) { p.RuntimeClassName = ptr.To("runc") }},
+		{"another node pool", func(p *corev1.PodSpec) {
+			p.NodeSelector = map[string]string{"kubernetes.io/arch": "arm64"}
+		}},
+		{"wildcard toleration", func(p *corev1.PodSpec) {
+			p.Tolerations = []corev1.Toleration{{Operator: corev1.TolerationOpExists}}
+		}},
 		{"another service account", func(p *corev1.PodSpec) { p.ServiceAccountName = "default" }},
 		{"automount token", func(p *corev1.PodSpec) { p.AutomountServiceAccountToken = ptr.To(true) }},
 		{"implicit automount token", func(p *corev1.PodSpec) { p.AutomountServiceAccountToken = nil }},

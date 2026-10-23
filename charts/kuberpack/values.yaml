@@ -9,6 +9,18 @@ builderImage: ghcr.io/purrsec/kuberpack-builder:latest
 buildAdmission:
   enabled: true
   buildkitImage: docker.io/moby/buildkit:v0.33.0-rootless@sha256:80b15f0735e87bab7bf59ec4d695dfb4a7cfb25521cf56dc75d6f256285b63ef
+# Placement et sandbox des Pods de build. Vide par défaut : les builds
+# partagent le noyau du cluster et peuvent démarrer sur n'importe quel nœud
+# amd64. Renseigner ces valeurs n'installe ni RuntimeClass ni pool de nœuds ;
+# l'opérateur les crée et les taint lui-même.
+builderPlacement:
+  # RuntimeClass (gVisor, Kata) appliqué aux builds. Vide garde runc.
+  runtimeClass: ""
+  # Labels supplémentaires du pool de builds. Le Job ajoute toujours
+  # kubernetes.io/arch=amd64, sauf si ce label est remplacé ici.
+  nodeSelector: {}
+  # Tolérances du pool tainté, par exemple pour dedicated=build:NoSchedule.
+  tolerations: []
 # The git forge: forgejo, github or gitlab.
 gitProvider: forgejo
 gitURL: https://git.example.com

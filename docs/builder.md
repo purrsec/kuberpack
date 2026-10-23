@@ -49,6 +49,20 @@ Le builder se configure avec `KUBERPACK_BUILDER_IMAGE` sur `serve` (`ghcr.io/pur
 
 `KUBERPACK_BUILDKIT_IMAGE` remplace l’image du sidecar BuildKit rootless (par défaut `moby/buildkit:v0.33.0-rootless` épinglé par digest). Utile pour un miroir, une image interne ou une CA privée : le sidecar pousse et tire le cache de build dans le registre OCI, il doit donc faire confiance au certificat du registre.
 
+## Isolation optionnelle
+
+Par défaut, le Pod du build partage le noyau du cluster et peut démarrer sur
+n’importe quel nœud `amd64`. Pour du code hostile, l’opérateur peut fournir un
+`RuntimeClass` (gVisor, Kata), un pool de nœuds dédié et ses tolérances. Le Job
+porte alors `spec.template.spec.runtimeClassName`, `nodeSelector` et
+`tolerations`. Ces réglages ne sont pas activés par défaut et n’installent pas
+le runtime ni le pool : voir [Isoler les builds](build-isolation.md).
+
+Côté control plane, les variables correspondantes sont
+`KUBERPACK_BUILDER_RUNTIME_CLASS`, `KUBERPACK_BUILDER_NODE_SELECTOR` (JSON) et
+`KUBERPACK_BUILDER_TOLERATIONS` (JSON). Une valeur invalide empêche `serve` de
+démarrer ; une valeur vide garde le comportement historique.
+
 Le nom du Job est stable par livraison webhook : un redémarrage du control plane ne déclenche pas un second build. En revanche, un Job **en échec** est supprimé et recréé au retry, sinon il bloquerait la reprise du même commit jusqu’à son TTL.
 
 `serve` exige `KUBERPACK_BUILDER_IMAGE` et lit uniquement le tag `sha-<commit>`. Le builder ne committe jamais le dépôt GitOps applicatif.
