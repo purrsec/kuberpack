@@ -3,12 +3,18 @@
 ## Verdict
 
 La passe corrige des chemins d’injection, des fuites de credentials et des
-permissions excessives. Elle ne permet pas de qualifier Kuberpack de plateforme
-multi-tenant isolant des administrateurs ou des auteurs de manifestes hostiles.
+permissions excessives. Le risque **CP compromis → écriture GitOps → Flux
+privilégié** est désormais borné : le CP n’écrit plus le dépôt du socle, et
+Flux applique chaque projet avec un ServiceAccount de tenant limité à son
+namespace. Un CP compromis ne peut plus atteindre les droits du cluster ni les
+Secrets de la plateforme.
 
-Le risque principal reste **CP compromis → écriture GitOps → Flux privilégié**.
-Retirer le shell et limiter le RBAC direct du CP ne supprime pas ce pouvoir
-indirect. Le projet/chemin Infisical et la clé API restent également partagés.
+Kuberpack reste **mono-tenant par défaut** : le projet/chemin Infisical est
+partagé tant que l’administrateur n’adopte pas `--require-project-secrets` et
+ne provisionne pas un projet/identité par projet. Les jetons API peuvent être
+limités à un projet, mais le jeton global reste administrateur. Les risques
+restants sont documentés ci-dessous ; ils demandent des décisions
+d’exploitation ou des clusters externes, pas seulement du code.
 
 Le VPS a été arrêté par l’utilisateur. La validation de cette reprise utilise
 uniquement le Docker local, Forgejo et k3s `v1.37.1+k3s1` à `172.29.90.11`.
