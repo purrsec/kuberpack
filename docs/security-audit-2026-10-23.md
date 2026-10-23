@@ -137,6 +137,21 @@ sont capturées en mémoire et ne sont pas imprimées.
    avec une migration explicite des clés existantes. Un préfixe de chemin seul
    n’est pas une restriction si l’identité peut encore lire les autres chemins.
 
+   **Progression — jetons API de projet livrés.** `POST/GET/DELETE
+   /api/v1/tokens` administrent des jetons stockés en SQLite : seul le SHA-256
+   du secret `kp_<id>_<secret>` est conservé, le secret n’est affiché qu’à la
+   création, la comparaison est en temps constant et la révocation/expiration
+   est immédiate. Un jeton de projet ne voit que ses apps, builds, logs et
+   projets, ne peut compiler ou supprimer que son projet, et les routes de
+   gestion des jetons restent réservées à l’administrateur ;
+   `KUBERPACK_API_TOKEN` continue de fonctionner comme avant. **Limites** :
+   l’identité et le projet/chemin Infisical restent partagés, les webhooks HMAC
+   par application ne sont pas concernés, et il n’existe ni quota ni anti-rejeu
+   par jeton. Un jeton administrateur créé par l’API équivaut au jeton global.
+   Un jeton de projet peut réécrire le manifeste de son projet (namespace
+   compris) et choisir les dépôts, images ou chemins Infisical qu’il référence :
+   il borne l’API, pas un auteur de manifeste hostile.
+
 3. **Élevé — Ownership des namespaces externes.** Le compilateur empêche le
    partage entre projets Kuberpack et protège les namespaces connus/configurés.
    Il ne prouve pas qu’un namespace arbitraire préexistant est libre ou qu’aucun

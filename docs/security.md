@@ -3,9 +3,11 @@
 ## Frontières de confiance
 
 Kuberpack gère les déploiements au nom d’un administrateur. Les namespaces et
-NetworkPolicies isolent les workloads ; la clé API reste administrateur global.
-L’[audit du 23 octobre 2026](security-audit-2026-10-23.md) distingue les protections
-vérifiées des risques restant à traiter.
+NetworkPolicies isolent les workloads. La clé API globale reste administratrice ;
+des **jetons limités à un projet** peuvent la remplacer pour un usage restreint
+(CI, développeur), sans isoler pour autant les identités ou chemins Infisical
+(risque 2 de l’audit). L’[audit du 23 octobre 2026](security-audit-2026-10-23.md)
+distingue les protections vérifiées des risques restant à traiter.
 
 | Credential | Usage attendu | Interdit |
 | --- | --- | --- |
@@ -13,6 +15,7 @@ vérifiées des risques restant à traiter.
 | `KUBERPACK_BUILDER_GIT_TOKEN` | Lecture des sources privées ; optionnel pour les sources publiques | Écriture des sources ou du GitOps |
 | `KUBERPACK_REGISTRY_TOKEN` | Push/pull des images autorisées | Écriture Git, administration Kubernetes |
 | `KUBERPACK_API_TOKEN` | Administration de Kuberpack | Réutilisation d’un credential de forge/registre |
+| Jeton API de projet (`kp_...`) | Lecture et pilotage d’un seul projet | Administration, lecture des autres projets |
 
 L’installateur refuse les credentials identiques. Les builds refusent par défaut
 un credential correspondant au CP. Cela ne prouve pas les scopes réels d’un
@@ -41,7 +44,32 @@ Les bots de dépendances (Renovate, etc.) ne gèrent pas les images que Kuberpac
 La clé API est comparée en temps constant, avant lecture du corps. Sans clé
 explicite, les routes administratives restent fermées. Les corps JSON/webhooks
 et les lectures de logs sont bornés ; les streams ont un plafond de connexions
-et un délai d’écriture. Il n’existe pas encore de droits API par projet.
+et un délai d’écriture.
+
+## Jetons API
+
+`KUBERPACK_API_TOKEN` reste le jeton administrateur global. Des jetons
+supplémentaires, administrateurs ou limités à un projet, vivent dans la table
+`api_tokens` : nom, projet, rôle, dates de création, de dernière utilisation,
+d’expiration et de révocation. Seule l’empreinte **SHA-256** du secret est
+stockée ; le jeton `kp_<id>_<secret>` n’est affiché qu’à la création, jamais
+dans une liste, une réponse ultérieure ou un journal. La comparaison se fait en
+temps constant sur l’empreinte, puis l’état du jeton est vérifié ; un jeton
+inconnu, expiré ou révoqué répond `401` sans distinction.
+
+Un jeton de projet ne voit que les apps de son projet et ne peut compiler ou
+supprimer que ce projet ; les routes `/api/v1/tokens` restent réservées à
+l’administrateur. Une app d’un autre projet répond `404`. **Limites** : le jeton
+ne crée pas d’isolation Infisical (projet/chemin et identité partagés, risque 2),
+ne change pas les webhooks HMAC par application, et il n’existe ni quota ni
+anti-rejeu par jeton. Un jeton administrateur créé par l’API a les mêmes
+pouvoirs que `KUBERPACK_API_TOKEN` ; sa compromission vaut celle du jeton global.
+
+Un jeton de projet autorise la réécriture du manifeste de **son** projet
+(namespace, services, addons, politiques). Ce n’est donc pas une frontière
+contre un auteur de manifeste hostile : il ne restreint ni les dépôts sources,
+ni les images, ni les chemins Infisical que ce manifeste référence, et il ne
+remplace pas la séparation d’identités prévue par le risque 2.
 
 ## Pull requests
 

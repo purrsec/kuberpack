@@ -14,9 +14,16 @@ import (
 )
 
 func (s *Server) listBuilds(w http.ResponseWriter, r *http.Request) {
-	app, err := s.cfg.Store.AppByName(r.Context(), r.PathValue("name"))
+	principal, _ := principalFrom(r.Context())
+	name := r.PathValue("name")
+	app, err := s.cfg.Store.AppByName(r.Context(), name)
 	if errors.Is(err, store.ErrNotFound) {
-		if _, imageErr := s.cfg.Store.ImageAppByName(r.Context(), r.PathValue("name")); imageErr == nil {
+		imageApp, imageErr := s.cfg.Store.ImageAppByName(r.Context(), name)
+		if imageErr == nil {
+			if !principal.allowsApp(imageApp) {
+				appNotFound(w)
+				return
+			}
 			writeJSON(w, http.StatusOK, map[string]any{"builds": []any{}})
 			return
 		}
@@ -25,6 +32,10 @@ func (s *Server) listBuilds(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !principal.allowsApp(app) {
+		appNotFound(w)
 		return
 	}
 	builds, err := s.cfg.Store.ListBuilds(r.Context(), app.ID)
@@ -40,9 +51,16 @@ func (s *Server) listBuilds(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) redeployApp(w http.ResponseWriter, r *http.Request) {
-	app, err := s.cfg.Store.AppByName(r.Context(), r.PathValue("name"))
+	principal, _ := principalFrom(r.Context())
+	name := r.PathValue("name")
+	app, err := s.cfg.Store.AppByName(r.Context(), name)
 	if errors.Is(err, store.ErrNotFound) {
-		if _, imageErr := s.cfg.Store.ImageAppByName(r.Context(), r.PathValue("name")); imageErr == nil {
+		imageApp, imageErr := s.cfg.Store.ImageAppByName(r.Context(), name)
+		if imageErr == nil {
+			if !principal.allowsApp(imageApp) {
+				appNotFound(w)
+				return
+			}
 			http.Error(w, "this application uses a published image: edit kuberpack.yaml and run kuberpack project compile", http.StatusBadRequest)
 			return
 		}
@@ -53,12 +71,16 @@ func (s *Server) redeployApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	provider, owner, name, err := s.appForge(app)
+	if !principal.allowsApp(app) {
+		appNotFound(w)
+		return
+	}
+	provider, owner, repoName, err := s.appForge(app)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	sha, err := provider.BranchSHA(r.Context(), owner, name, app.ProductionBranch)
+	sha, err := provider.BranchSHA(r.Context(), owner, repoName, app.ProductionBranch)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -75,7 +97,7 @@ func (s *Server) redeployApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.publishCommitStatus(r.Context(), provider, owner, name, sha, git.StatusPending, "Building", app, false)
+	s.publishCommitStatus(r.Context(), provider, owner, repoName, sha, git.StatusPending, "Building", app, false)
 	s.kick()
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued", "commit_sha": sha})
 }
@@ -158,6 +180,7 @@ func (s *Server) fluxHook(w http.ResponseWriter, r *http.Request) {
 // The reason of a failure is in the build: it is what the platform knows
 // about it, and the logs are next to it.
 func (s *Server) getBuild(w http.ResponseWriter, r *http.Request) {
+	principal, _ := principalFrom(r.Context())
 	app, err := s.cfg.Store.AppByName(r.Context(), r.PathValue("name"))
 	if errors.Is(err, store.ErrNotFound) {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -165,6 +188,10 @@ func (s *Server) getBuild(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !principal.allowsApp(app) {
+		appNotFound(w)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -190,6 +217,7 @@ func (s *Server) getBuild(w http.ResponseWriter, r *http.Request) {
 // build that runs is read from the pod, so that the client can follow
 // it.
 func (s *Server) getBuildLogs(w http.ResponseWriter, r *http.Request) {
+	principal, _ := principalFrom(r.Context())
 	app, err := s.cfg.Store.AppByName(r.Context(), r.PathValue("name"))
 	if errors.Is(err, store.ErrNotFound) {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -197,6 +225,10 @@ func (s *Server) getBuildLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !principal.allowsApp(app) {
+		appNotFound(w)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)

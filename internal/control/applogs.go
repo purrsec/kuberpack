@@ -25,6 +25,7 @@ const maxAppLogStreams = 5
 // source-built applications and published images. Pod names and selectors are
 // resolved here, never accepted from the developer as an authorization scope.
 func (s *Server) getAppLogs(w http.ResponseWriter, r *http.Request) {
+	principal, _ := principalFrom(r.Context())
 	options, err := appLogOptions(r.URL.Query())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -40,6 +41,10 @@ func (s *Server) getAppLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		http.Error(w, "cannot read application inventory", http.StatusInternalServerError)
+		return
+	}
+	if !principal.allowsApp(app) {
+		appNotFound(w)
 		return
 	}
 	if s.cfg.Kube == nil || app.Namespace == "" {

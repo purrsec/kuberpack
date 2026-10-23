@@ -3,6 +3,58 @@
 Le CLI utilise l'API HTTP. Les endpoints de gestion exigent le jeton API ;
 le développeur n'a pas besoin du kubeconfig du cluster.
 
+## Jetons API
+
+`KUBERPACK_API_TOKEN` reste le jeton administrateur global. Des jetons
+supplémentaires peuvent être créés dans SQLite : soit administrateurs (projet
+vide), soit limités à **un projet**. Seule l'empreinte SHA-256 du secret est
+stockée ; le secret `kp_<id>_<secret>` n'est affiché qu'à la création.
+
+```http
+POST /api/v1/tokens
+Authorization: Bearer $KUBERPACK_API_TOKEN
+Content-Type: application/json
+
+{"name": "ci-demo", "project": "demo", "expires_in": "720h"}
+```
+
+Réponse `201` : `id`, `name`, `project`, `role`, `created_at`, `expires_at` et
+`token`. `token` est la seule fois où le secret apparaît. Sans `project`, le
+jeton est administrateur. `expires_in` est une durée Go (`720h`, `30m`) ; son
+absence signifie « jamais expiré ».
+
+| Route | Rôle |
+| --- | --- |
+| `POST /api/v1/tokens` | Créer un jeton (administrateur uniquement) |
+| `GET /api/v1/tokens` | Lister les jetons sans secret ni empreinte (administrateur uniquement) |
+| `DELETE /api/v1/tokens/{id}` | Révoquer un jeton immédiatement et de façon idempotente (administrateur uniquement) |
+
+Un jeton de projet est résolu en base à chaque requête. La comparaison se fait
+en temps constant sur l'empreinte ; un jeton inconnu, expiré ou révoqué reçoit
+`401`, sans distinction. Ses droits :
+
+- `GET /api/v1/apps` et les routes d'une app (`status`, `logs`, `builds`,
+  `build-logs`, `redeploy`) sont filtrées ou vérifiées par projet ; une app
+  d'un autre projet, ou hors projet, répond `404` ;
+- `POST /api/v1/projects` et `DELETE /api/v1/projects/{name}` ne sont autorisés
+  que sur son propre projet (`403` sinon) ;
+- `GET /api/v1/projects` ne liste que son projet ;
+- les routes `/api/v1/tokens` restent réservées à l'administrateur (`403`).
+
+Un jeton ne remplace pas le jeton global : celui-ci continue de fonctionner à
+l'identique.
+
+```bash
+kuberpack token create --name ci-demo --project demo --expires 720h
+kuberpack token list
+kuberpack token revoke 3
+```
+
+`token create` affiche le secret sur `TOKEN` et prévient qu'il ne sera plus
+affiché. `token list` ne montre jamais de secret. `KUBERPACK_API_URL` et
+`KUBERPACK_API_TOKEN` (administrateur) sont requis, comme pour les autres
+commandes.
+
 ## Déclarer une application
 
 Une application se déclare par un **manifeste** : c’est la seule source de vérité.

@@ -205,6 +205,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/apps/{name}/builds/{id}", s.withAPI(s.getBuild))
 	mux.HandleFunc("GET /api/v1/apps/{name}/builds/{id}/logs", s.withAPI(s.getBuildLogs))
 	mux.HandleFunc("POST /api/v1/apps/{name}/redeploy", s.withAPI(s.redeployApp))
+	// Les jetons API sont administrés par l'administrateur seul : créer un
+	// jeton de projet ne doit pas être possible avec un jeton de projet.
+	mux.HandleFunc("POST /api/v1/tokens", s.withAPI(s.createAPIToken))
+	mux.HandleFunc("GET /api/v1/tokens", s.withAPI(s.listAPITokens))
+	mux.HandleFunc("DELETE /api/v1/tokens/{id}", s.withAPI(s.revokeAPIToken))
 	mux.HandleFunc("POST /api/v1/projects", s.withAPI(s.createProject))
 	mux.HandleFunc("GET /api/v1/projects", s.withAPI(s.listProjects))
 	mux.HandleFunc("GET /api/v1/projects/{name}", s.withAPI(s.getProject))
@@ -287,25 +292,60 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("ok\n"))
 }
 
+// withAPI authentifie la requête et attache son principal au contexte.
+//
+// Le jeton global KUBERPACK_API_TOKEN reste l'administrateur de la
+// plateforme. Un jeton de la table api_tokens est résolu dans SQLite : son
+// secret est comparé à l'empreinte SHA-256 en temps constant, puis son état
+// (révoqué, expiré) est vérifié. Un jeton inconnu, révoqué ou expiré reçoit la
+// même réponse 401, sans indiquer lequel des contrôles a échoué.
 func (s *Server) withAPI(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.cfg.APIToken == "" {
-			http.Error(w, "api token is not configured", http.StatusForbidden)
+		credential := authorizationCredential(r.Header.Get("Authorization"))
+		if credential == "" {
+			s.refuseAnonymous(w)
 			return
 		}
-		got := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-		if got == "" {
-			got = strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "token "))
+		// Comparaison en temps constant, avant toute lecture du corps.
+		if s.cfg.APIToken != "" && subtle.ConstantTimeCompare([]byte(credential), []byte(s.cfg.APIToken)) == 1 {
+			next(w, r.WithContext(withPrincipal(r.Context(), Principal{
+				Role: store.APITokenRoleAdmin,
+				Name: "KUBERPACK_API_TOKEN",
+			})))
+			return
 		}
-		if subtle.ConstantTimeCompare([]byte(got), []byte(s.cfg.APIToken)) != 1 {
+		if s.cfg.Store != nil && strings.HasPrefix(credential, store.APITokenPrefix) {
+			token, err := s.cfg.Store.AuthenticateAPIToken(r.Context(), credential, time.Now().UTC())
+			if err == nil {
+				next(w, r.WithContext(withPrincipal(r.Context(), Principal{
+					Role:    token.Role,
+					Project: token.Project,
+					TokenID: token.ID,
+					Name:    token.Name,
+				})))
+				return
+			}
+			// Erreur de lecture SQLite : refus explicite, jamais un accès
+			// administrateur par défaut.
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		next(w, r)
+		s.refuseAnonymous(w)
 	}
 }
 
+// refuseAnonymous distingue l'absence de configuration de l'absence de
+// credential : sans jeton global ni jeton de projet, les routes sont fermées.
+func (s *Server) refuseAnonymous(w http.ResponseWriter) {
+	if s.cfg.APIToken == "" && s.cfg.Store == nil {
+		http.Error(w, "api token is not configured", http.StatusForbidden)
+		return
+	}
+	http.Error(w, "unauthorized", http.StatusUnauthorized)
+}
+
 func (s *Server) listApps(w http.ResponseWriter, r *http.Request) {
+	principal, _ := principalFrom(r.Context())
 	apps, err := s.cfg.Store.ListApps(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -317,12 +357,14 @@ func (s *Server) listApps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	apps = append(apps, published...)
+	apps = filterApps(principal, apps)
 	sort.Slice(apps, func(i, j int) bool { return apps[i].Name < apps[j].Name })
 	out := s.observedApps(r.Context(), apps)
 	writeJSON(w, http.StatusOK, map[string]any{"apps": out})
 }
 
 func (s *Server) getApp(w http.ResponseWriter, r *http.Request) {
+	principal, _ := principalFrom(r.Context())
 	app, err := s.cfg.Store.AppByName(r.Context(), r.PathValue("name"))
 	if errors.Is(err, store.ErrNotFound) {
 		app, err = s.cfg.Store.ImageAppByName(r.Context(), r.PathValue("name"))
@@ -333,6 +375,10 @@ func (s *Server) getApp(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !principal.allowsApp(app) {
+		appNotFound(w)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)

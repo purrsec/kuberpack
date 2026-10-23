@@ -53,6 +53,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "kuberpack: %v\n", err)
 			os.Exit(1)
 		}
+	case "token":
+		if err := runToken(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "kuberpack: %v\n", err)
+			os.Exit(1)
+		}
 	case "reloader":
 		if err := runReloader(os.Args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "kuberpack: %v\n", err)
@@ -118,6 +123,8 @@ Usage:
   kuberpack app status [--json] <name>
   kuberpack app logs <name> [-f] [--tail N] [--since 10m] [--previous]
   kuberpack app builds|build-logs|redeploy [flags] <name>
+  kuberpack token create --name NAME [--project NAME] [--expires 720h]
+  kuberpack token list|revoke <id>
   kuberpack doctor network --context NAME [--detect-only | --yes]
   kuberpack reloader          (restarts pods whose synchronised Secret changed)
   kuberpack builder           (inside a Kuberpack Kubernetes Job)
@@ -156,6 +163,12 @@ project (KUBERPACK_API_TOKEN, KUBERPACK_API_URL):
 
   Compiles a project manifest into GitOps primitives.
 
+token (KUBERPACK_API_TOKEN administrateur, KUBERPACK_API_URL):
+  create  --name NAME [--project PROJECT] [--expires 720h]
+          prints the secret once; empty --project creates an administrator token
+  list    lists tokens without any secret
+  revoke  <id> invalidates a token immediately
+
 doctor network:
   --context string        explicit Kubernetes context (required)
   --kubeconfig string     kubeconfig path (default loading rules)
@@ -181,6 +194,9 @@ serve (FORGEJO_TOKEN, KUBERPACK_API_TOKEN, KUBERPACK_BUILDER_IMAGE):
   GET  /api/v1/apps/{name}/logs
   GET  /api/v1/apps/{name}/builds
   POST /api/v1/apps/{name}/redeploy
+  POST /api/v1/tokens        create (administrator only)
+  GET  /api/v1/tokens        list without secrets (administrator only)
+  DELETE /api/v1/tokens/{id} revoke (administrator only)
   POST /hooks/forgejo        HMAC (push, pull_request)
   POST /hooks/flux           HelmRelease rollback → rolled_back
   GET  /healthz
@@ -189,6 +205,10 @@ serve (FORGEJO_TOKEN, KUBERPACK_API_TOKEN, KUBERPACK_BUILDER_IMAGE):
   an application: compiling it writes the GitOps Helm files, arms the build
   pipeline and poses the webhook. The promote only rewrites image (track
   stays human-owned) and enables Flux.
+
+  The global KUBERPACK_API_TOKEN is an administrator. Tokens created with
+  POST /api/v1/tokens are either administrators (empty project) or limited to
+  one project: apps, builds, logs and projects are then filtered by project.
 `)
 }
 

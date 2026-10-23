@@ -191,6 +191,18 @@ CREATE TABLE IF NOT EXISTS previews (
   updated_at TEXT NOT NULL,
   PRIMARY KEY (app_id, pull_request_number)
 );
+CREATE TABLE IF NOT EXISTS api_tokens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  project TEXT NOT NULL DEFAULT '',
+  role TEXT NOT NULL DEFAULT 'project',
+  created_at TEXT NOT NULL,
+  last_used_at TEXT NOT NULL DEFAULT '',
+  expires_at TEXT NOT NULL DEFAULT '',
+  revoked_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS api_tokens_project ON api_tokens(project);
 `)
 	if err != nil {
 		return err

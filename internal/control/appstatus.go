@@ -48,6 +48,7 @@ type DeploymentStatus struct {
 }
 
 func (s *Server) getAppStatus(w http.ResponseWriter, r *http.Request) {
+	principal, _ := principalFrom(r.Context())
 	app, err := s.cfg.Store.AppByName(r.Context(), r.PathValue("name"))
 	if errors.Is(err, store.ErrNotFound) {
 		app, err = s.cfg.Store.ImageAppByName(r.Context(), r.PathValue("name"))
@@ -58,6 +59,10 @@ func (s *Server) getAppStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !principal.allowsApp(app) {
+		appNotFound(w)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)

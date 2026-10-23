@@ -28,6 +28,11 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// Un jeton de projet ne compile que son projet : le manifeste ne doit
+	// pas permettre d'en écrire un autre.
+	if _, ok := requireProject(w, r, m.Project); !ok {
+		return
+	}
 	if s.cfg.GitOpsURL == "" {
 		http.Error(w, "gitops is not configured", http.StatusForbidden)
 		return
@@ -102,6 +107,9 @@ func (s *Server) checkNamespaceOwnership(ctx context.Context, project, namespace
 
 func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	if _, ok := requireProject(w, r, name); !ok {
+		return
+	}
 	if s.cfg.GitOpsURL == "" {
 		http.Error(w, "gitops is not configured", http.StatusForbidden)
 		return
@@ -143,6 +151,7 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
+	principal, _ := principalFrom(r.Context())
 	if s.cfg.GitOpsURL == "" {
 		http.Error(w, "gitops is not configured", http.StatusForbidden)
 		return
@@ -160,6 +169,11 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]any, 0, len(items))
 	for _, item := range items {
+		// Un jeton de projet ne voit que son projet. L'administrateur voit
+		// tout.
+		if !principal.allowsProject(item.Project) {
+			continue
+		}
 		out = append(out, map[string]any{
 			"project":   item.Project,
 			"namespace": item.Namespace,
@@ -170,6 +184,9 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	if _, ok := requireProject(w, r, name); !ok {
+		return
+	}
 	if s.cfg.GitOpsURL == "" {
 		http.Error(w, "gitops is not configured", http.StatusForbidden)
 		return
