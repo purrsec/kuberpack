@@ -19,7 +19,7 @@ releases:
   - name: kuberpack
     namespace: kuberpack
     createNamespace: true
-    chart: ./charts/kuberpack
+    chart: ./provisioning/charts/kuberpack
     values:
       - image: ghcr.io/purrsec/kuberpack:latest
         builderImage: ghcr.io/purrsec/kuberpack-builder:latest

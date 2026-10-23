@@ -53,7 +53,7 @@ kubectl -n kuberpack-build create secret docker-registry kuberpack-builder-pull 
     --dry-run=client -o yaml | kubectl apply -f -
 
 echo "== helm install =="
-helm upgrade --install kuberpack "${REPO}/charts/kuberpack" \
+helm upgrade --install kuberpack "${REPO}/provisioning/charts/kuberpack" \
     --namespace kuberpack \
     --set image=docker.io/kuberpack-test/control:dev \
     --set builderImage=docker.io/kuberpack-test/builder:dev \

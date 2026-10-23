@@ -11,7 +11,8 @@ on:
       - "Dockerfile"
       - "Dockerfile.builder"
       - ".dockerignore"
-      - "charts/stateless/**"
+      - "provisioning/**"
+      - "testenv/**"
       - ".github/workflows/image.yaml"
   pull_request:
     paths:
@@ -22,7 +23,8 @@ on:
       - "Dockerfile"
       - "Dockerfile.builder"
       - ".dockerignore"
-      - "charts/stateless/**"
+      - "provisioning/**"
+      - "testenv/**"
       - ".github/workflows/image.yaml"
 
 permissions:

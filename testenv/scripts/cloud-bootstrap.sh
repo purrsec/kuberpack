@@ -93,7 +93,7 @@ EOF
 
 log "the control plane"
 helm repo add kuberpack https://purrsec.github.io/kuberpack 2>/dev/null || true
-helm upgrade --install kuberpack "${REPO_DIR}/charts/kuberpack" \
+helm upgrade --install kuberpack "${REPO_DIR}/provisioning/charts/kuberpack" \
   --namespace kuberpack \
   --set image="ghcr.io/${REGISTRY_USER:-purrsec}/kuberpack:${KUBERPACK_VERSION}" \
   --set builderImage="ghcr.io/${REGISTRY_USER:-purrsec}/kuberpack-builder:${KUBERPACK_VERSION}" \
