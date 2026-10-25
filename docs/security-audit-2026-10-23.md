@@ -1,5 +1,7 @@
 # Audit sécurité Kuberpack — 23 octobre 2026
 
+> Compte rendu historique. Les scripts cités appartiennent à la [version auditée](https://github.com/purrsec/kuberpack/blob/da5fb9970ca8b3cf5f5894aa7835d4064376edbc/testenv/scripts). Les suites actuelles sont décrites dans [testing.md](testing.md).
+
 ## Verdict
 
 La passe corrige des chemins d’injection, des fuites de credentials et des

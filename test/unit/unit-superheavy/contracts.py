@@ -181,7 +181,9 @@ HTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
         # Keep Python's TLS and packaging tooling patched as well as the app.
         # No scanner exception is granted to the fixture.
         (source / "requirements.txt").write_text("pip==26.2.2\ncertifi==2026.10.23\n")
-        for args in (["add", "main.py", ".python-version", "requirements.txt"],
+        fixture = Path(__file__).resolve().parents[2] / "common/fixtures/railpack.json"
+        (source / "railpack.json").write_text(fixture.read_text())
+        for args in (["add", "main.py", ".python-version", "requirements.txt", "railpack.json"],
                      ["-c", "commit.gpgsign=false", "commit", "-m", "fixture " + version], ["push", "origin", "main"]):
             self.command("git " + args[0], ["git", "-C", source, *args], env=env)
         return self.command("source revision", ["git", "-C", source, "rev-parse", "HEAD"], env=env).strip()
@@ -203,6 +205,15 @@ HTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
 
     def pods(self):
         return self.kube("get", "pods", "-n", "pipeline", "-l=app.kubernetes.io/name=web")["items"]
+
+    def flux_ready(self, kind, name, namespace, revision=None):
+        resource = self.kube("get", kind, name, "-n", namespace)
+        status = resource.get("status", {})
+        ready = any(c["type"] == "Ready" and c["status"] == "True"
+                    for c in status.get("conditions", []))
+        observed = status.get("observedGeneration", 0) >= resource["metadata"]["generation"]
+        applied = revision is None or status.get("lastAppliedRevision", "").endswith("@sha1:" + revision)
+        return resource if ready and observed and applied else None
 
     def scoped_rbac(self):
         deployments = self.kube("get", "deployments", "-n", "infisical")["items"]
@@ -256,6 +267,12 @@ HTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
         self.check("runtime image is pinned by digest", re.search(r"@sha256:[a-f0-9]{64}$", image) is not None, True)
         self.check("new generation was observed", deployment["status"]["observedGeneration"] >= deployment["metadata"]["generation"], True)
         self.check("new configuration was observed", deployment["spec"]["template"]["metadata"]["annotations"]["kuberpack.io/configuration-revision"], deployed["services"][0]["configuration_revision"])
+        head = self.remote_revision("applications")
+        reconciled = self.wait("Flux applied the actual application GitOps revision", lambda:
+            self.flux_ready("kustomization", "kuberpack-project-pipeline", "kuberpack", head), timeout=90)
+        self.check("Flux uses the project tenant identity", reconciled["spec"]["serviceAccountName"], "kuberpack-tenant-pipeline")
+        self.wait("the actual Helm release is ready at its latest generation", lambda:
+            self.flux_ready("helmrelease", "web", "pipeline"), timeout=90)
         build_id = deployed["services"][0]["build_id"]
         self.check("a real build was tracked", build_id > 0, True)
         build = self.cli("builds", "show", str(build_id), "--service=web")

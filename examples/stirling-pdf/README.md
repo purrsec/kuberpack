@@ -35,15 +35,15 @@ La clé API permet de vérifier une véritable opération PDF avec le login acti
 Voir la [configuration de l'authentification](https://docs.stirlingpdf.com/Configuration/Security/System%20and%20Security/)
 et la [documentation API](https://docs.stirlingpdf.com/Developers/API/).
 
-## Compiler
+## Déployer
 
 Configurer `KUBERPACK_API_URL` et `KUBERPACK_API_TOKEN` avec les informations
 fournies par l'opérateur, puis :
 
 ```bash
-kuberpack project compile -f examples/stirling-pdf/kuberpack.yaml --dry-run
-kuberpack project compile -f examples/stirling-pdf/kuberpack.yaml
-kuberpack apps
+kuberpack deploy --plan --file examples/stirling-pdf/kuberpack.yaml
+kuberpack deploy --file examples/stirling-pdf/kuberpack.yaml
+kuberpack status
 ```
 
 Aucun `kubectl apply`, chart spécifique ou YAML Kubernetes supplémentaire

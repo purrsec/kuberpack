@@ -19,10 +19,21 @@
     content: |
       FROM {{ item.base }}
       COPY bundle.crt /etc/ssl/certs/ca-certificates.crt
+      {% if item.name == 'buildkit' %}
+      COPY --chown=1000:1000 buildkitd.toml /home/user/.config/buildkit/buildkitd.toml
+      {% endif %}
   loop:
     - {name: control, base: 'kuberpack-test/control:{{ run_id }}'}
     - {name: builder, base: 'kuberpack-test/builder:{{ run_id }}'}
     - {name: buildkit, base: 'docker.io/moby/buildkit:v0.33.0-rootless@sha256:80b15f0735e87bab7bf59ec4d695dfb4a7cfb25521cf56dc75d6f256285b63ef'}
+
+- name: Use native snapshots for BuildKit nested inside the disposable Docker node
+  ansible.builtin.copy:
+    dest: '{{ fixture_directory }}/images/buildkit/buildkitd.toml'
+    mode: '0644'
+    content: |
+      [worker.oci]
+        snapshotter = "native"
 
 - name: Build trusted runtime layers for the actual production binaries
   community.docker.docker_image_build:

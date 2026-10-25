@@ -26,6 +26,7 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-test-go1269-${{ inputs.suite }}-
             ${{ runner.os }}-${{ runner.arch }}-test-go1269-
       - name: Build the same pinned toolbox used locally
+        timeout-minutes: 10
         uses: docker/build-push-action@v7
         with:
           context: test/common

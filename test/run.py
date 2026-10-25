@@ -88,7 +88,7 @@ def main():
             common = ROOT / "test/common"
             digest = hashlib.sha256(b"".join((common / name).read_bytes() for name in ("Dockerfile", "requirements.txt", "collections.yaml"))).hexdigest()[:16]
             image = "kuberpack-test-tools:" + digest
-            call(["docker", "build", "--platform=linux/amd64", "--tag", image, str(common)])
+            call(["docker", "build", "--platform=linux/amd64", "--tag", image, str(common)], timeout=900)
         command = ["docker", "run", "--rm", "--name", run_id + "-runner", "--platform=linux/amd64",
                    "--label", "org.kuberpack.test.run=" + run_id,
                    "--mount", f"type=bind,source={ROOT},target=/workspace,readonly",
@@ -133,6 +133,8 @@ def main():
         if not (artifacts / "result.json").exists():
             (artifacts / "result.json").write_text(json.dumps(dict(metadata, status="failed", error="Runner did not produce a report"), indent=2) + "\n")
             (artifacts / "junit.xml").write_text('<testsuite name="runner" tests="1" failures="1"><testcase name="startup"><failure>Runner did not produce a report</failure></testcase></testsuite>\n')
+        elif status and json.loads((artifacts / "result.json").read_text()).get("status") != "failed":
+            record_failure(artifacts, "container invocation", f"Runner exited with status {status}")
         print("Artifacts: " + str(artifacts))
     return status
 

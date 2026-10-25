@@ -31,7 +31,10 @@
         - name: Exercise real network and tenant contracts
           ansible.builtin.include_tasks: network.yaml
       always:
-        - name: Collect diagnostics before removing the cluster
-          ansible.builtin.include_tasks: ../../common/tasks/diagnostics.yaml
-        - name: Remove disposable resources even after failure
-          ansible.builtin.include_tasks: ../../common/tasks/cleanup.yaml
+        - name: Preserve evidence and always remove the cluster
+          block:
+            - name: Collect diagnostics before removing the cluster
+              ansible.builtin.include_tasks: ../../common/tasks/diagnostics.yaml
+          always:
+            - name: Remove disposable resources even after failure
+              ansible.builtin.include_tasks: ../../common/tasks/cleanup.yaml

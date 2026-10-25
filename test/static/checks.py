@@ -25,6 +25,8 @@ def run(suite):
         suite.command("Helm lint " + chart, ["helm", "lint", "--strict", "provisioning/charts/" + chart, "--set-string", "image=" + image, "--set-string", "hostname=lint.fixture.test"])
     for path in sorted((root / "test").rglob("*.py")):
         ast.parse(path.read_text(), filename=str(path))
+    for path in sorted((root / "test").rglob("*.json")):
+        json.loads(path.read_text())
     for path in sorted((root / "test").rglob("*.yaml")):
         if "templates" in path.parts:
             continue

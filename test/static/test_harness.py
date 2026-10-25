@@ -1,8 +1,10 @@
 """Regression tests for false-green results, deadlines and secret redaction."""
+import base64
 import importlib.util
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -13,6 +15,7 @@ import yaml
 COMMON = Path(__file__).resolve().parents[1] / "common"
 sys.path.insert(0, str(COMMON))
 from suite import Suite
+from privacy import collect_values, redact
 
 
 class HarnessContracts(unittest.TestCase):
@@ -47,6 +50,33 @@ class HarnessContracts(unittest.TestCase):
             suite.command("deadline", [sys.executable, "-c", "import time; time.sleep(30)"], timeout=0.1)
         self.assertEqual(suite.checks[0]["actual"], 124)
         self.assertLess(suite.checks[0]["duration"], 3)
+
+    def test_diagnostics_redact_raw_and_encoded_kubernetes_credentials(self):
+        token = "fixture-private-token-0987654321"
+        encoded = base64.b64encode(token.encode()).decode()
+        public_url = "https://infisical.fixture.test"
+        response = {"items": [{"metadata": {"name": "service-identity"}, "data": {
+            "clientSecret": encoded,
+            "url": base64.b64encode(public_url.encode()).decode(),
+        }}]}
+        with patch("privacy.Path.exists", side_effect=[False, True]), patch("privacy.subprocess.run", return_value=
+                   subprocess.CompletedProcess([], 0, json.dumps(response))):
+            values, complete = collect_values()
+        self.assertTrue(complete)
+        basic = base64.b64encode(("kuberpack:" + token).encode()).decode()
+        self.assertEqual(redact(" ".join((token, encoded, basic)), values), "[redacted] [redacted] [redacted]")
+        self.assertEqual(redact(public_url, values), public_url)
+
+    def test_privacy_failure_is_reported_after_sanitizing_the_artifact(self):
+        import check_privacy
+        path = Path(self.directory.name) / "leaked.log"
+        path.write_text("before fixture-private-token-0987654321 after")
+        with patch.object(sys, "argv", ["check_privacy", self.directory.name]), patch.object(
+                check_privacy, "collect_values", return_value=({"fixture-private-token-0987654321"}, True)):
+            self.assertEqual(check_privacy.main(), 1)
+        self.assertEqual(path.read_text(), "before [redacted] after")
+        report = json.loads((path.parent / "artifact-privacy.json").read_text())
+        self.assertEqual(report["unexpected_credential_files"], ["leaked.log"])
 
     def test_skipping_a_required_test_cannot_pass_the_suite(self):
         suite = Suite("unit-light")

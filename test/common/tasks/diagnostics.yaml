@@ -27,3 +27,8 @@
   ansible.builtin.command:
     argv: [python3, /workspace/test/common/diagnostics.py, '{{ run_id }}', '{{ artifacts }}']
   changed_when: false
+
+- name: Assert that no fixture credential escaped into artifacts
+  ansible.builtin.command:
+    argv: [python3, /workspace/test/common/check_privacy.py, '{{ artifacts }}']
+  changed_when: false

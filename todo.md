@@ -11,7 +11,7 @@ le travail tombe, et ce qui vaut dire « fait ».
 | 3 | [CLI de pilotage](#3-cli-de-pilotage) | fait |
 | 4 | [Le manifeste pilote le déploiement](#4-le-manifeste-pilote-le-déploiement) | fait |
 | 5 | [Les addons](#5-les-addons) | fait |
-| 6 | [Tests et gate de release](#6-tests-et-gate-de-release) | à faire |
+| 6 | [Tests et gate de release](#6-tests-et-gate-de-release) | en qualification |
 
 La phase 5 de la [feuille de route](docs/roadmap.md) couvre le point 3.
 
@@ -507,88 +507,44 @@ transite jamais par Kuberpack : seul le `secretKeyRef` est écrit.
 
 ## 6. Tests et gate de release
 
-### Contexte
+### Implémentation
 
-Aujourd'hui, la CI ne lance que `go vet` et `go test ./...`. Les scripts de
-`testenv/` sont un bon banc de développement, mais pas un gate : IP et ports
-fixes, noms de conteneurs fixes, volumes partagés, outils requis sur l'hôte,
-tmpfs de 20 GiB, assertions parfois faibles et artefacts écrits seulement en
-cas de succès. Le build réel, l'installation froide, le reloader, l'upgrade et
-les CNI cloud ne sont pas couverts.
+La recette commune est [test/run.py](test/run.py), exécutée dans Docker sur
+le poste du développeur et dans GitHub. Les opérations critiques de création,
+d’installation et de destruction des fixtures sont orchestrées avec Ansible.
+Les anciens scripts Bash de `testenv/scripts/` sont retirés.
 
-La stratégie détaillée, les budgets et les scénarios sont dans
-[docs/testing.md](docs/testing.md). Ce chantier la rend exécutable.
+| Niveau | Budget des contrôles | Scénarios |
+| --- | ---: | --- |
+| `static` | < 60 s | formatage, analyse Go, workflows, Ansible, charts et contrats du harnais |
+| `unit-light` | < 60 s | tests Go hors réseau, sans cache de résultat |
+| `unit-heavy` | < 300 s | courses Go, admission CEL réelle, RBAC et trafic réseau |
+| `unit-superheavy` | < 1 800 s, cible 20–30 min | installation interrompue puis reprise, forge et registre HTTPS, build et scan réels, SBOM, Flux, secrets, reloader, webhook, protection des PVC et réinstallation |
 
-### Contrat retenu
+Chaque run possède ses noms, labels, réseau, volumes, cluster et CA. Aucun
+port n’est publié sur l’hôte et aucun credential du poste n’est transmis.
+Les diagnostics précèdent le nettoyage, avec rapports JSON/JUnit même en cas
+d’échec. Le coût initial des outils et de compilation est rapporté séparément.
 
-- **Contract gate 3-4 min** : fixture k3s/Forgejo chaude, Kuberpack installé à
-  froid, compilation d'un manifeste, application préconstruite, Flux/Helm,
-  HTTP/TLS, tenant isolation, réseau minimal, réinstallation. Pas de build réel.
-- **Release gate 10-15 min** : cluster neuf, installation complète, build
-  Railpack + Trivy/Syft, digest/pin, secret humain, réseau complet, reloader,
-  réinstallation.
-- **Nightly 30-45 min** : upgrade N-1→N, rollback, CNI Calico/Cilium, addons,
-  previews, persistance, EKS/GKE plus tard.
+La CI réutilise `.github/workflows/test-suite.yaml`. Statique et léger
+précèdent le lourd ; le très lourd suit sur les pushes, tags, nightly et
+lancements manuels. La publication des images attend les quatre niveaux.
+Les PR exécutent les trois premiers niveaux.
 
-Un test complet install + build en 3-4 min n'est pas réaliste sur un runner
-hébergé à froid. Il exige un runner self-hosted chaud ; sinon le full reste à
-10-15 min.
+### Validation
 
-### Où
+Les niveaux statique, léger et lourd ont passé localement et sur GitHub.
+Dix passages légers consécutifs ont passé sans échec. Le parcours complet
+reste en qualification jusqu’à un passage local et GitHub intégralement vert.
+Les commandes, les mesures et les limites sont documentées dans
+[docs/testing.md](docs/testing.md).
 
-| Élément | Emplacement |
-| --- | --- |
-| Fixture hermétique | `testenv/gate/` : compose, `gate.sh`, PKI, seed Forgejo, attentes, cleanup |
-| Scénarios et assertions | `testenv/gate/run-gate.py`, `result.json`, `junit.xml` |
-| Images et versions | `testenv/gate/images.lock`, images épinglées par digest |
-| CI | `.github/workflows/release-gate.yaml` (contract + release), nightly séparé |
-| Documentation | `docs/testing.md`, `testenv/gate/README.md` |
+### Extensions distinctes
 
-### P0 — avant d'appeler cela un gate
-
-1. Harnais hermétique : réseau/sous-réseau et noms par `runid`, aucun port
-   publié sur l'hôte, CA générée par run, volumes isolés, cleanup par labels.
-2. `result.json` + `junit.xml` + diagnostics toujours écrits (même en échec),
-   secrets redactés, snapshot avant cleanup.
-3. Workflow CI : `unit` → `images` → `contract-gate`, timeout 8 min ; release
-   gate séparé.
-4. Assertions typées : `observedGeneration`, `lastAppliedRevision`, specs des
-   RoleBinding/Kustomization, digests, hashes, UID ; pas de substring.
-5. Mesurer 10 runs ; rendre required après 20 runs verts (p50 ≤ 3:30,
-   p95 ≤ 5:00, zéro flake).
-
-### P1 — après le P0
-
-- build réel + scan en release/nightly ;
-- `security-smoke` complet + `doctor network` ;
-- rotation réelle via reloader (pod remplacé, nouvelle valeur) ;
-- upgrade N-1→N + rollback ;
-- installation froide, pull registre sans préchargement ;
-- migration mono-dépôt → deux dépôts.
-
-### P2 — plus tard
-
-EKS/GKE/AKS, addons, previews, backup/restore, persistance, scale/soak,
-ACME public, arm64.
-
-### Terminé quand
-
-- le contract gate tourne en CI sur `main` et les PR same-repo, avec un
-  `result.json` et des diagnostics exploitables en cas d'échec ;
-- le release gate est bloquant avant un tag et couvre installation froide,
-  build, secret, réseau et reloader ;
-- le nightly couvre upgrade, CNI et addons ;
-- un échec dit quoi, où, et avec quelle commande, sans exposer de secret.
-
-### Décisions à prendre
-
-1. Contract gate 3-4 min sur GitHub hébergé (recommandé) ou full 3-4 min sur
-   self-hosted chaud.
-2. Snapshot de base chaude (Forgejo/k3s/opérateurs) et CA stable ou par run.
-3. Infisical/CNPG dans le contract gate (oui si la base est chaude, sinon
-   release/nightly).
-4. Build dans le contract gate : non par défaut ; oui avec cache BuildKit chaud
-   et une seconde lane parallèle.
+L’upgrade N-1→N et son rollback, la matrice Calico/Cilium, EKS/GKE/AKS,
+les addons, previews, backup/restore, charge, ACME public et arm64 restent à
+faire. Un nightly qui exécute le parcours courant ne constitue pas une
+validation de ces scénarios.
 
 ---
 

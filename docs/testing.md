@@ -2,7 +2,7 @@
 
 Le point d’entrée commun est `python3 test/run.py`. Les jobs GitHub exécutent
 cette même commande dans le même conteneur d’outils. Docker et Python 3 sont
-les seuls outils nécessaires sur le poste Linux ; Go, Ansible, Helm, kubectl,
+les seuls outils nécessaires sur le poste Linux amd64 ; Go, Ansible, Helm, kubectl,
 Infisical et actionlint sont fournis par l’image de test.
 
 ## Commandes
@@ -32,10 +32,12 @@ donc plus longtemps qu’un lancement avec caches. Les rapports conservent le
 temps des contrôles **et** le temps total de l’invocation ; aucun téléchargement
 ou coût de compilation n’est présenté comme gratuit.
 
-Premières mesures locales Docker : contrôles légers 24,4 s ; contrôles lourds
-184,3 s. Ce sont des mesures de développement, pas une estimation de p95 sur
-GitHub. Le parcours complet reste en qualification tant que son exécution
-locale et son job GitHub ne sont pas tous deux verts.
+Mesures locales Docker : dix passages légers consécutifs réussis, médiane
+22,1 s et p95 de cet échantillon 22,7 s ; dernier passage lourd 171,7 s
+(180,3 s avec préparation). Sur GitHub, les trois premiers niveaux passent.
+Ces mesures ne constituent pas un p95 représentatif des runners GitHub.
+Le parcours complet reste en qualification tant que son exécution locale
+et son job GitHub ne sont pas tous deux verts.
 
 ## Arborescence
 
@@ -68,6 +70,10 @@ ses conteneurs et, pour le parcours complet, sa propre CA. Aucun port n’est
 publié sur l’hôte. Les adresses sont attribuées par Docker et les noms
 d’ingress sont résolus dans la fixture, sans dépendre de nip.io. Aucun
 kubeconfig ou credential du poste n’est injecté.
+Le nœud k3s utilise son propre espace de noms cgroup. Les niveaux lourds
+nécessitent que Docker puisse démarrer un conteneur privilégié ; ce conteneur
+reste une fixture jetable. BuildKit utilise des snapshots `native` pour éviter
+les erreurs de copie/suppression d’overlayfs imbriqué dans ce banc Docker.
 
 Les étapes critiques utilisent les modules Ansible de cycle de vie Docker,
 de copie, de certificats et d’attente. Les assertions typées et la génération
@@ -105,6 +111,10 @@ Par défaut, les artefacts vont dans `.test-results/<run-id>/` :
 ancien rapport est refusé. Les secrets de fixture restent dans le conteneur
 et ses volumes temporaires ; les rapports n’exportent ni Secrets Kubernetes,
 ni clés privées. Les logs sont expurgés des credentials connus et des JWT.
+Une assertion finale recherche les valeurs sensibles et leurs encodages dans
+les artefacts avant le nettoyage. Toute fuite détectée est expurgée et fait
+échouer la suite ; une collecte incomplète des credentials fait aussi échouer
+ce contrôle.
 
 Les diagnostics précèdent la destruction. Une expiration ou un démarrage
 impossible conserve également un rapport d’échec. GitHub téléverse les
@@ -149,6 +159,12 @@ cert-manager existant ; elle ne prétend pas valider une émission ACME publique
 Une application de test minimale utilise la bibliothèque standard Python pour
 réduire les variations de dépendances applicatives. Son image est réellement
 construite et scannée ; aucune image préconstruite ne remplace le build.
+La configuration Railpack met à jour `pip` et `certifi` dans le runtime et
+dans l’environnement applicatif. Aucun résultat de scan n’est ignoré pour la
+fixture. Le parcours vérifie aussi les révisions appliquées par Flux, la
+reprise d’une installation interrompue sans rotation des secrets, la
+préservation d’une application indépendante, le refus de destruction en
+présence d’un PVC et l’absence de commit/build lors d’une réapplication identique.
 
 La matrice des CNI cloud, l’upgrade entre deux releases publiées et les tests de
 charge restent des extensions distinctes. Les premiers runs ne constituent

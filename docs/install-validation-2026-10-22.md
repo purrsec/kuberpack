@@ -1,5 +1,7 @@
 # Validation de l’installation — 22 octobre 2026
 
+> Compte rendu historique. Les scripts cités appartiennent à la [version auditée](https://github.com/purrsec/kuberpack/blob/da5fb9970ca8b3cf5f5894aa7835d4064376edbc/testenv/scripts). Les suites actuelles sont décrites dans [testing.md](testing.md).
+
 Ce compte rendu décrit le banc Docker et la préparation de l'essai suivant.
 La suppression/recréation du VPS et les résultats sur la machine neuve de
 8 Go sont documentés dans le [compte rendu VPS](install-vps-2026-10-22.md).

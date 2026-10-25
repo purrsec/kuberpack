@@ -25,7 +25,7 @@ class Suite:
         self.phase = "prepare"
         self.budget_start = None
         config_path = ROOT / "test" / ("static" if name == "static" else "unit/" + name) / "suite.json"
-        self.config = json.loads(config_path.read_text()) if name != "prepare" else {"budget_seconds": 1200}
+        self.config = json.loads(config_path.read_text()) if name != "prepare" else {"budget_seconds": 900}
         self.environment = dict(os.environ, GOMAXPROCS="2", GOFLAGS="-p=2", HOME="/tmp/kuberpack-home",
                                 KUBERPACK_TEST_BIN="/tmp/kuberpack-bin")
         Path(self.environment["HOME"]).mkdir(exist_ok=True)
@@ -47,7 +47,7 @@ class Suite:
 
     def remaining(self):
         if self.budget_start is None:
-            return 1200
+            return max(0.1, 900 - (time.monotonic() - self.started))
         return max(0.1, self.config["budget_seconds"] - (time.monotonic() - self.budget_start))
 
     def command(self, name, argv, timeout=60, env=None, check=True):
@@ -159,7 +159,7 @@ class Suite:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("suite")
+    parser.add_argument("suite", choices=["prepare", "static", "unit-light", "unit-heavy", "unit-superheavy"])
     parser.add_argument("--skip-prepare", action="store_true")
     args = parser.parse_args()
     suite = Suite(args.suite)
@@ -178,6 +178,8 @@ def main():
             return 0
         suite.phase = "test"
         suite.budget_start = time.monotonic()
+        if args.skip_prepare and args.suite in ("unit-heavy", "unit-superheavy"):
+            suite.command("build CLI executables", ["go", "build", "-o", suite.environment["KUBERPACK_TEST_BIN"] + "/", "./cmd/..."], timeout=600)
         if args.suite == "unit-light":
             suite.go_tests("offline tests", ["-timeout=45s", "./..."], allowed_skips=suite.config["allowed_skips"])
         elif args.suite == "static":
