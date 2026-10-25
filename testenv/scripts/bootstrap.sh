@@ -23,7 +23,7 @@ NETWORK=kuberpack-test
 SUBNET=172.29.90.0/24
 FORGEJO_IP=172.29.90.10
 K3S_IP=172.29.90.11
-NODE_PORT=30080
+FIXTURE_API="https://kuberpack.${K3S_IP}.nip.io"
 
 log() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 
@@ -320,14 +320,17 @@ echo "cloudnativepg installed"
 # ------------------------------------------------------------------- control plane
 log "kuberpack control plane"
 ./scripts/deploy-kuberpack.sh
+export KUBERPACK_TEST_ADMIN_TOKEN="$(kubectl -n kuberpack get secret kuberpack -o jsonpath='{.data.KUBERPACK_API_TOKEN}' | base64 -d)"
+(cd "${REPO}" && make build)
+
 
 # ------------------------------------------------------------------- app
 log "test application"
 ./scripts/push-app.sh "app: hello-kuberpack FastAPI service with uv lockfile" || true
 # The manifest is the only way to declare an application: the control plane
 # compiles it, arms the build and lets Flux apply the result.
-if ! curl -sS --max-time 20 -H "Authorization: Bearer ${FORGEJO_CONTROL_TOKEN}" \
-        "http://${K3S_IP}:${NODE_PORT}/api/v1/apps" | grep -q "demo-hello-kuberpack"; then
+if ! curl -sS --max-time 20 --cacert pki/ca.crt -H "Authorization: Bearer ${KUBERPACK_TEST_ADMIN_TOKEN}" \
+        "${FIXTURE_API}/api/v1/apps" | grep -q "demo-hello-kuberpack"; then
     cat > /tmp/kuberpack-demo-manifest.yaml <<'MANIFEST'
 project: demo
 namespace: demo
@@ -348,17 +351,13 @@ policies:
   defaultDeny: true
   internet: true
 MANIFEST
-    python3 -c "
-import json, sys
-manifest = open('/tmp/kuberpack-demo-manifest.yaml').read()
-print(json.dumps({'project': 'demo', 'manifest': manifest}))
-" | curl -sS --max-time 60 -X POST "http://${K3S_IP}:${NODE_PORT}/api/v1/projects" \
-        -H "Authorization: Bearer ${FORGEJO_CONTROL_TOKEN}" -H "Content-Type: application/json" \
-        -d @- >/dev/null
+    python3 scripts/_cli_v2.py --project demo --file /tmp/kuberpack-demo-manifest.yaml \
+        --api "${FIXTURE_API}" --ca-file pki/ca.crt \
+        --repository kuberpack/hello-kuberpack --domain hello-kuberpack.kuberpack.test >/dev/null
     echo "application declared by the manifest"
 fi
 
 log "done"
-echo "Control plane : http://${K3S_IP}:${NODE_PORT}  (Bearer \$FORGEJO_CONTROL_TOKEN)"
+echo "Control plane : ${FIXTURE_API}  (dedicated API credential in its Kubernetes Secret)"
 echo "Forgejo       : https://${FORGEJO_IP}:3000"
 echo "Application   : curl -H 'Host: hello-kuberpack.kuberpack.test' http://${K3S_IP}/"

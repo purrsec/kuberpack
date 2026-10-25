@@ -1,3 +1,5 @@
+> La CLI est maintenant séparée : `internal/cli` (client et assistant), `internal/api`/`internal/spec` (contrat sans Kubernetes), `internal/platformcli` (installation), `internal/runtimecli` (serveur/reloader) et points d’entrée dédiés sous `cmd/`. Le builder appelle directement `internal/buildexec`. Voir [le guide CLI](cli.md) et [l’API v2](api.md) ; les descriptions de l’ancien dispatcher plus bas sont conservées comme contexte architectural.
+
 # Carte de la codebase
 
 Ce document est destiné à un développeur qui arrive dans le dépôt. Il explique
@@ -52,7 +54,10 @@ Deux charts Helm sont livrés :
 ## Arborescence
 
 ```text
-cmd/kuberpack/        point d'entrée CLI et composition des commandes
+cmd/kuberpack/        client développeur API (internal/cli)
+cmd/kuberpack-admin/  administration API et bootstrap
+internal/runtimecli/ control plane et reloader
+internal/platformcli/ installation et diagnostics opérateur
 internal/             logique métier, packages importables
 provisioning/         charts Helm embarqués + tests Go des charts
 testenv/              banc Docker (Forgejo + k3s) pour les tests réels
@@ -204,7 +209,7 @@ réécrit plus ces fichiers en mode deux dépôts.
 ### Le trajet d'une compilation
 
 ```text
-kuberpack project compile -f kuberpack.yaml
+kuberpack deploy --file kuberpack.yaml
   → POST /api/v1/projects
   → internal/control.createProject
       → internal/promote.EnsureProject
@@ -238,7 +243,7 @@ git push
 
 ```text
 kuberpack install
-  → cmd/kuberpack/install_plan.go (étapes)
+  → internal/platformcli/install_plan.go (étapes)
   → internal/install.Config (choix non secrets)
   → clone du dépôt socle + du dépôt apps
   → Flux, opérateurs, Infisical, secrets
@@ -258,7 +263,7 @@ relance avec la même commande.
 | Nouvelle route API | `internal/control/server.go` (routage) + handler, `docs/api.md` |
 | Nouveau comportement de build | `internal/buildexec`, `internal/builder` |
 | Nouvelle forge | `internal/git/` + `internal/forgejo/` si l'API est Gitea |
-| Nouveau réglage d'installation | `internal/install/config.go`, `cmd/kuberpack/install_options.go`, values du chart |
+| Nouveau réglage d'installation | `internal/install/config.go`, `internal/platformcli/install_options.go`, values du chart |
 | Nouveau template Kubernetes | `provisioning/charts/kuberpack` (socle) ou `provisioning/charts/stateless` (application), + bump de version |
 | Nouveau test de chart | `provisioning/*_test.go` |
 | Nouvelle règle réseau | `internal/promote/*networkpolicy*`, `provisioning/charts/stateless/templates/networkpolicy.yaml` |
@@ -281,7 +286,7 @@ relance avec la même commande.
 
 ## Ce qui reste à améliorer dans l'organisation
 
-- Les étapes d'installation sont dans `cmd/kuberpack/install_*.go` alors que
+- Les étapes d'installation sont dans `internal/platformcli/install_*.go` alors que
   `internal/install` ne porte que la configuration et le playbook. Les déplacer
   rendrait le point d'entrée plus lisible.
 - Les tests de charts sont à la racine de `provisioning/` ; un sous-dossier

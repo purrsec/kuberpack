@@ -25,10 +25,15 @@ kubectl annotate namespace kuberpack-build \
     meta.helm.sh/release-namespace=kuberpack --overwrite
 
 echo "== secrets =="
-# Control plane: the Forgejo PAT is used for the API and for the GitOps repo.
+# The API administrator secret is distinct from every forge credential.
+fixture_api_token="$(kubectl -n kuberpack get secret kuberpack -o jsonpath='{.data.KUBERPACK_API_TOKEN}' 2>/dev/null | base64 -d || true)"
+if [ -z "${fixture_api_token}" ] || [ "${fixture_api_token}" = "${FORGEJO_CONTROL_TOKEN}" ]; then
+    fixture_api_token="$(openssl rand -hex 32)"
+fi
 kubectl -n kuberpack create secret generic kuberpack \
     --from-literal=FORGEJO_TOKEN="${FORGEJO_CONTROL_TOKEN}" \
-    --from-literal=KUBERPACK_API_TOKEN="${FORGEJO_CONTROL_TOKEN}" \
+    --from-literal=KUBERPACK_API_TOKEN="${fixture_api_token}" \
+    --from-literal=KUBERPACK_REGISTRY_TOKEN="${FORGEJO_REGISTRY_TOKEN}" \
     --dry-run=client -o yaml | kubectl apply -f -
 
 # Builder: a dedicated Git token and a registry token (never the control plane
@@ -52,22 +57,35 @@ kubectl -n kuberpack-build create secret docker-registry kuberpack-builder-pull 
     --docker-password="${FORGEJO_REGISTRY_TOKEN}" \
     --dry-run=client -o yaml | kubectl apply -f -
 
+echo "== fixture API TLS =="
+fixture_api_host="kuberpack.${K3S_NODE_IP}.nip.io"
+openssl req -new -newkey rsa:2048 -nodes -keyout "${TESTENV}/pki/control.key" \
+    -out "${TESTENV}/pki/control.csr" -subj "/CN=${fixture_api_host}" >/dev/null 2>&1
+printf 'subjectAltName=DNS:%s\n' "${fixture_api_host}" >"${TESTENV}/pki/control.ext"
+openssl x509 -req -in "${TESTENV}/pki/control.csr" -CA "${TESTENV}/pki/ca.crt" \
+    -CAkey "${TESTENV}/pki/ca.key" -CAcreateserial -days 30 \
+    -extfile "${TESTENV}/pki/control.ext" -out "${TESTENV}/pki/control.crt" >/dev/null 2>&1
+chmod 600 "${TESTENV}/pki/control.key"
+kubectl -n kuberpack create secret tls kuberpack-test-tls \
+    --cert="${TESTENV}/pki/control.crt" --key="${TESTENV}/pki/control.key" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
 echo "== helm install =="
 helm upgrade --install kuberpack "${REPO}/provisioning/charts/kuberpack" \
     --namespace kuberpack \
     --set image=docker.io/kuberpack-test/control:dev \
     --set builderImage=docker.io/kuberpack-test/builder:dev \
-    --set forgejoURL="${FORGEJO_URL}" \
+    --set gitURL="${FORGEJO_URL}" \
     --set gitopsURL="${FORGEJO_URL}/${GITOPS_REPO}.git" \
     --set gitopsApps=kubernetes/vps/apps \
     --set gitopsChart=./kubernetes/vps/charts/stateless \
     --set gitopsSource=infra-homelab \
     --set previewDomain=preview.kuberpack.test \
-    --set host=kuberpack.kuberpack.test \
-    --set webhookURL="http://${K3S_NODE_IP}:30080/hooks/forgejo" \
-    --set ingress.enabled=false \
-    --set nodePort.enabled=true \
-    --set nodePort.port=30080 \
+    --set host="${fixture_api_host}" \
+    --set webhookURL="https://${fixture_api_host}/hooks/git" \
+    --set ingress.enabled=true \
+    --set ingress.tls=true \
+    --set tlsSecret=kuberpack-test-tls \
     --set buildNetworkPolicy.enabled=false \
     --set wait=45m \
     --set-string 'extraEnv[0].name=KUBERPACK_BUILDKIT_IMAGE' \

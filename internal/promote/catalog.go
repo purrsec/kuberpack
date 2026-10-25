@@ -3,6 +3,7 @@ package promote
 import (
 	"embed"
 	"fmt"
+	"git.host.bzh/pepe/kuberpack/internal/spec"
 	"path"
 	"sort"
 	"strings"
@@ -14,10 +15,7 @@ import (
 var addonCatalogFS embed.FS
 
 // ResourceList is a quantity of CPU and of memory.
-type ResourceList struct {
-	CPU    string `yaml:"cpu"`
-	Memory string `yaml:"memory"`
-}
+type ResourceList = spec.ResourceList
 
 // AddonResources are the resources of an addon.
 type AddonResources struct {

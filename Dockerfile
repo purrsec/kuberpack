@@ -16,7 +16,8 @@ COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -trimpath -ldflags="-s -w" -o /out/kuberpack ./cmd/kuberpack
+    go build -trimpath -ldflags="-s -w" -o /out/kuberpack-control-plane ./cmd/kuberpack-control-plane && \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -o /out/kuberpack-reloader ./cmd/kuberpack-reloader
 
 # Git is retained for GitOps; build tools and command interpreters belong only
 # in Dockerfile.builder. Copy the HTTPS transport and shared libraries into an
@@ -36,7 +37,8 @@ RUN mkdir -p /runtime/home/nonroot /runtime/var/lib/kuberpack /runtime/tmp /runt
 
 FROM scratch
 COPY --from=runtime-files /runtime/ /
-COPY --from=build --chmod=755 /out/kuberpack /usr/bin/kuberpack
+COPY --from=build --chmod=755 /out/kuberpack-control-plane /usr/bin/kuberpack-control-plane
+COPY --from=build --chmod=755 /out/kuberpack-reloader /usr/bin/kuberpack-reloader
 COPY provisioning/charts/stateless /opt/kuberpack/charts/stateless
 COPY provisioning/charts/kuberpack /opt/kuberpack/charts/kuberpack
 ENV PATH=/usr/bin \
@@ -47,5 +49,5 @@ ENV PATH=/usr/bin \
 USER 65532:65532
 WORKDIR /var/lib/kuberpack
 EXPOSE 8080
-ENTRYPOINT ["/usr/bin/kuberpack"]
-CMD ["serve", "--addr", ":8080"]
+ENTRYPOINT ["/usr/bin/kuberpack-control-plane"]
+CMD ["--addr", ":8080"]

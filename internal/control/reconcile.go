@@ -126,7 +126,8 @@ func (s *Server) reconcileApp(ctx context.Context, project string, desc promote.
 	// A new app is built right away. An app whose build parameters changed
 	// is built again: the manifest asked for something else.
 	// An application that runs a published image is not built.
-	if strings.TrimSpace(app.ForgejoRepository) != "" && (created || buildParametersChanged(previous, app)) {
+	active, _ := s.activeDeployment(ctx, project)
+	if !active && strings.TrimSpace(app.ForgejoRepository) != "" && (created || buildParametersChanged(previous, app)) {
 		if err := s.queueFirstBuild(ctx, app); err != nil {
 			return fmt.Errorf("app %s: %w", desc.Name, err)
 		}

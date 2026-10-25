@@ -5,8 +5,7 @@
 Kuberpack gère les déploiements au nom d’un administrateur. Les namespaces et
 NetworkPolicies isolent les workloads. La clé API globale reste administratrice ;
 des **jetons limités à un projet** peuvent la remplacer pour un usage restreint
-(CI, développeur), sans isoler pour autant les identités ou chemins Infisical
-(risque 2 de l’audit). L’[audit du 23 octobre 2026](security-audit-2026-10-23.md)
+(CI, développeur), avec des rôles explicites. Les identités et chemins Infisical sont associés par la politique opérateur ; leur isolation effective exige également des permissions dédiées dans Infisical. L’[audit du 23 octobre 2026](security-audit-2026-10-23.md)
 distingue les protections vérifiées des risques restant à traiter.
 
 | Credential | Usage attendu | Interdit |
@@ -57,19 +56,13 @@ dans une liste, une réponse ultérieure ou un journal. La comparaison se fait e
 temps constant sur l’empreinte, puis l’état du jeton est vérifié ; un jeton
 inconnu, expiré ou révoqué répond `401` sans distinction.
 
-Un jeton de projet ne voit que les apps de son projet et ne peut compiler ou
-supprimer que ce projet ; les routes `/api/v1/tokens` restent réservées à
-l’administrateur. Une app d’un autre projet répond `404`. **Limites** : le jeton
-ne crée pas d’isolation Infisical (projet/chemin et identité partagés, risque 2),
-ne change pas les webhooks HMAC par application, et il n’existe ni quota ni
-anti-rejeu par jeton. Un jeton administrateur créé par l’API a les mêmes
-pouvoirs que `KUBERPACK_API_TOKEN` ; sa compromission vaut celle du jeton global.
+Les rôles explicites sont `reader`, `deployer`, `maintainer` et `admin`. Les rôles de projet limitent toutes les lectures et mutations à leur projet ; un deployer peut également être limité à des services. Les anciens jetons `project` gardent la lecture mais ne peuvent plus publier ni détruire. Rôle et expiration sont obligatoires pour la création API.
 
-Un jeton de projet autorise la réécriture du manifeste de **son** projet
-(namespace, services, addons, politiques). Ce n’est donc pas une frontière
-contre un auteur de manifeste hostile : il ne restreint ni les dépôts sources,
-ni les images, ni les chemins Infisical que ce manifeste référence, et il ne
-remplace pas la séparation d’identités prévue par le risque 2.
+La publication et la reconstruction passent par les plans v2 : révision de base, politique opérateur, références immuables, expiration, credential et clé d'idempotence sont vérifiés. Les anciennes routes d'écriture v1 sont retirées. La destruction appartient exclusivement à l'administrateur et reste bloquée par un stockage persistant ou un inventaire inaccessible. Le namespace est conservé et ses jetons sont révoqués.
+
+L'identité Infisical, le namespace, les domaines, les sources autorisées et les exceptions de sécurité relèvent d'une politique opérateur. Un manifeste développeur ne choisit pas une autre identité ou un autre namespace. Les permissions effectives chez le gestionnaire de secrets restent une frontière à configurer ; l'écriture d'une référence YAML ne crée pas ces permissions.
+
+Le binaire développeur ne dépend pas des packages du serveur, du builder ou de l'installation Kubernetes. L'image serveur lance `kuberpack-control-plane`, les Jobs lancent `kuberpack-builder` et le reloader a son point d'entrée séparé. Les charts, les commandes de Jobs et leur admission sont versionnés ensemble.
 
 ## Pull requests
 

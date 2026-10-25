@@ -1,171 +1,70 @@
-# API
+# API HTTP
 
-Le CLI utilise l'API HTTP. Les endpoints de gestion exigent le jeton API ;
-le développeur n'a pas besoin du kubeconfig du cluster.
+Le client développeur utilise l'API v2 pour l'identité, les projets, les plans et les demandes de déploiement. Toutes les routes métier exigent `Authorization: Bearer …`. Les routes de diagnostic v1 restent disponibles ; leurs anciennes écritures ne permettent plus de contourner le nouveau contrat.
 
-## Jetons API
+## Identité et permissions
 
-`KUBERPACK_API_TOKEN` reste le jeton administrateur global. Des jetons
-supplémentaires peuvent être créés dans SQLite : soit administrateurs (projet
-vide), soit limités à **un projet**. Seule l'empreinte SHA-256 du secret est
-stockée ; le secret `kp_<id>_<secret>` n'est affiché qu'à la création.
+`GET /api/v2/session` retourne la version, les capacités annoncées, l'identité du credential, le rôle, le projet, les restrictions de services et l'expiration. Le secret n'y figure jamais. Le client exige les capacités de plan, déploiement, idempotence, rôles et observation de configuration avant toute publication.
 
-```http
-POST /api/v1/tokens
-Authorization: Bearer $KUBERPACK_API_TOKEN
-Content-Type: application/json
+Les nouveaux rôles sont `reader`, `deployer`, `maintainer` et `admin`. Les anciens jetons `project` conservent la lecture mais ne gagnent aucun pouvoir de publication. Un jeton restreint à un service ne peut pas lire le manifeste complet ni les déploiements concernant d'autres services.
 
-{"name": "ci-demo", "project": "demo", "expires_in": "720h"}
-```
+## Routes v2
 
-Réponse `201` : `id`, `name`, `project`, `role`, `created_at`, `expires_at` et
-`token`. `token` est la seule fois où le secret apparaît. Sans `project`, le
-jeton est administrateur. `expires_in` est une durée Go (`720h`, `30m`) ; son
-absence signifie « jamais expiré ».
-
-| Route | Rôle |
+| Méthode et chemin | Contrat |
 | --- | --- |
-| `POST /api/v1/tokens` | Créer un jeton (administrateur uniquement) |
-| `GET /api/v1/tokens` | Lister les jetons sans secret ni empreinte (administrateur uniquement) |
-| `DELETE /api/v1/tokens/{id}` | Révoquer un jeton immédiatement et de façon idempotente (administrateur uniquement) |
+| `GET /api/v2/session` | Credential, version et capacités. |
+| `GET /api/v2/projects` | Projets accessibles, y compris les réservations vides. |
+| `GET /api/v2/projects/{project}` | Métadonnées, révision, services et manifeste complet si autorisé. |
+| `GET /api/v2/projects/{project}/services` | Identités stables et observations des services autorisés. |
+| `POST /api/v2/projects/{project}/plans` | Préparer `deploy`, `redeploy` ou, pour admin, `destroy`. |
+| `POST /api/v2/projects/{project}/deployments` | Accepter un plan avec une clé d'idempotence ; réponse `202` et ID durable. |
+| `GET /api/v2/projects/{project}/deployments` | Historique des demandes visibles. |
+| `GET /api/v2/projects/{project}/deployments/{id}` | État, étapes, builds liés, révisions et erreur éventuelle. |
+| `GET /api/v2/projects/{project}/requests/{id}` | Retrouver une demande de ce credential par sa clé d'idempotence. |
+| `POST /api/v2/admin/projects/{project}` | Réserver un projet vide ; admin uniquement. |
+| `PUT /api/v2/admin/projects/{project}/policy` | Politique opérateur, quotas et identité de secrets. |
+| `POST /api/v2/admin/tokens` | Rôle et expiration obligatoires ; secret rendu une fois. |
+| `GET /api/v2/admin/tokens` | Métadonnées sans secret. |
+| `DELETE /api/v2/admin/tokens/{id}` | Révocation idempotente. |
 
-Un jeton de projet est résolu en base à chaque requête. La comparaison se fait
-en temps constant sur l'empreinte ; un jeton inconnu, expiré ou révoqué reçoit
-`401`, sans distinction. Ses droits :
+## Plans et exécution
 
-- `GET /api/v1/apps` et les routes d'une app (`status`, `logs`, `builds`,
-  `build-logs`, `redeploy`) sont filtrées ou vérifiées par projet ; une app
-  d'un autre projet, ou hors projet, répond `404` ;
-- `POST /api/v1/projects` et `DELETE /api/v1/projects/{name}` ne sont autorisés
-  que sur son propre projet (`403` sinon) ;
-- `GET /api/v1/projects` ne liste que son projet ;
-- les routes `/api/v1/tokens` restent réservées à l'administrateur (`403`).
-
-Un jeton ne remplace pas le jeton global : celui-ci continue de fonctionner à
-l'identique.
-
-```bash
-kuberpack token create --name ci-demo --project demo --expires 720h
-kuberpack token list
-kuberpack token revoke 3
-```
-
-`token create` affiche le secret sur `TOKEN` et prévient qu'il ne sera plus
-affiché. `token list` ne montre jamais de secret. `KUBERPACK_API_URL` et
-`KUBERPACK_API_TOKEN` (administrateur) sont requis, comme pour les autres
-commandes.
-
-## Déclarer une application
-
-Une application se déclare par un **manifeste** : c’est la seule source de vérité.
-Il n’y a plus d’API d’enregistrement : `POST /api/v1/projects` compile le
-manifeste, arme le pipeline de build et écrit le GitOps.
-
-```http
-POST /api/v1/projects
-```
+Un plan appartient au credential et au projet, expire après quinze minutes et contient la révision de base, l'empreinte de politique, les changements et les références immuables. Sa préparation compile dans un checkout temporaire et ne pousse aucun commit, ne pose aucun webhook et n'enfile aucun build.
 
 ```json
-{
-  "project": "demo",
-  "manifest": "project: demo\nservices:\n  web:\n    repository: org/web\n    hostname: web.example.org\n"
-}
+{"action":"deploy","manifest":"project: demo\nservices: {}\n","expected_revision":"empreinte-du-manifeste-lu"}
 ```
 
-Le format du manifeste est spécifié dans [manifest.md](manifest.md). Le
-compilateur est strict : un champ inconnu ou une valeur non supportée est
-une erreur explicite, jamais un no-op silencieux.
+`expected_revision: ""` exige un projet encore vide. Le manifeste est complet. `redeploy` utilise `service` et éventuellement `commit` ; la première version exige un SHA égal au HEAD vérifié de la branche. Les permissions et politiques sont vérifiées avant préparation puis avant exécution.
 
-| Champ | Rôle |
-| --- | --- |
-| `project` | Nom du projet. Doit correspondre à `project:` du manifeste |
-| `manifest` | Le `kuberpack.yaml` complet, en YAML |
+```json
+{"plan_id":"plan_ID","request_id":"pipeline-42","fingerprint":"empreinte-des-entrees-client"}
+```
 
-Réponse : le projet compilé (`project`, `services`, `addons`, `infra_commit`,
-`changed`).
+Un identifiant réutilisé avec le même contenu retourne la même demande. Un contenu différent donne `409`. Une seule demande est active par projet. Le travail est persisté avant les effets distants. Git, SQLite, la forge et Kubernetes ne forment pas une transaction : une erreur après commit GitOps est présentée comme une erreur partielle avec l'étape effectuée.
 
-## Ce que fait la compilation
+Le suivi ne valide pas une ancienne application saine : il corrèle les builds de la demande, le digest attendu, la révision de configuration annotée sur le workload et sa génération observée. Les états terminaux sont `succeeded`, `failed`, `rolled_back` et `superseded`. Un build interrompu par un redémarrage est conservé en échec et n'est pas rejoué aveuglément.
 
-Pour chaque service qui déclare un `repository`, Kuberpack :
+Les erreurs v2 sont des objets `error` contenant `code` et `message`. `401` indique une authentification refusée, `403` un droit ou une politique refusés et `409` un conflit de révision, de plan ou d'idempotence. Les limites générales répondent `429` avec `Retry-After`.
 
-1. écrit les artefacts GitOps du service (`values.yaml`, `helmrelease.yaml`,
-   `kustomization.yaml`, `secret.yaml`) ;
-2. crée l’entrée SQLite de l’app (`<projet>-<service>`), sa clé HMAC et son
-   webhook Forgejo ;
-3. enfile le premier build.
+## Routes historiques
 
-La compilation est idempotente : la recompiler ne duplique ni webhook, ni
-secret, ni build. Un service qui quitte le manifeste perd son app, son webhook
-et son secret.
+`POST /api/v1/projects`, `DELETE /api/v1/projects/{name}` et `POST /api/v1/apps/{name}/redeploy` sont retirées : `410` ou refus de permission. L'administration des jetons via v1 applique également les règles explicites de rôle et d'expiration. Les lectures d'applications, de status, de builds et de logs gardent leur périmètre projet/service. Les apps d'un autre projet sont masquées par `404`.
 
-Le `values.yaml` est régénéré depuis le manifeste à chaque compilation : le
-manifeste est la source de vérité du runtime. Seuls l’`image` et le `track`
-épinglés par le control plane sont conservés.
-
-## Suite HTTP
-
-`GET /api/v1/projects` — liste des projets.
-
-`GET /api/v1/projects/{name}` — un projet et ses services.
-
-`DELETE /api/v1/projects/{name}` — supprime le projet du GitOps, les apps, les
-webhooks et les secrets associés.
-
-`GET /api/v1/apps` — les apps, leurs métadonnées et leur objet `deployment`
-observé dans le cluster au moment de la requête.
-
-`GET /api/v1/apps/{name}` — une app.
-
-`GET /api/v1/apps/{name}/status` — `name`, `project`, `hostname` et
-`deployment` : état, raison, message, image du workload, réplicas
-(`desired`, `ready`, `available`, `updated`), réconciliation et horodatage.
-Un nom inconnu retourne 404 ; l'observation nécessite la même authentification
-que les autres endpoints de gestion.
-
-Cet endpoint ajoute `deployment.resources` : usage CPU/RAM, demandes et
-limites, pourcentage de la limite, redémarrages, détail des conteneurs et
-compteurs de bridage CPU. Les endpoints d'inventaire conservent une observation
-de disponibilité légère ; les ressources sont lues dans `app status`.
-
-`GET /api/v1/apps/{name}/builds` — historique SQLite (`status` : `running`,
-`succeeded`, `failed`, `rolled_back`).
-
-`GET /api/v1/apps/{name}/logs` — logs des conteneurs de l'application,
-en texte et en streaming. Options : `follow`, `tailLines` (100 par défaut,
-`-1` pour tout), `sinceSeconds`, `previous`, `timestamps`, `container`
-(`app` par défaut). L'endpoint exige le jeton API, également pour une image
-publiée. Un nom inconnu retourne 404, une option invalide 400 et des logs
-indisponibles 503. Une interruption après le début du flux est signalée
-par le trailer HTTP `X-Kuberpack-Log-Error` ; le CLI retourne alors une erreur.
-
-`GET /api/v1/apps/{name}/builds/{id}/logs` — sortie du builder, conservée
-avec le build ou lue dans son pod pendant son exécution.
-
-`POST /api/v1/apps/{name}/redeploy` — enfile un build du HEAD courant. Chaque
-appel crée une livraison distincte : un redeploy du même commit relance bien
-un build au lieu d’être ignoré comme doublon.
-
-`POST /hooks/forgejo` — push (`push`, `pull_request`) signé en HMAC.
-
-`POST /hooks/flux` — notification HelmRelease en erreur → `rolled_back` + statut
-Forgejo `warning`. Secret `KUBERPACK_FLUX_WEBHOOK_SECRET` (HMAC ou
-`Authorization: Bearer`). Kuberpack n’a pas le kubeconfig du VPS ; le rollback
-Helm reste celui du HelmRelease.
-
-Previews : URL `https://pr-<n>.<app>.<KUBERPACK_PREVIEW_DOMAIN>`.
+`GET /healthz` reste une sonde publique minimale. Les webhooks `/hooks/git`, `/hooks/forgejo` et `/hooks/flux` restent des intégrations machine signées avec leurs secrets propres ; ils ne sont pas des commandes du client développeur.
 
 ## Consulter les déploiements
 
 ```bash
-kuberpack apps
-kuberpack app status stirling-pdf-pdf
-kuberpack apps --json
-kuberpack app status --json stirling-pdf-pdf
+kuberpack services list
+kuberpack status --service stirling-pdf-pdf
+kuberpack services list --output json
+kuberpack status --service stirling-pdf-pdf --output json
 ```
 
-`apps` affiche `NAME`, `PROJECT`, `STATUS`, `READY` et `HOSTNAME`.
-`app status` donne les réplicas mis à jour et disponibles, l'image observée,
-la réconciliation et la raison détaillée d'un blocage. `--json` conserve la
+`services list` affiche `NAME`, `PROJECT`, `STATUS`, `READY` et `HOSTNAME`.
+`status --service` donne les réplicas mis à jour et disponibles, l'image observée,
+la réconciliation et la raison détaillée d'un blocage. `--output json` conserve la
 réponse complète pour les scripts. Consulter un état en erreur ne fait pas
 échouer la commande ; les erreurs HTTP ou d'authentification l'échouent.
 
@@ -267,7 +166,7 @@ global de huit secondes de la requête. Les scrapes kubelet sont limités à
 deux en parallèle et huit Mio par réponse ; seuls les compteurs de quota
 sont décodés. Aucun nouveau service de monitoring n'est installé.
 
-`app builds` et `app build-logs` donnent l'historique et la sortie du **builder**.
+`builds list` et `builds logs` donnent l'historique et la sortie du **builder**.
 Le statut décrit les workloads actuellement observés ; il ne prouve pas
 qu'un commit encore en cours de build est déjà déployé. Après compilation,
 l'observation peut encore refléter l'ancienne configuration jusqu'à
@@ -276,21 +175,17 @@ l'application du commit par Flux.
 ## Consulter les logs
 
 ```bash
-kuberpack app logs stirling-pdf-pdf
-kuberpack app logs stirling-pdf-pdf -f
-kuberpack app logs stirling-pdf-pdf --tail 50 --since 10m --timestamps
-kuberpack app logs stirling-pdf-pdf --previous
-kuberpack app build-logs demo-web
-kuberpack app build-logs --build 7 demo-web
+kuberpack logs --service stirling-pdf-pdf
+kuberpack logs --service stirling-pdf-pdf -f
+kuberpack logs --service stirling-pdf-pdf --tail 50 --since 10m --timestamps
+kuberpack logs --service stirling-pdf-pdf --previous
+kuberpack builds logs --latest --service demo-web
+kuberpack builds logs 7 --service demo-web
 ```
 
-`app logs` lit les logs d'exécution des services `image:` comme de ceux
+`logs` lit les logs d'exécution des services `image:` comme de ceux
 construits depuis un dépôt. Une image publiée telle que Stirling n'a pas de
-build Kuberpack, mais ses conteneurs produisent des logs. Les anciennes
-commandes `app logs --build 7 demo-web` restent valides ; `--build latest`
-lit le dernier build. Ces options ne se combinent pas avec celles du runtime.
-
-La lecture utilise client-go et l'API Kubernetes, avec la sémantique de
+build Kuberpack, mais ses conteneurs produisent des logs. La lecture utilise client-go et l'API Kubernetes, avec la sémantique de
 [`kubectl logs`](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_logs/).
 Le développeur a uniquement besoin de l'URL et du jeton API Kuberpack.
 `--tail` s'applique à chaque réplica ; `--since` accepte une durée positive

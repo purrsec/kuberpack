@@ -77,8 +77,13 @@ func TestProjectTenantIsProvisionedAndDeleted(t *testing.T) {
 	if _, err := s.cfg.KubeDynamic.Resource(gvr).Namespace("kuberpack").Get(ctx, "kuberpack-project-demo", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
 		t.Fatalf("the project Kustomization must be removed: %v", err)
 	}
-	if _, err := s.cfg.Kube.CoreV1().Namespaces().Get(ctx, "demo", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
-		t.Fatalf("the owned namespace must be removed: %v", err)
+	if _, err := s.cfg.Kube.CoreV1().Namespaces().Get(ctx, "demo", metav1.GetOptions{}); err != nil {
+		t.Fatalf("the owned namespace must be preserved for separate operator cleanup: %v", err)
+	}
+	for _, name := range []string{"kuberpack-tenant", "kuberpack-reloader", "kuberpack-inspector"} {
+		if _, err := s.cfg.Kube.RbacV1().RoleBindings("demo").Get(ctx, name, metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+			t.Fatalf("project binding %s remains after deletion: %v", name, err)
+		}
 	}
 }
 

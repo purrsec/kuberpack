@@ -82,7 +82,7 @@ spec:
         - name: reloader
           image: {{ .Values.image | quote }}
           imagePullPolicy: IfNotPresent
-          command: ["/usr/bin/kuberpack", "reloader", "--interval", "30s"]
+          command: ["/usr/bin/kuberpack-reloader", "--interval", "30s"]
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

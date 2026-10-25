@@ -58,6 +58,16 @@ func validateProjectNamespace(work string, m ProjectManifest, p Platform) error 
 			return fmt.Errorf("namespace %q is already owned by project %q", namespace, previous.Project)
 		}
 		if previous.Project != m.Project {
+			for _, existing := range previous.Services {
+				if existing.Hostname == "" {
+					continue
+				}
+				for _, incoming := range m.Services {
+					if incoming.Hostname == existing.Hostname {
+						return fmt.Errorf("hostname %q is already owned by project %q", incoming.Hostname, previous.Project)
+					}
+				}
+			}
 			identities := map[string]bool{}
 			for service := range previous.Services {
 				identities[sanitizeName(previous.Project+"-"+service)] = true

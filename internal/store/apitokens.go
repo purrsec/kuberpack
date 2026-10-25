@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -23,7 +24,10 @@ const (
 	// APITokenRoleAdmin donne l'administration de la plateforme.
 	APITokenRoleAdmin = "admin"
 	// APITokenRoleProject limite un jeton à un projet.
-	APITokenRoleProject = "project"
+	APITokenRoleProject    = "project"
+	APITokenRoleReader     = "reader"
+	APITokenRoleDeployer   = "deployer"
+	APITokenRoleMaintainer = "maintainer"
 
 	apiTokenSecretBytes = 32
 	maxAPITokenSecret   = 512
@@ -45,6 +49,7 @@ type APIToken struct {
 	Name       string
 	Project    string
 	Role       string
+	Services   []string
 	CreatedAt  time.Time
 	LastUsedAt time.Time
 	ExpiresAt  time.Time
@@ -123,7 +128,7 @@ func (s *Store) CreateAPIToken(ctx context.Context, name, project, role string, 
 		if project != "" {
 			return APIToken{}, "", fmt.Errorf("an administrator token cannot be scoped to a project")
 		}
-	case APITokenRoleProject:
+	case APITokenRoleProject, APITokenRoleReader, APITokenRoleDeployer, APITokenRoleMaintainer:
 		if project == "" {
 			return APIToken{}, "", fmt.Errorf("a project token requires a project")
 		}
@@ -171,7 +176,7 @@ VALUES (?, ?, ?, ?, ?, ?)`,
 // APITokenByID relit la fiche publique d'un jeton.
 func (s *Store) APITokenByID(ctx context.Context, id int64) (APIToken, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT id, name, project, role, created_at, last_used_at, expires_at, revoked_at
+SELECT id, name, project, role, created_at, last_used_at, expires_at, revoked_at, services
 FROM api_tokens WHERE id = ?`, id)
 	return scanAPIToken(row)
 }
@@ -192,11 +197,11 @@ func (s *Store) AuthenticateAPIToken(ctx context.Context, presented string, now 
 	}
 	var storedHash string
 	var token APIToken
-	var created, lastUsed, expires, revoked string
+	var created, lastUsed, expires, revoked, services string
 	err := s.db.QueryRowContext(ctx, `
-SELECT id, name, token_hash, project, role, created_at, last_used_at, expires_at, revoked_at
+SELECT id, name, token_hash, project, role, created_at, last_used_at, expires_at, revoked_at, services
 FROM api_tokens WHERE id = ?`, id,
-	).Scan(&token.ID, &token.Name, &storedHash, &token.Project, &token.Role, &created, &lastUsed, &expires, &revoked)
+	).Scan(&token.ID, &token.Name, &storedHash, &token.Project, &token.Role, &created, &lastUsed, &expires, &revoked, &services)
 	if errors.Is(err, sql.ErrNoRows) {
 		burnAPITokenComparison(hashAPITokenSecret(secret))
 		return APIToken{}, ErrNotFound
@@ -206,6 +211,9 @@ FROM api_tokens WHERE id = ?`, id,
 	}
 	if subtle.ConstantTimeCompare([]byte(storedHash), []byte(hashAPITokenSecret(secret))) != 1 {
 		return APIToken{}, ErrNotFound
+	}
+	if err := json.Unmarshal([]byte(services), &token.Services); err != nil {
+		return APIToken{}, err
 	}
 	token.CreatedAt = parseAPITokenTime(created)
 	token.LastUsedAt = parseAPITokenTime(lastUsed)
@@ -232,7 +240,7 @@ FROM api_tokens WHERE id = ?`, id,
 // restent visibles : la trame d'audit ne doit pas disparaître.
 func (s *Store) ListAPITokens(ctx context.Context) ([]APIToken, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, name, project, role, created_at, last_used_at, expires_at, revoked_at
+SELECT id, name, project, role, created_at, last_used_at, expires_at, revoked_at, services
 FROM api_tokens ORDER BY id DESC`)
 	if err != nil {
 		return nil, err
@@ -278,12 +286,15 @@ type rowScanner interface {
 
 func scanAPIToken(row rowScanner) (APIToken, error) {
 	var token APIToken
-	var created, lastUsed, expires, revoked string
-	err := row.Scan(&token.ID, &token.Name, &token.Project, &token.Role, &created, &lastUsed, &expires, &revoked)
+	var created, lastUsed, expires, revoked, services string
+	err := row.Scan(&token.ID, &token.Name, &token.Project, &token.Role, &created, &lastUsed, &expires, &revoked, &services)
 	if errors.Is(err, sql.ErrNoRows) {
 		return APIToken{}, ErrNotFound
 	}
 	if err != nil {
+		return APIToken{}, err
+	}
+	if err := json.Unmarshal([]byte(services), &token.Services); err != nil {
 		return APIToken{}, err
 	}
 	token.CreatedAt = parseAPITokenTime(created)
@@ -309,4 +320,13 @@ func parseAPITokenTime(raw string) time.Time {
 		return time.Time{}
 	}
 	return parsed.UTC()
+}
+
+func (s *Store) SetAPITokenServices(ctx context.Context, id int64, services []string) error {
+	b, err := json.Marshal(services)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE api_tokens SET services=? WHERE id=?`, string(b), id)
+	return err
 }

@@ -93,6 +93,17 @@ rules:
     resources: ["*"]
     verbs: ["*"]
 ---
+# Read-only live inventory for administrator destruction plans. Bound only
+# inside project namespaces; it cannot read Secrets or modify workloads.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kuberpack-project-inspector
+rules:
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims, pods]
+    verbs: [get, list]
+---
 # The control plane provisions namespaces, tenant identities, their bindings
 # and one Flux Kustomization per project. A ValidatingAdmissionPolicy bounds
 # what it may create: it cannot name another identity or another role.
@@ -103,7 +114,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: [namespaces]
-    verbs: [get, list, create, update, patch, delete]
+    verbs: [get, list, create, update, patch]
   - apiGroups: [""]
     resources: [serviceaccounts]
     verbs: [get, list, create, update, delete]
@@ -114,7 +125,7 @@ rules:
   # control plane may bind the tenant role, and nothing else.
   - apiGroups: [rbac.authorization.k8s.io]
     resources: [clusterroles]
-    resourceNames: [kuberpack-tenant, kuberpack-reloader-tenant]
+    resourceNames: [kuberpack-tenant, kuberpack-reloader-tenant, kuberpack-project-inspector]
     verbs: [bind]
   - apiGroups: [kustomize.toolkit.fluxcd.io]
     resources: [kustomizations]

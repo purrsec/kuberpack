@@ -125,6 +125,12 @@ func (s *Store) Close() error {
 
 func (s *Store) migrate() error {
 	_, err := s.db.Exec(`
+CREATE TABLE IF NOT EXISTS api_objects (
+ kind TEXT NOT NULL, id TEXT NOT NULL, project TEXT NOT NULL, owner TEXT NOT NULL,
+ request_key TEXT NOT NULL DEFAULT '', payload TEXT NOT NULL, created_at TEXT NOT NULL,
+ PRIMARY KEY(kind,id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS api_objects_request ON api_objects(kind,project,owner,request_key) WHERE request_key <> '';
 CREATE TABLE IF NOT EXISTS image_apps (
   name TEXT PRIMARY KEY,
   project TEXT NOT NULL,
@@ -208,6 +214,7 @@ CREATE INDEX IF NOT EXISTS api_tokens_project ON api_tokens(project);
 		return err
 	}
 	for _, stmt := range []string{
+		`ALTER TABLE api_tokens ADD COLUMN services TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE webhook_deliveries ADD COLUMN pull_request INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE builds ADD COLUMN archive_url TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE builds ADD COLUMN logs TEXT NOT NULL DEFAULT ''`,

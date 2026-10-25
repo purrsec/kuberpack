@@ -12,7 +12,7 @@ COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -trimpath -ldflags="-s -w" -o /kuberpack ./cmd/kuberpack
+    go build -trimpath -ldflags="-s -w" -o /kuberpack-builder ./cmd/kuberpack-builder
 
 FROM alpine:3.21 AS tools
 ARG RAILPACK_VERSION=0.39.0
@@ -42,7 +42,7 @@ RUN apk add --no-cache ca-certificates git skopeo tar bash coreutils \
     && adduser -D -u 1000 -G kuberpack kuberpack \
     && mkdir -p /work \
     && chown 1000:1000 /work
-COPY --from=go-build --chmod=755 /kuberpack /usr/bin/kuberpack
+COPY --from=go-build --chmod=755 /kuberpack-builder /usr/bin/kuberpack-builder
 COPY --from=tools --chmod=755 /railpack /usr/bin/railpack
 COPY --from=tools --chmod=755 /trivy /usr/bin/trivy
 COPY --from=tools --chmod=755 /syft /usr/bin/syft
@@ -51,4 +51,4 @@ USER 1000:1000
 ENV HOME=/work
 ENV TMPDIR=/work
 WORKDIR /work
-ENTRYPOINT ["/usr/bin/kuberpack", "builder"]
+ENTRYPOINT ["/usr/bin/kuberpack-builder"]

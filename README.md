@@ -1,126 +1,74 @@
 # Kuberpack
 
-PaaS GitOps visé : `git push` → image immuable → Flux.
+PaaS GitOps : `git push` → image immuable → GitOps → Flux.
 
-Le CLI, le chart et le contrat sont ici. Ce qui est réellement implémenté :
-[docs/status.md](docs/status.md). L'[audit du 22 octobre](docs/audit-2026-10-22.md)
-détaille les parcours vérifiés et les défauts encore ouverts. Le modèle vise
-un déploiement applicatif par Git et Flux ; l'implémentation actuelle écrit
-aussi certains Secrets de registre et ConfigMaps applicatifs dans le cluster.
+Le client développeur, l'administration, le control plane et les workers ont des exécutables distincts. Le poste développeur utilise uniquement l'API HTTPS ; il ne reçoit ni kubeconfig, ni credential GitOps ou de registre.
 
-## Exigences
+## Commencer
 
-- cluster Kubernetes existant pour le control plane et les builds (test réel sur k3s) ;
-- une forge Git : Forgejo/Gitea, GitHub ou GitLab ; registre OCI configurable séparément ;
-- un dépôt GitOps lu par Flux sur le cluster de production ;
-- builds rootless (BuildKit), images pinées par digest ;
-- secrets hors Git, hors SQLite.
+L'administrateur prépare votre projet et ses autorisations de dépôts/domaines, puis vous remet un jeton limité à ce projet. Depuis le dossier de l'application :
+
+```bash
+kuberpack
+```
+
+Choisissez **Prepare and deploy this directory**. L'assistant propose les informations disponibles, demande ce qui manque, prépare le manifeste puis affiche le plan à confirmer. Il est aussi accessible par `kuberpack wizard`.
+
+Les commandes directes sont interactives, sans flags obligatoires :
+
+```bash
+kuberpack login
+kuberpack init
+kuberpack deploy
+
+kuberpack status
+kuberpack logs --follow
+kuberpack builds logs --latest --follow
+```
+
+Les sources doivent être poussées dans Git. `deploy` publie le manifeste complet du projet ; `redeploy` reconstruit un service déjà configuré. Le CLI ne téléverse jamais les fichiers locaux et ne construit pas sur votre machine.
+
+Voir le [guide CLI](docs/cli.md) pour les contextes, les scripts, les permissions, l'administration et la migration.
+
+## Installer la plateforme
+
+Un Kubernetes existant, une forge Git, un registre OCI et deux dépôts GitOps distincts sont nécessaires. Les builds utilisent BuildKit rootless ; les images sont épinglées par digest. Les secrets restent hors des manifests et des valeurs SQLite opérationnelles.
+
+Avec les credentials Git/registre dans les variables dédiées et un contexte Kubernetes explicite :
+
+```bash
+kuberpack-admin install --context mon-cluster --config plateforme.yaml --plan
+kuberpack-admin install --context mon-cluster --config plateforme.yaml --yes
+```
+
+L'installation prépare Flux, les dépendances, Infisical et le control plane derrière un Ingress. Les prérequis et choix de configuration sont dans [docs/install.md](docs/install.md). Elle ne nécessite pas de commande `serve` sur le poste développeur.
+
+## Développer Kuberpack
+
+```bash
+make test
+make build
+./bin/kuberpack --help
+./bin/kuberpack-admin --help
+```
+
+`make build` produit les cinq exécutables. `Dockerfile` embarque `kuberpack-control-plane` et `kuberpack-reloader` ; `Dockerfile.builder` embarque `kuberpack-builder`. Les images, les charts et les règles d'admission des Jobs doivent évoluer ensemble.
+
+L'API v2 apporte les rôles `reader`, `deployer`, `maintainer` et `admin`, les plans expirants, les demandes persistantes et leur idempotence. Les écritures historiques v1 sont retirées ; les lectures de diagnostic v1 restent disponibles. La mise à niveau d'une instance et le remplacement de ses anciens jetons restent des opérations d'administration explicites.
 
 ## Documentation
 
 | Document | Contenu |
 | --- | --- |
-| [État du code](docs/status.md) | Implémenté vs contrat |
-| [Vision](docs/vision.md) | Produit et principes |
-| [Architecture](docs/architecture.md) | Plans, sources de vérité, k3s |
-| [Carte de la codebase](docs/codebase.md) | Où vit chaque responsabilité, rôle des charts, trajets |
-| [Tests et gate de release](docs/testing.md) | Niveaux de test, contrat 3-4 min, release gate, nightly |
-| [Flux](docs/flows.md) | Enregistrement, production, previews |
-| [API](docs/api.md) | Contrat HTTP |
-| [Données](docs/data-model.md) | SQLite opérationnel |
-| [Builder](docs/builder.md) | Stratégies, tags, scans |
-| [Isolation des builds](docs/build-isolation.md) | RuntimeClass, pool dédié, limites |
-| [Stratégies de build](docs/strategies.md) | `auto` / `uv` / `railpack` : Railpack exécute toujours |
-| [Sécurité](docs/security.md) | Tokens, webhooks, runtime |
-| [Erreurs](docs/errors.md) | Comportement en échec |
-| [Git Forgejo](docs/git.md) | Contrat API repris de l’écosystème Gitea |
-| [Feuille de route](docs/roadmap.md) | MVP et phases |
-| [Manifeste kuberpack.yaml](docs/manifest.md) | Format du manifeste compact projet |
-| [Projets](docs/projects.md) | Architecture compilateur de projets |
-| [Déploiement](docs/deployment.md) | Instance actuelle (homelab) |
-
-## Install
-
-Images : `ghcr.io/purrsec/kuberpack:latest` et `ghcr.io/purrsec/kuberpack-builder:latest`.
-
-Avec le kubeconfig du cluster et les jetons de forge et registre dans
-`KUBERPACK_GIT_TOKEN` et `KUBERPACK_REGISTRY_TOKEN` :
-
-```bash
-kuberpack install
-```
-
-Le questionnaire prépare Flux, les dépendances, Infisical et le control plane.
-Le parcours reproductible et les prérequis sont dans [docs/install.md](docs/install.md).
-La validation réelle couvre un [banc k3s Docker](docs/install-validation-2026-10-22.md)
-et un [VPS vierge de 8 Go](docs/install-vps-2026-10-22.md) avec HTTPS public et Stirling PDF.
-Vos applications complexes peuvent conserver leurs `helmfile.yaml` et charts
-à côté du `kuberpack.yaml` : les releases restent gérées par leur outil choisi.
-
-Après activation du profil CLI enregistré par l'installation :
-
-```bash
-kuberpack apps
-kuberpack app status stirling-pdf-pdf
-kuberpack app status --json stirling-pdf-pdf
-```
-
-Les états et réplicas proviennent du cluster via l'API ; le développeur
-n'a pas besoin de kubeconfig. Voir les [états de déploiement](docs/api.md#consulter-les-déploiements).
-
-## Code
-
-CLI `kuberpack` : pin d’un digest dans le dépôt GitOps. Chart Helm `provisioning/charts/stateless` : workload HTTP restreint.
-
-```bash
-make test
-make build
-./bin/kuberpack promote \
-  --gitops-url https://git.host.bzh/pepe/infra-homelab.git \
-  --gitops-branch main \
-  --values-path kubernetes/vps/apps/hello-world/values.yaml \
-  --chart provisioning/charts/stateless \
-  --image-repository git.host.bzh/pepe/hello-world \
-  --commit-sha <sha> \
-  --digest sha256:<digest>
-```
-
-```bash
-make test
-make build
-export FORGEJO_TOKEN=<pat write:repository>
-export KUBERPACK_API_TOKEN=$FORGEJO_TOKEN
-./bin/kuberpack serve --addr :8080 --data data
-# POST /api/v1/projects  Authorization: Bearer …
-# POST /hooks/forgejo  HMAC X-Gitea-Signature
-```
-
-`POST /api/v1/projects` compile le manifeste `kuberpack.yaml` : il écrit le YAML GitOps (hostname, port, healthcheck), inscrit l’app, pose le webhook Forgejo et lance le premier build. Un `git push` sur la branche configurée construit, pin le digest et active Flux. Rien n’est commité dans le dépôt applicatif. Le [manifeste](docs/manifest.md) est la seule source de vérité.
-
-`serve` est déployé sur le mini-pc (`https://kuberpack.host.bzh/`), hors du Flux `wait: true`.
-
-## Installation
-
-Depuis un profil CLI configuré, les déploiements et leurs logs se consultent
-sans kubeconfig :
-
-```bash
-kuberpack apps
-kuberpack app status stirling-pdf-pdf
-kuberpack app logs stirling-pdf-pdf -f --tail 50
-kuberpack app build-logs demo-web
-```
-
-`app logs` affiche l'exécution ; `app build-logs` affiche le builder.
-Les images publiées n'ont pas de build Kuberpack.
-`app status` inclut CPU/RAM, demandes et limites, redémarrages et bridage
-CPU cumulé depuis le démarrage des conteneurs, avec les mesures indisponibles
-signalées explicitement.
-
-Voir [docs/install.md](docs/install.md) : un cluster, une forge git
-(Forgejo, GitHub, GitLab), un registre OCI et deux jetons (un pour lire les
-dépôts et écrire le GitOps, un pour publier et lire les images).
-
-## État
-
-Voir [docs/status.md](docs/status.md). En une ligne : webhook → Job Railpack → pin digest → Flux, avec previews PR, `rolled_back` via notification Flux, et archive de build optionnelle.
+| [Guide CLI](docs/cli.md) | Assistant, commandes, authentification, automatisation et migration |
+| [API](docs/api.md) | API v2, plans, demandes et lectures de diagnostic |
+| [Installation](docs/install.md) | Préparer et installer la plateforme |
+| [Manifeste](docs/manifest.md) | Configuration complète d'un projet |
+| [Architecture](docs/architecture.md) | Plans, sources de vérité et GitOps |
+| [Codebase](docs/codebase.md) | Responsabilités et trajets dans le code |
+| [Sécurité](docs/security.md) | Credentials, isolation et frontières de confiance |
+| [Builder](docs/builder.md) | Stratégies, scans et images |
+| [Isolation des builds](docs/build-isolation.md) | RuntimeClass, pool dédié et limites |
+| [Tests](docs/testing.md) | Vérifications locales et bancs d'intégration |
+| [État du code](docs/status.md) | Implémentation et limites |
+| [Proposition et audit CLI](docs/cli-proposal.md) | Décisions validées et audit initial daté |

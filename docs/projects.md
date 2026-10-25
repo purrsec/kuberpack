@@ -1,3 +1,5 @@
+> Le contrat courant est l’[API v2](api.md) et le [guide CLI](cli.md). La réservation et la destruction relèvent de `kuberpack-admin` ; `init` et `deploy` sont interactifs sans flags obligatoires. Les anciens exemples de `project create/apply` de ce document décrivent le compilateur historique et ne sont plus des commandes disponibles.
+
 # Projets — manifeste et compilateur
 
 Statut : **proposition / première tranche en cours**. Décrit un manifeste humain compilé
@@ -103,40 +105,19 @@ DELETE /api/v1/projects/{name}   # retire du parent, supprime le dossier, prune
 ## CLI
 
 ```bash
-kuberpack apps             # ce qui est déployé, d'où il vient, où il répond
-kuberpack app redeploy <nom>   # rebuild et redéploiement
-
-kuberpack project create   # wizard : pose les questions, POST /api/v1/projects
-kuberpack project create --dry-run   # affiche le manifeste sans écrire
-kuberpack project apply -f kuberpack.yaml   # applique un manifeste
-kuberpack project delete --project <nom>
+kuberpack                 # assistant de tâches
+kuberpack init            # formulaire de préparation locale
+kuberpack deploy          # plan puis publication du manifeste complet
+kuberpack services list
+kuberpack redeploy        # reconstruction d’un service enregistré
 ```
 
 Le wizard n'utilise **aucune UI** : prompts texte, validation, puis POST.
 
-### Un projet, avec ses add-ons
+### Le manifeste et les dépendances
 
-```bash
-kuberpack project create \
-  --project boutique \
-  --repository user345679/boutique \
-  --database postgres \
-  --cache valkey \
-  --object-storage rustfs \
-  --backup \
-  --dry-run
-```
+`kuberpack init` propose PostgreSQL et Valkey dans ses réglages avancés. Les autres moteurs disponibles se déclarent dans le manifeste complet. L'opérateur doit avoir installé les opérateurs nécessaires ; le plan vérifie les capacités de la plateforme.
 
-`--backup` sauvegarde la base dans le stockage objet. Il faut les deux :
-sans `--object-storage`, la commande refuse.
+`kuberpack deploy` publie le manifeste complet après présentation du plan. Les dépendances persistantes ne se suppriment pas par omission : une migration opérateur est requise. `validate` contrôle la structure locale, et `deploy --plan` vérifie l'état distant sans push ni build.
 
-### Le manifeste reste le point de contrôle
-
-`project apply` **applique** un manifeste, il ne l'écrit jamais. Le
-manifeste reste la source de vérité, écrit à la main dans le dépôt
-GitOps. C'est ce qui permet de relire, de comparer et de rejouer un
-déploiement.
-
-Les questions du wizard et les en-têtes du mode `--dry-run` vont sur la
-sortie d'erreur : la sortie standard ne porte que le résultat, et une
-redirection n'emporte pas les questions avec elle.
+Les détails de l'assistant, des permissions, de l'attente et de l'automatisation sont dans [le guide CLI](cli.md).

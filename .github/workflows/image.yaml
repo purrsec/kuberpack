@@ -43,6 +43,7 @@ jobs:
           cache: true
       - run: go vet ./...
       - run: go test ./...
+      - run: make build
 
   image:
     needs: test

@@ -35,16 +35,17 @@ type ReconciliationStatus struct {
 // DeploymentStatus is observed from the cluster on request, independently of
 // build history. Missing observations never imply a healthy deployment.
 type DeploymentStatus struct {
-	State          string               `json:"state"`
-	Reason         string               `json:"reason,omitempty"`
-	Message        string               `json:"message"`
-	Namespace      string               `json:"namespace,omitempty"`
-	Release        string               `json:"release,omitempty"`
-	Image          string               `json:"image,omitempty"`
-	Replicas       *ReplicaStatus       `json:"replicas,omitempty"`
-	Reconciliation ReconciliationStatus `json:"reconciliation"`
-	ObservedAt     time.Time            `json:"observed_at"`
-	Resources      *AppResources        `json:"resources,omitempty"`
+	ConfigurationRevision string               `json:"configuration_revision,omitempty"`
+	State                 string               `json:"state"`
+	Reason                string               `json:"reason,omitempty"`
+	Message               string               `json:"message"`
+	Namespace             string               `json:"namespace,omitempty"`
+	Release               string               `json:"release,omitempty"`
+	Image                 string               `json:"image,omitempty"`
+	Replicas              *ReplicaStatus       `json:"replicas,omitempty"`
+	Reconciliation        ReconciliationStatus `json:"reconciliation"`
+	ObservedAt            time.Time            `json:"observed_at"`
+	Resources             *AppResources        `json:"resources,omitempty"`
 }
 
 func (s *Server) getAppStatus(w http.ResponseWriter, r *http.Request) {
@@ -119,6 +120,7 @@ func (s *Server) observeApp(ctx context.Context, app store.App) DeploymentStatus
 	}
 	missing := apierrors.IsNotFound(err)
 	if !missing {
+		out.ConfigurationRevision = deployment.Spec.Template.Annotations["kuberpack.io/configuration-revision"]
 		desired := int32(1)
 		if deployment.Spec.Replicas != nil {
 			desired = *deployment.Spec.Replicas

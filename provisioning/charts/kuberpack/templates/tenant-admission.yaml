@@ -105,8 +105,10 @@ spec:
         ((object.roleRef.name == 'kuberpack-tenant' &&
           object.subjects[0].name.startsWith('kuberpack-tenant-')) ||
          (object.roleRef.name == 'kuberpack-reloader-tenant' &&
-          object.subjects[0].name == 'kuberpack-reloader'))
-      message: The control plane may only bind the tenant or reloader role to its dedicated identity
+          object.subjects[0].name == 'kuberpack-reloader') ||
+         (object.roleRef.name == 'kuberpack-project-inspector' &&
+          object.subjects[0].name == 'kuberpack'))
+      message: The control plane may only bind the tenant, reloader or read-only inspector to its dedicated identity
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1

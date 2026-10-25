@@ -40,17 +40,18 @@ type EnvVar struct {
 
 // AppSpec is what you describe. Kuberpack expands it to Helm + Kustomize.
 type AppSpec struct {
-	Name          string
-	Hostname      string
-	Port          int
-	Healthcheck   string
-	Replicas      *int
-	Preview       bool
-	Internet      *bool
-	Peers         []string
-	StrictPeers   bool
-	ServicePeers  []ServicePeer
-	IncomingPeers []string
+	ConfigurationRevision string
+	Name                  string
+	Hostname              string
+	Port                  int
+	Healthcheck           string
+	Replicas              *int
+	Preview               bool
+	Internet              *bool
+	Peers                 []string
+	StrictPeers           bool
+	ServicePeers          []ServicePeer
+	IncomingPeers         []string
 	// Env are the literal environment variables of the application.
 	Env []EnvVar
 	// Command is what the container runs, when the image expects
@@ -294,6 +295,9 @@ func enableInParentAt(work string, parentPath string, name string) (bool, error)
 func valuesYAML(spec AppSpec, p Platform) string {
 	p = p.withDefaults()
 	var b strings.Builder
+	if spec.ConfigurationRevision != "" {
+		b.WriteString("configurationRevision: " + spec.ConfigurationRevision + "\n")
+	}
 	b.WriteString("# Desired runtime. Kuberpack rewrites `image` and `networkPolicy`.\n")
 	b.WriteString("track: main\n")
 	if spec.Image != "" {

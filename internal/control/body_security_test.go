@@ -20,12 +20,12 @@ func (body *countingBody) Read(buffer []byte) (int, error) {
 }
 
 func TestAPIBodyReadsAreBoundedBeforeParsingOrCompiling(t *testing.T) {
-	server := New(Config{APIToken: "api", FluxSecret: "flux"})
+	server := New(Config{Store: tokenTestStore(t), APIToken: "api", FluxSecret: "flux"})
 	for _, test := range []struct {
 		path, authorization string
 		status              int
 	}{
-		{"/api/v1/projects", "Bearer api", http.StatusBadRequest},
+		{"/api/v2/projects/demo/plans", "Bearer api", http.StatusBadRequest},
 		{"/hooks/git", "", http.StatusRequestEntityTooLarge},
 		{"/hooks/flux", "Bearer flux", http.StatusRequestEntityTooLarge},
 	} {

@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -147,6 +148,8 @@ type Config struct {
 }
 
 type Server struct {
+	planLimiter  *apiLimiter
+	deploymentMu sync.Mutex
 	cfg          Config
 	wake         chan struct{}
 	logFollowers chan struct{}
@@ -185,6 +188,7 @@ func New(cfg Config) *Server {
 	}
 	return &Server{
 		cfg:          cfg,
+		planLimiter:  newAPILimiter(30, 5, 2),
 		wake:         make(chan struct{}, 1),
 		logFollowers: make(chan struct{}, 8),
 		limiter:      newAPILimiter(rateLimit, cfg.APIRateBurst, maxConcurrent),
@@ -194,6 +198,7 @@ func New(cfg Config) *Server {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	s.routesV2(mux)
 	mux.HandleFunc("GET /healthz", s.healthz)
 	// The manifest is the only way to declare an application: there is one
 	// writer, and it is the compiler. The app endpoints read the state.
@@ -225,6 +230,12 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) Start(ctx context.Context) {
+	if s.cfg.Store != nil {
+		if err := s.cfg.Store.RecoverInterruptedBuilds(ctx); err != nil {
+			log.Printf("kuberpack recovery: %v", err)
+			return
+		}
+	}
 	// The registry of the platform is resolved first: every build needs it.
 	s.resolveRegistry(ctx)
 	s.kick()
@@ -247,6 +258,7 @@ func (s *Server) Start(ctx context.Context) {
 	// read again at startup and then regularly, so a delivery that never
 	// arrived does not leave the platform behind.
 	go s.reconcileLoop(ctx)
+	go s.deploymentLoop(ctx)
 }
 
 // reconcileLoop applies the manifests of the GitOps repository, at startup
@@ -303,7 +315,7 @@ func (s *Server) withAPI(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		credential := authorizationCredential(r.Header.Get("Authorization"))
 		if credential == "" {
-			s.refuseAnonymous(w)
+			s.refuseAnonymous(w, r)
 			return
 		}
 		// Comparaison en temps constant, avant toute lecture du corps.
@@ -318,30 +330,31 @@ func (s *Server) withAPI(next http.HandlerFunc) http.HandlerFunc {
 			token, err := s.cfg.Store.AuthenticateAPIToken(r.Context(), credential, time.Now().UTC())
 			if err == nil {
 				next(w, r.WithContext(withPrincipal(r.Context(), Principal{
-					Role:    token.Role,
-					Project: token.Project,
-					TokenID: token.ID,
-					Name:    token.Name,
+					Role:     token.Role,
+					Project:  token.Project,
+					TokenID:  token.ID,
+					Name:     token.Name,
+					Services: token.Services, ExpiresAt: token.ExpiresAt,
 				})))
 				return
 			}
 			// Erreur de lecture SQLite : refus explicite, jamais un accès
 			// administrateur par défaut.
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			apiFailure(w, r, http.StatusUnauthorized, "unauthorized")
 			return
 		}
-		s.refuseAnonymous(w)
+		s.refuseAnonymous(w, r)
 	}
 }
 
 // refuseAnonymous distingue l'absence de configuration de l'absence de
 // credential : sans jeton global ni jeton de projet, les routes sont fermées.
-func (s *Server) refuseAnonymous(w http.ResponseWriter) {
+func (s *Server) refuseAnonymous(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.APIToken == "" && s.cfg.Store == nil {
-		http.Error(w, "api token is not configured", http.StatusForbidden)
+		apiFailure(w, r, http.StatusForbidden, "api token is not configured")
 		return
 	}
-	http.Error(w, "unauthorized", http.StatusUnauthorized)
+	apiFailure(w, r, http.StatusUnauthorized, "unauthorized")
 }
 
 func (s *Server) listApps(w http.ResponseWriter, r *http.Request) {

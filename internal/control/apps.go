@@ -51,57 +51,9 @@ func (s *Server) listBuilds(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) redeployApp(w http.ResponseWriter, r *http.Request) {
-	principal, _ := principalFrom(r.Context())
-	name := r.PathValue("name")
-	app, err := s.cfg.Store.AppByName(r.Context(), name)
-	if errors.Is(err, store.ErrNotFound) {
-		imageApp, imageErr := s.cfg.Store.ImageAppByName(r.Context(), name)
-		if imageErr == nil {
-			if !principal.allowsApp(imageApp) {
-				appNotFound(w)
-				return
-			}
-			http.Error(w, "this application uses a published image: edit kuberpack.yaml and run kuberpack project compile", http.StatusBadRequest)
-			return
-		}
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if !principal.allowsApp(app) {
-		appNotFound(w)
-		return
-	}
-	provider, owner, repoName, err := s.appForge(app)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	sha, err := provider.BranchSHA(r.Context(), owner, repoName, app.ProductionBranch)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	// delivery_id is globally unique: scope it to the app so two apps built
-	// from the same commit do not collide (the second redeploy would be
-	// silently dropped as a duplicate). The nonce keeps it unique per
-	// request, so a redeploy always queues a new build instead of being
-	// dropped as a duplicate of an earlier one.
-	del := "redeploy-" + app.Name + "-" + sha + "-" + deliveryNonce()
-	if err := s.cfg.Store.InsertDelivery(r.Context(), store.Delivery{
-		ID: del, AppID: app.ID, EventType: "redeploy", CommitSHA: sha, Status: "queued",
-	}); err != nil && !errors.Is(err, store.ErrDuplicate) {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	s.publishCommitStatus(r.Context(), provider, owner, repoName, sha, git.StatusPending, "Building", app, false)
-	s.kick()
-	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued", "commit_sha": sha})
+	apiError(w, 410, "upgrade_required", "use the v2 plan/deployment API")
+	return
 }
-
 func (s *Server) fluxHook(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.FluxSecret == "" {
 		http.Error(w, "flux webhook is not configured", http.StatusForbidden)

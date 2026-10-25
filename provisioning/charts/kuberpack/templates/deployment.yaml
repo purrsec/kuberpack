@@ -35,8 +35,8 @@ spec:
         - name: kuberpack
           image: {{ required "image is required" .Values.image | quote }}
           imagePullPolicy: IfNotPresent
+          command: ["/usr/bin/kuberpack-control-plane"]
           args:
-            - serve
             - --addr
             - ":8080"
             - --data

@@ -1,13 +1,15 @@
+> CLI refondu : voir [le guide actuel](cli.md) pour la réservation des projets, leurs politiques et les nouveaux jetons. Les procédures de tests datées décrivent leur révision historique.
+
 # Installer Kuberpack sur un Kubernetes existant
 
-`kuberpack install` orchestre des étapes Go avec les bibliothèques Kubernetes
+`kuberpack-admin install` orchestre des étapes Go avec les bibliothèques Kubernetes
 et Helm. Le CLI embarque ses charts : aucun checkout du produit, Ansible,
 Python ou Helmfile n'est nécessaire pour installer Kuberpack. Git doit être
 présent sur la machine qui exécute le CLI.
 
 ## Préparer le cluster
 
-L'installateur utilise le kubeconfig courant, ou `--kubeconfig` et `--context`.
+L'installateur exige `--context`. `--kubeconfig` permet de choisir un fichier ; le contexte courant n'est jamais utilisé implicitement.
 Il faut les droits d'administration nécessaires aux CRD et aux opérateurs,
 une StorageClass utilisable, un contrôleur d'ingress et des nœuds Linux
 compatibles avec les builds BuildKit rootless. Le domaine doit pointer vers
@@ -34,11 +36,13 @@ adaptée à ce fournisseur ; leur rotation automatique n'est pas implémentée.
 
 ## Installer
 
-Sans argument dans un terminal, `kuberpack install` lance le questionnaire.
+Le bootstrap est séparé du CLI développeur. `--context` est obligatoire ; utilisez `--plan` pour préparer et `--yes` pour confirmer. `--interactive` active le questionnaire opérateur.
 Pour une installation reproductible ou en CI :
 
 ```bash
-kuberpack install \
+kuberpack-admin install \
+  --context mon-cluster \
+  --yes \
   --cluster production \
   --gitops-url https://github.com/equipe/socle.git \
   --gitops-apps-url https://github.com/equipe/applications.git \
@@ -55,10 +59,7 @@ nécessitent une intégration réseau adaptée et ne sont pas certifiés par ce 
 utilisé. Pour les certificats, choisir un `--issuer` existant ou fournir
 `--acme-email` pour créer l'issuer ACME dédié à Kuberpack.
 
-En environnement local, `--tls=false` conserve l'ingress HTTP ;
-`--ingress=false --tls=false --infisical=false --node-port 30080` permet
-un control plane sans exposition par ingress. Les adresses privées de forge
-ou de registre peuvent nécessiter `--allow-private-build-egress`.
+Le NodePort n'est plus proposé. L'API est publiée par l'Ingress HTTPS ; le client développeur refuse HTTP. Les adresses privées de forge ou de registre peuvent nécessiter `--allow-private-build-egress`.
 `--ca-file` fournit la CA de la forge au clone initial et à Flux ; les nœuds
 et les images de build doivent également faire confiance à ce registre.
 
@@ -79,7 +80,7 @@ Kubernetes 1.30 ou plus récent et sont activées par défaut. Les NetworkPolici
 des projets nécessitent un CNI qui les applique effectivement. L'installateur
 détecte le moteur réseau et affiche ses preuves ; si le moteur est inconnu ou
 désactivé, il avertit explicitement. Après l'installation, vérifier le trafic
-réel avec `kuberpack doctor network --context <contexte> --yes` (namespace
+réel avec `kuberpack-admin doctor network --context <contexte> --yes` (namespace
 temporaire, aucun Secret lu) et consulter la
 [matrice réseau](network-matrix.md).
 L'installateur prépare les Secrets de pull du control plane et du builder
@@ -119,12 +120,12 @@ est reprise ; le hook initial Infisical peut être rejoué si nécessaire.
 Les identifiants restent dans les Secrets Kubernetes. La sortie indique où
 récupérer le jeton d'API et les identifiants initiaux Infisical ; elle n'affiche
 pas leurs valeurs. Le profil CLI est aussi enregistré localement en mode
-0600 dans `~/.config/kuberpack/clusters/<cluster>.env`, sans écraser un profil
-différent. La sortie donne la commande pour l'activer. La sauvegarde des
+0600 dans `~/.config/kuberpack-admin/bootstrap/<cluster>.env`, sans écraser un profil
+différent. Ce profil est destiné à `kuberpack-admin` uniquement ; les développeurs reçoivent des jetons de projet distincts. La sortie donne la commande pour l'activer. La sauvegarde des
 Secrets et des volumes reste nécessaire.
 `install` ne constitue pas une commande de rotation ni de restauration.
 
-`--dry-run` inspecte le cluster et décrit les étapes sans écrire dans le
+`--plan` (ou `--dry-run`) inspecte le cluster et décrit les étapes sans écrire dans le
 cluster ou dans Git. Il ne simule pas tous les appels Helm et Infisical.
 
 ## GitOps et coexistence avec Helmfile
@@ -155,7 +156,7 @@ dépôt applicatif ; sans lui, ils sont à la racine.
 `--gitops-apps-url` est **requis** : la plateforme et les applications ne
 peuvent plus partager un dépôt. Une installation historique à un seul dépôt
 doit créer un dépôt applicatif, y déplacer ses projets, puis relancer
-`kuberpack install` avec les deux URLs.
+`kuberpack-admin install` avec les deux URLs.
 
 Avec les deux dépôts, l'installateur active l'isolation des projets. Le control
 plane crée pour chaque projet un namespace possédé, un ServiceAccount sans jeton
@@ -207,15 +208,15 @@ ailleurs sont réutilisés, sans changement de leurs valeurs ni de leur version.
 
 ## Après l'installation
 
-Configurer le CLI avec l'URL indiquée et son jeton d'API. Le développeur
-n'a ensuite besoin d'aucun kubeconfig :
+L'opérateur réserve et configure les projets avec `kuberpack-admin`, puis crée des jetons `maintainer` expirants. Le développeur se connecte avec ce jeton de projet et n'a besoin d'aucun kubeconfig :
 
 ```bash
 infisical login --domain https://infisical.exemple.org
 # Charger les secrets dans le projet indiqué par l'installation.
-kuberpack project init
-kuberpack project compile
-kuberpack apps
+kuberpack login
+kuberpack init
+kuberpack deploy
+kuberpack services list
 ```
 
 L'accès humain initial est celui de l'administrateur créé par le bootstrap.

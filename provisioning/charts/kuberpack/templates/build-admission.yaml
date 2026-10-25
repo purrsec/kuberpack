@@ -84,7 +84,7 @@ spec:
     - expression: >-
         variables.p.containers.size() == 1 && variables.p.containers[0].name == 'builder' &&
         variables.p.containers[0].image == {{ $root.Values.builderImage | toJson }} &&
-        has(variables.p.containers[0].command) && variables.p.containers[0].command == ['/usr/bin/kuberpack', 'builder'] &&
+        has(variables.p.containers[0].command) && variables.p.containers[0].command == ['/usr/bin/kuberpack-builder'] &&
         (!has(variables.p.containers[0].args) || variables.p.containers[0].args.size() == 0) &&
         has(variables.p.initContainers) && variables.p.initContainers.size() == 1 && variables.p.initContainers[0].name == 'buildkitd' &&
         variables.p.initContainers[0].image == {{ $root.Values.buildAdmission.buildkitImage | toJson }} &&

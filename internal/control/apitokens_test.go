@@ -124,7 +124,7 @@ func TestAPITokenCreationIsAdminOnlyAndTheSecretIsShownOnce(t *testing.T) {
 	t.Cleanup(func() { log.SetOutput(previousLog) })
 
 	response := tokenTestRequest(t, handler, http.MethodPost, "/api/v1/tokens", "root",
-		`{"name":"ci","project":"demo","expires_in":"720h"}`)
+		`{"name":"ci","role":"deployer","project":"demo","expires_in":"720h"}`)
 	if response.Code != http.StatusCreated {
 		t.Fatalf("create: %d %s", response.Code, response.Body.String())
 	}
@@ -139,7 +139,7 @@ func TestAPITokenCreationIsAdminOnlyAndTheSecretIsShownOnce(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
-	if created.ID == 0 || created.Name != "ci" || created.Project != "demo" || created.Role != store.APITokenRoleProject {
+	if created.ID == 0 || created.Name != "ci" || created.Project != "demo" || created.Role != store.APITokenRoleDeployer {
 		t.Fatalf("unexpected token: %+v", created)
 	}
 	if !strings.HasPrefix(created.Token, "kp_") || created.ExpiresAt == "" {
@@ -204,9 +204,9 @@ func TestAPITokenCreationIsAdminOnlyAndTheSecretIsShownOnce(t *testing.T) {
 		t.Fatalf("unknown token: %d %s", response.Code, response.Body.String())
 	}
 
-	// Sans projet, le jeton créé est administrateur ; il peut administrer
+	// Un rôle admin explicite sans projet peut administrer
 	// les jetons comme le jeton global.
-	response = tokenTestRequest(t, handler, http.MethodPost, "/api/v1/tokens", "root", `{"name":"deploy"}`)
+	response = tokenTestRequest(t, handler, http.MethodPost, "/api/v1/tokens", "root", `{"name":"deploy","role":"admin","expires_in":"24h"}`)
 	if response.Code != http.StatusCreated {
 		t.Fatalf("create administrator token: %d %s", response.Code, response.Body.String())
 	}
@@ -278,8 +278,8 @@ func TestProjectTokenFiltersAppsBuildsAndLogs(t *testing.T) {
 		}
 	}
 	response := tokenTestRequest(t, handler, http.MethodPost, "/api/v1/apps/other-api/redeploy", demo, "")
-	if response.Code != http.StatusNotFound {
-		t.Fatalf("cross-project redeploy: %d %s", response.Code, response.Body.String())
+	if response.Code != http.StatusGone {
+		t.Fatalf("retired redeploy: %d %s", response.Code, response.Body.String())
 	}
 
 	// Le même jeton lit son application et ses builds.
@@ -299,7 +299,7 @@ func TestProjectTokenFiltersAppsBuildsAndLogs(t *testing.T) {
 	}
 }
 
-func TestProjectTokenOnlyCompilesAndDeletesItsProject(t *testing.T) {
+func TestLegacyWritesCannotBypassPlans(t *testing.T) {
 	st := tokenTestStore(t)
 	_, demo := tokenTestSecret(t, st, "demo", "demo")
 	server := New(Config{Store: st, APIToken: "root"})
@@ -312,12 +312,12 @@ func TestProjectTokenOnlyCompilesAndDeletesItsProject(t *testing.T) {
 		status                    int
 		message                   string
 	}{
-		{http.MethodPost, "/api/v1/projects", `{"project":"demo"}`, demo, http.StatusForbidden, "gitops is not configured"},
-		{http.MethodPost, "/api/v1/projects", `{"project":"other"}`, demo, http.StatusForbidden, "scoped to project demo"},
-		{http.MethodPost, "/api/v1/projects", `{"project":"demo"}`, "root", http.StatusForbidden, "gitops is not configured"},
-		{http.MethodDelete, "/api/v1/projects/demo", "", demo, http.StatusForbidden, "gitops is not configured"},
-		{http.MethodDelete, "/api/v1/projects/other", "", demo, http.StatusForbidden, "scoped to project demo"},
-		{http.MethodDelete, "/api/v1/projects/demo", "", "root", http.StatusForbidden, "gitops is not configured"},
+		{http.MethodPost, "/api/v1/projects", `{"project":"demo"}`, demo, http.StatusForbidden, "administrator token is required"},
+		{http.MethodPost, "/api/v1/projects", `{"project":"other"}`, demo, http.StatusForbidden, "administrator token is required"},
+		{http.MethodPost, "/api/v1/projects", `{"project":"demo"}`, "root", http.StatusGone, "upgrade_required"},
+		{http.MethodDelete, "/api/v1/projects/demo", "", demo, http.StatusForbidden, "administrator token is required"},
+		{http.MethodDelete, "/api/v1/projects/other", "", demo, http.StatusForbidden, "administrator token is required"},
+		{http.MethodDelete, "/api/v1/projects/demo", "", "root", http.StatusGone, "upgrade_required"},
 		{http.MethodGet, "/api/v1/projects/demo", "", demo, http.StatusForbidden, "gitops is not configured"},
 		{http.MethodGet, "/api/v1/projects/other", "", demo, http.StatusForbidden, "scoped to project demo"},
 	} {

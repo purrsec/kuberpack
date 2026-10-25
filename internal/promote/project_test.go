@@ -197,11 +197,11 @@ func TestDeleteProjectRefusesToDropADatabase(t *testing.T) {
 		t.Errorf("the dump job is missing:\n%s", dump)
 	}
 
-	// The removal can be forced: the data goes with it.
+	// The historical Force field cannot bypass persistent-data protection.
 	forced := req
 	forced.Force = true
-	if _, err := DeleteProject(context.Background(), forced); err != nil {
-		t.Fatalf("the forced removal must work: %v", err)
+	if _, err := DeleteProject(context.Background(), forced); err == nil {
+		t.Fatal("force must not bypass addon protection")
 	}
 }
 

@@ -48,7 +48,7 @@ func TestNewJobIsolatedBuild(t *testing.T) {
 		t.Fatal("rootless BuildKit flags lost")
 	}
 	container := job.Spec.Template.Spec.Containers[0]
-	if container.Image != r.Image || container.Command[1] != "builder" {
+	if container.Image != r.Image || len(container.Command) != 1 || container.Command[0] != "/usr/bin/kuberpack-builder" {
 		t.Fatal("wrong builder image or command")
 	}
 	var writableVarTmp bool

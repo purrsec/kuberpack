@@ -18,6 +18,8 @@ import time
 import urllib.error
 import urllib.request
 
+from _cli_v2 import FixtureAPI
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -60,6 +62,7 @@ def main():
     project_dir = workspace / "project"
     shutil.copytree(ROOT / "testenv/install", project_dir)
     cli = ROOT / "bin/kuberpack"
+    administrator_cli = ROOT / "bin/kuberpack-admin"
 
     def kubectl(*command):
         return json.loads(run(["kubectl", *command, "-o", "json"], ops, quiet=True))
@@ -109,7 +112,7 @@ def main():
             if error.code != 409:
                 raise RuntimeError(f"test repository creation: HTTP {error.code}") from None
 
-    install = [cli, "install", "--cluster", args.cluster, "--gitops-url", values["FORGEJO_URL"] + "/kuberpack/install-audit.git", "--gitops-apps-url", values["FORGEJO_URL"] + "/kuberpack/install-audit-apps.git", "--host", "kuberpack.172.29.90.11.nip.io", "--issuer", "install-test-ca", "--ca-file", ROOT / "testenv/pki/ca.crt", "--image", args.control_image, "--builder-image", "docker.io/kuberpack-test/builder:dev", "--buildkit-image", "docker.io/kuberpack-test/buildkit:dev", "--node-port", "30080", "--allow-private-build-egress", "--webhook-url", "http://172.29.90.11:30080/hooks/forgejo"]
+    install = [administrator_cli, "install", "--context", config["current-context"], "--yes", "--cluster", args.cluster, "--gitops-url", values["FORGEJO_URL"] + "/kuberpack/install-audit.git", "--gitops-apps-url", values["FORGEJO_URL"] + "/kuberpack/install-audit-apps.git", "--host", "kuberpack.172.29.90.11.nip.io", "--issuer", "install-test-ca", "--ca-file", ROOT / "testenv/pki/ca.crt", "--image", args.control_image, "--builder-image", "docker.io/kuberpack-test/builder:dev", "--buildkit-image", "docker.io/kuberpack-test/buildkit:dev", "--allow-private-build-egress", "--webhook-url", "https://kuberpack.172.29.90.11.nip.io/hooks/git"]
     apps_repository = "install-audit-apps"
     if args.interrupt:
         with (workspace / "interrupted.log").open("w") as output:
@@ -192,7 +195,11 @@ policies:
   defaultDeny: true
   internet: false
 '''.replace("PROJECT_NAME", args.project).replace("PROJECT_ID", project_id))
-    run([cli, "project", "compile", "-f", manifest], developer)
+    fixture = FixtureAPI(developer["KUBERPACK_API_URL"], control["KUBERPACK_API_TOKEN"], ROOT / "testenv/pki/ca-bundle-merged.crt")
+    developer = fixture.developer_environment(developer, args.project, {
+        "domains": [args.project + ".172.29.90.11.nip.io"], "repositories": [],
+        "infisical": {"project_id": project_id}})
+    first_deployment = json.loads(run([cli, "deploy", "--file", manifest, "--yes", "--non-interactive", "--output", "json"], developer))
     expected = hashlib.sha256(value.encode()).hexdigest()
     for _ in range(240):
         try:
@@ -204,7 +211,8 @@ policies:
         time.sleep(2)
     else:
         raise RuntimeError("secret-backed application did not become healthy")
-    assert '"changed":false' in run([cli, "project", "compile", "-f", manifest], developer)
+    repeated_deployment = json.loads(run([cli, "deploy", "--file", manifest, "--yes", "--non-interactive", "--output", "json"], developer))
+    assert repeated_deployment["infra_commit"] == first_deployment["infra_commit"], "reapplying the same manifest produced a GitOps change"
 
     # The project is applied by Flux with its own tenant identity, not with
     # the identity that provisions the cluster.

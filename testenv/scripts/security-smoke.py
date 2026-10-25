@@ -9,6 +9,8 @@ import subprocess
 import tempfile
 import time
 
+from _cli_v2 import FixtureAPI
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -36,9 +38,13 @@ def main():
     inspect = json.loads(run(["docker", "inspect", "k3s"]).stdout)[0]
     if inspect["Config"]["Image"] != "kuberpack-test/k3s:v1.37.1":
         parser.error("unexpected Docker fixture image")
+    deployment = json.loads(kube("get", "deployment", "kuberpack", "-n", "kuberpack", "-o", "json").stdout)
+    environment = {value["name"]: value.get("value", "") for value in deployment["spec"]["template"]["spec"]["containers"][0].get("env", [])}
+    if environment.get("KUBERPACK_TENANT_ISOLATION") != "true":
+        parser.error("run the installation fixture first; this security check requires tenant isolation")
     control = json.loads(kube("get", "secret", "kuberpack", "-n", "kuberpack", "-o", "json").stdout)
     import base64
-    developer = dict(ops, KUBECONFIG="/tmp/no-security-developer-kubeconfig", KUBERPACK_API_URL="http://172.29.90.11:30080", KUBERPACK_API_TOKEN=base64.b64decode(control["data"]["KUBERPACK_API_TOKEN"]).decode())
+    developer = dict(ops, KUBECONFIG="/tmp/no-security-developer-kubeconfig", KUBERPACK_API_URL="https://kuberpack.172.29.90.11.nip.io", KUBERPACK_API_TOKEN=base64.b64decode(control["data"]["KUBERPACK_API_TOKEN"]).decode())
     for key in ("KUBERPACK_GIT_TOKEN", "KUBERPACK_BUILDER_GIT_TOKEN", "KUBERPACK_REGISTRY_TOKEN", "FORGEJO_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"):
         developer.pop(key, None)
     workspace = Path(tempfile.mkdtemp(prefix="kuberpack-security-smoke-"))
@@ -46,6 +52,10 @@ def main():
     project = "security-a-" + suffix
     foreign = "security-b-" + suffix
     cli = ROOT / "bin/kuberpack"
+    fixture = FixtureAPI(developer["KUBERPACK_API_URL"], developer["KUBERPACK_API_TOKEN"], ROOT / "testenv/pki/ca-bundle-merged.crt")
+    administrator = dict(developer, SSL_CERT_FILE=str(ROOT / "testenv/pki/ca-bundle-merged.crt"))
+    administrator_cli = ROOT / "bin/kuberpack-admin"
+
     created = []
     checks = {}
 
@@ -66,7 +76,9 @@ def main():
     def compile_project(name, services):
         path = manifest(name, services)
         created.append(name)
-        run([cli, "project", "compile", "-f", path], env=developer, timeout=120)
+        scoped = fixture.developer_environment(developer, name, {
+            "domains": [value["hostname"] for value in services.values()], "repositories": []})
+        run([cli, "deploy", "--file", path, "--yes", "--non-interactive", "--detach"], env=scoped, timeout=120)
         kube("wait", "--for=create", "namespace/" + name, "--timeout=240s", timeout=250)
         for service_name in services:
             kube("wait", "-n", name, "--for=create", "helmrelease/" + service_name, "--timeout=240s", timeout=250)
@@ -132,10 +144,16 @@ def main():
             checks[label] = "allowed" if allowed else "denied"
         print(json.dumps(checks, sort_keys=True), flush=True)
     finally:
+        # Remove only this test's foreign probe with the operator credential;
+        # the product must keep refusing to prune foreign workloads.
+        kube("delete","pod","unlabelled-probe","-n",project,"--ignore-not-found=true",check=False)
         for name in reversed(created):
-            run([cli,"project","delete","--project",name],env=developer,timeout=120)
+            plan = json.loads(run([administrator_cli,"projects","destroy",name,"--plan","--output","json"],env=administrator,timeout=120).stdout)
+            run([administrator_cli,"projects","destroy",name,"--plan-id",plan["id"],"--confirm-project",name,"--yes"],env=administrator,timeout=120)
         for name in created:
-            kube("wait","--for=delete","namespace/"+name,"--timeout=120s",timeout=130)
+            # Product destruction preserves namespaces. The disposable-fixture
+            # operator explicitly removes them using its own kubeconfig.
+            kube("delete","namespace",name,"--wait=true","--timeout=120s",timeout=130)
     (workspace / "result.json").write_text(json.dumps(checks, indent=2) + "\n")
     print("Test artifacts:", workspace, flush=True)
 

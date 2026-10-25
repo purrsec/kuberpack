@@ -33,7 +33,7 @@ func TestPublishedServicesAreVisibleWithoutBuildsOrWebhooks(t *testing.T) {
 		{"GET", "/api/v1/apps", 200, "pdf-app"},
 		{"GET", "/api/v1/apps/pdf-app", 200, "example.org/app@sha256:abc"},
 		{"GET", "/api/v1/apps/pdf-app/builds", 200, `"builds":[]`},
-		{"POST", "/api/v1/apps/pdf-app/redeploy", 400, "kuberpack project compile"},
+		{"POST", "/api/v1/apps/pdf-app/redeploy", 410, "upgrade_required"},
 	} {
 		r := httptest.NewRequest(target.method, target.path, nil)
 		r.Header.Set("Authorization", "Bearer test")

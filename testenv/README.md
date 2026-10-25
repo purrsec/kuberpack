@@ -1,3 +1,5 @@
+> API v2 : les fixtures utilisent HTTPS, un credential administrateur distinct de la forge, une politique de projet et un jeton maintainer expirant. Le test de sécurité exige la topologie tenant du test d’installation. La destruction produit conserve les namespaces ; le script de fixture les retire explicitement avec son kubeconfig opérateur. Les scripts ont été adaptés mais le banc Docker n’a pas été exécuté pendant la refonte CLI.
+
 # Environnement de test Kuberpack
 
 La [passe sécurité du 23 octobre](../docs/security-audit-2026-10-23.md) ajoute
@@ -47,8 +49,8 @@ l'application de test.
 | Forgejo (web + API + registre) | `https://172.29.90.10:3000` | certificat signé par la CA locale `testenv/pki/ca.crt` |
 | Forgejo (SSH) | `ssh://kuberpack@172.29.90.10:22` | port 2222 publié sur l'hôte |
 | API Kubernetes | `https://172.29.90.11:6443` | kubeconfig : `~/.kube/k3s-test.yaml` |
-| Control plane Kuberpack | `http://172.29.90.11:30080` | NodePort ; API `Bearer <FORGEJO_CONTROL_TOKEN>` |
-| Webhook Forgejo | `http://172.29.90.11:30080/hooks/forgejo` | HMAC-SHA256 |
+| Control plane Kuberpack | `https://kuberpack.172.29.90.11.nip.io` | Ingress TLS ; credential API administrateur dédié |
+| Webhook Forgejo | `https://kuberpack.172.29.90.11.nip.io/hooks/git` | HMAC-SHA256 |
 | Ingress applicatif | `http://172.29.90.11` + en-tête `Host:` | ex. `hello-kuberpack.kuberpack.test` |
 
 Le registre OCI est **le Forgejo lui-même** : l'hôte de l'image est dérivé de

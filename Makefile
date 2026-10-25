@@ -8,7 +8,7 @@ test: vet
 
 build:
 	mkdir -p bin
-	go build -o bin/kuberpack ./cmd/kuberpack
+	for name in kuberpack kuberpack-admin kuberpack-control-plane kuberpack-builder kuberpack-reloader; do go build -o bin/$$name ./cmd/$$name || exit; done
 
 image:
 	@if command -v docker >/dev/null 2>&1; then docker build -t kuberpack:dev .; \

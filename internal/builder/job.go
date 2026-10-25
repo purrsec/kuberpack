@@ -544,7 +544,7 @@ func (r *JobRunner) NewJob(req Request) (*batchv1.Job, error) {
 					}},
 					Containers: []corev1.Container{{
 						Name: "builder", Image: r.Image, ImagePullPolicy: corev1.PullIfNotPresent,
-						Command:         []string{"/usr/bin/kuberpack", "builder"},
+						Command:         []string{"/usr/bin/kuberpack-builder"},
 						Env:             env,
 						WorkingDir:      "/work",
 						SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: &noEscalation, RunAsNonRoot: &allowEscalation, RunAsUser: &uid, RunAsGroup: &uid, ReadOnlyRootFilesystem: &readOnly, Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},

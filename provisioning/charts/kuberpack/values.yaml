@@ -73,8 +73,7 @@ ingress:
 # the ingress controller.
 tlsSecret: kuberpack-tls
 
-# NodePort service of the control plane. Useful when no public ingress or
-# TLS termination is available (test environments).
+# Compatibility sentinel: enabling the retired NodePort is an explicit error.
 nodePort:
   enabled: false
   port: 30080

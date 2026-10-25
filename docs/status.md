@@ -1,3 +1,5 @@
+> Refonte CLI du 25 octobre 2026 : client API v2 et assistant interactif, administration et runtimes séparés, plans et suivi persistants, rôles explicites et écritures v1 retirées. Voir [le guide CLI](cli.md) et [le contrat API actuel](api.md). Les validations d’instance décrites plus bas précèdent cette refonte ; aucun déploiement réel de cette version n’a été effectué dans cette session.
+
 # État du code
 
 Les autres pages de `docs/` décrivent **le produit visé**. Cette page décrit **ce qui est implémenté**.

@@ -128,6 +128,9 @@ func (s *Server) ensureTenantRoleBinding(ctx context.Context, namespace, service
 	if err := s.ensureRoleBinding(ctx, namespace, tenantClusterRole, tenantClusterRole, serviceAccount, controlNamespace); err != nil {
 		return err
 	}
+	if err := s.ensureRoleBinding(ctx, namespace, "kuberpack-inspector", "kuberpack-project-inspector", "kuberpack", controlNamespace); err != nil {
+		return err
+	}
 	if s.cfg.Reloader {
 		// The reloader has its own identity. The control plane only grants
 		// it the Secrets and Deployments of this namespace; it never reads
@@ -232,7 +235,7 @@ func (s *Server) deleteProjectTenant(ctx context.Context, project, namespace str
 	if strings.TrimSpace(namespace) == "" {
 		return nil
 	}
-	for _, binding := range []string{tenantClusterRole, "kuberpack-reloader"} {
+	for _, binding := range []string{tenantClusterRole, "kuberpack-reloader", "kuberpack-inspector"} {
 		if err := s.cfg.Kube.RbacV1().RoleBindings(namespace).Delete(ctx, binding, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
 			return err
 		}
@@ -247,7 +250,8 @@ func (s *Server) deleteProjectTenant(ctx context.Context, project, namespace str
 	if current.Labels["kuberpack.io/project"] != project {
 		return nil
 	}
-	return s.cfg.Kube.CoreV1().Namespaces().Delete(ctx, namespace, metav1.DeleteOptions{PropagationPolicy: propagationPolicy()})
+	// Namespace deletion is a separate operator task; it may contain foreign resources.
+	return nil
 }
 
 func propagationPolicy() *metav1.DeletionPropagation {

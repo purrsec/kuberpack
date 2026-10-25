@@ -2,8 +2,11 @@ package control
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"slices"
 	"strings"
+	"time"
 
 	"git.host.bzh/pepe/kuberpack/internal/store"
 )
@@ -12,10 +15,12 @@ import (
 // le jeton global KUBERPACK_API_TOKEN, qui reste administrateur, et un jeton
 // de la table api_tokens, limité à un projet.
 type Principal struct {
-	Role    string
-	Project string
-	TokenID int64
-	Name    string
+	Role      string
+	Project   string
+	TokenID   int64
+	Name      string
+	Services  []string
+	ExpiresAt time.Time
 }
 
 type principalContextKey struct{}
@@ -43,7 +48,7 @@ func (p Principal) allowsProject(project string) bool {
 	if p.isAdmin() {
 		return true
 	}
-	if p.Role != store.APITokenRoleProject || p.Project == "" {
+	if !slices.Contains([]string{store.APITokenRoleProject, store.APITokenRoleReader, store.APITokenRoleDeployer, store.APITokenRoleMaintainer}, p.Role) || p.Project == "" {
 		return false
 	}
 	return sanitizeName(project) == p.Project
@@ -56,17 +61,17 @@ func (p Principal) allowsApp(app store.App) bool {
 	if p.isAdmin() {
 		return true
 	}
-	if p.Role != store.APITokenRoleProject || p.Project == "" {
+	if !slices.Contains([]string{store.APITokenRoleProject, store.APITokenRoleReader, store.APITokenRoleDeployer, store.APITokenRoleMaintainer}, p.Role) || p.Project == "" {
 		return false
 	}
-	return app.Project != "" && sanitizeName(app.Project) == p.Project
+	return app.Project != "" && sanitizeName(app.Project) == p.Project && (len(p.Services) == 0 || slices.Contains(p.Services, strings.TrimPrefix(app.Name, app.Project+"-")))
 }
 
 // requireAdmin refuse une route réservée à l'administration.
 func requireAdmin(w http.ResponseWriter, r *http.Request) (Principal, bool) {
 	principal, ok := principalFrom(r.Context())
 	if !ok || !principal.isAdmin() {
-		http.Error(w, "forbidden: an administrator token is required", http.StatusForbidden)
+		apiFailure(w, r, http.StatusForbidden, "forbidden: an administrator token is required")
 		return Principal{}, false
 	}
 	return principal, true
@@ -78,11 +83,11 @@ func requireAdmin(w http.ResponseWriter, r *http.Request) (Principal, bool) {
 func requireProject(w http.ResponseWriter, r *http.Request, project string) (Principal, bool) {
 	principal, ok := principalFrom(r.Context())
 	if !ok {
-		http.Error(w, "forbidden: an administrator token is required", http.StatusForbidden)
+		apiFailure(w, r, http.StatusForbidden, "forbidden: an administrator token is required")
 		return Principal{}, false
 	}
 	if !principal.allowsProject(project) {
-		http.Error(w, "forbidden: this token is scoped to project "+principal.Project, http.StatusForbidden)
+		apiFailure(w, r, http.StatusForbidden, "forbidden: this token is scoped to project "+principal.Project)
 		return Principal{}, false
 	}
 	return principal, true
@@ -123,3 +128,7 @@ func authorizationCredential(header string) string {
 	}
 	return header
 }
+
+func (p Principal) ownerKey() string { return fmt.Sprintf("%s:%d", p.Name, p.TokenID) }
+func (p Principal) canPublish() bool { return p.isAdmin() || p.Role == store.APITokenRoleMaintainer }
+func (p Principal) canDeploy() bool  { return p.canPublish() || p.Role == store.APITokenRoleDeployer }

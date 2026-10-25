@@ -29,6 +29,10 @@ spec:
       {{- include "stateless.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      {{- with .Values.configurationRevision }}
+      annotations:
+        kuberpack.io/configuration-revision: {{ . | quote }}
+      {{- end }}
       labels:
         # The pods of the application carry the labels of the platform:
         # the NetworkPolicy of an addon selects the applications that may

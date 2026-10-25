@@ -127,7 +127,7 @@ policies:
 	if m.Addons["postgres"].Backup == nil || m.Addons["postgres"].Backup.Retention != "30d" {
 		t.Fatalf("backup: %+v", m.Addons["postgres"].Backup)
 	}
-	if !m.Policies.defaultDenyEnabled() {
+	if !m.Policies.DefaultDenyEnabled() {
 		t.Fatal("defaultDeny must be true")
 	}
 }
