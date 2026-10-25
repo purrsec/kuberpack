@@ -74,7 +74,8 @@ class HarnessContracts(unittest.TestCase):
                 for entry in value.values():
                     walk(entry)
         for path in COMMON.parent.rglob("*.yaml"):
-            walk(yaml.safe_load(path.read_text()))
+            if "templates" not in path.parts:
+                walk(yaml.safe_load(path.read_text()))
 
     def test_cleanup_failure_cannot_leave_a_green_test_report(self):
         spec = importlib.util.spec_from_file_location("launcher", COMMON.parent / "run.py")

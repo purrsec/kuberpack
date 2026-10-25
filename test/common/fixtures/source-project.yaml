@@ -1,0 +1,17 @@
+project: pipeline
+infisical:
+  # Replaced with the actual fixture project ID by the release scenario.
+  project_id: 00000000-0000-0000-0000-000000000000
+services:
+  web:
+    repository: kuberpack/source
+    branch: main
+    hostname: web.fixture.test
+    port: 8080
+    healthcheck: /healthz
+    build:
+      start_command: python main.py
+    secrets: [PIPELINE_SECRET]
+policies:
+  defaultDeny: true
+  internet: false

@@ -16,6 +16,7 @@ def run(suite):
         suite.check("Go formatting clean", False, evidence=formatted)
         raise RuntimeError("Run gofmt on the listed files")
     suite.command("Go vet", ["go", "vet", "./..."], timeout=60)
+    suite.command("release manifest contract", ["go", "run", "./cmd/kuberpack", "validate", "--file", "test/common/fixtures/source-project.yaml", "--output=json"])
     suite.command("GitHub workflow validation", ["actionlint", "-shellcheck=", "-pyflakes="])
     for tier in ("unit-heavy", "unit-superheavy"):
         suite.command("Ansible syntax " + tier, ["ansible-playbook", "--syntax-check", "test/unit/" + tier + "/playbook.yaml"])
@@ -25,5 +26,8 @@ def run(suite):
     for path in sorted((root / "test").rglob("*.py")):
         ast.parse(path.read_text(), filename=str(path))
     for path in sorted((root / "test").rglob("*.yaml")):
+        if "templates" in path.parts:
+            continue
         yaml.safe_load(path.read_text())
+    suite.command("external fixture chart", ["helm", "lint", "--strict", "test/common/fixtures/external-chart", "--set-string", "image=" + image])
     suite.command("test harness contracts", [sys.executable, "-m", "unittest", "discover", "-s", "test/static", "-p", "test_*.py"], timeout=20)

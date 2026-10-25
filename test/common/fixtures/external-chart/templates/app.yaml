@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: external-settings
+data:
+  message: owned-by-another-helm-release
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: external-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: external-web}
+  template:
+    metadata:
+      labels: {app: external-web}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: web
+          image: {{ required "fixture image must be specified" .Values.image | quote }}
+          command: [sh, -ec, 'mkdir -p /tmp/www; printf external-ok > /tmp/www/index.html; exec httpd -f -p 8080 -h /tmp/www']
+          readinessProbe:
+            httpGet: {path: /, port: 8080}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 32Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: tmp, emptyDir: {}}

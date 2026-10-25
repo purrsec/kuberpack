@@ -41,6 +41,20 @@
     argv: [kubectl, wait, clusterissuer/fixture-ca, --for=condition=Ready, --timeout=60s]
   changed_when: false
 
+- name: Install an independently managed application before Kuberpack
+  ansible.builtin.command:
+    argv: [helm, upgrade, --install, external-app, /workspace/test/common/fixtures/external-chart, --namespace=external-apps, --create-namespace, '--set-string=image={{ images.busybox }}', --wait, --timeout=90s]
+  changed_when: true
+
+- name: Record external operator and application identities before installation
+  ansible.builtin.command:
+    argv: [kubectl, get, deployment, '{{ item.name }}', '-n={{ item.namespace }}', '-o=jsonpath={.metadata.uid}']
+  loop:
+    - {name: cert-manager, namespace: cert-manager}
+    - {name: external-web, namespace: external-apps}
+  register: external_before
+  changed_when: false
+
 - name: Write the non-secret installation configuration
   ansible.builtin.copy:
     dest: '{{ fixture_directory }}/platform.yaml'
@@ -71,6 +85,14 @@
   ansible.builtin.command:
     argv: [python3, /workspace/test/unit/unit-superheavy/install.py, '{{ fixture_directory }}', '{{ artifacts }}', first]
   changed_when: true
+
+- name: Assert the installer preserved externally managed workloads
+  ansible.builtin.command:
+    argv: [kubectl, get, deployment, '{{ item.item.name }}', '-n={{ item.item.namespace }}', '-o=jsonpath={.metadata.uid}']
+  loop: '{{ external_before.results }}'
+  register: external_after
+  changed_when: false
+  failed_when: external_after.rc != 0 or external_after.stdout != item.stdout
 
 - name: Prove real build, digest pin, Flux, HTTPS, credentials, secret rotation and reinstall
   ansible.builtin.command:

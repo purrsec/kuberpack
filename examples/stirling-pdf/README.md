@@ -54,13 +54,19 @@ ressources générées dans le dépôt GitOps configuré ; Flux les applique.
 
 Le test du dépôt ne parle qu'à l'URL HTTPS de l'application. Il vérifie le
 login, le refus d'une opération anonyme et une fusion authentifiée de deux
-PDF, dont le nombre de pages est contrôlé avec `pdfinfo` (`poppler-utils`).
+PDF, dont le nombre de pages est contrôlé avec `pdfinfo`. L'image de test
+fournit Python et Poppler ; aucun outil PDF n'est requis sur le poste.
 
 ```bash
-python3 testenv/scripts/stirling-smoke.py \
+docker build -t kuberpack-stirling-check test/common/examples
+mkdir -p .test-results/stirling
+docker run --rm \
+  --mount "type=bind,source=$HOME/.config/kuberpack/stirling.env,target=/run/stirling.env,readonly" \
+  --mount "type=bind,source=$PWD/.test-results/stirling,target=/reports" \
+  kuberpack-stirling-check \
   --url https://pdf.151.115.39.23.nip.io \
-  --secrets-file "$HOME/.config/kuberpack/stirling.env" \
-  --state-file /tmp/stirling-storage-test.json
+  --secrets-file /run/stirling.env \
+  --state-file /reports/storage.json
 ```
 
 Au premier passage, il enregistre aussi un PDF dans le stockage de Stirling.

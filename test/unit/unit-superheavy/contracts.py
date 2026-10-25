@@ -12,6 +12,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import yaml
 
 from install import install
 
@@ -97,12 +98,21 @@ class Contracts:
                    KUBECONFIG="/tmp/no-developer-kubernetes-access")
         return json.loads(self.command("kuberpack " + args[0], [Path(os.environ["KUBERPACK_TEST_BIN"]) / "kuberpack", *args, "--non-interactive", "--output=json"], env=env, timeout=timeout))
 
-    def issue_token(self, role, services=None):
+    def issue_token(self, role, services=None, project="pipeline"):
         value = self.request("POST", "/api/v2/admin/tokens", {
-            "name": "fixture-" + role, "role": role, "project": "pipeline", "expires_in": "1h",
+            "name": "fixture-" + role, "role": role, "project": project, "expires_in": "1h",
             "services": services or []}, token=self.credentials["api_token"], expected=201)["token"]
         self.secrets.add(value)
         return value
+
+    def administrator_cli(self, *args):
+        env = dict(self.environment, KUBERPACK_API_URL=self.api, KUBERPACK_API_TOKEN=self.credentials["api_token"])
+        return json.loads(self.command("administrator " + args[0],
+            [Path(os.environ["KUBERPACK_TEST_BIN"]) / "kuberpack-admin", *args, "--non-interactive", "--output=json"], env=env, timeout=180))
+
+    def remote_revision(self, repository):
+        output = self.command("read " + repository + " revision", ["git", "ls-remote", self.credentials["forge_url"] + "/kuberpack/" + repository + ".git", "refs/heads/main"], env=self.git_environment())
+        return output.split()[0]
 
     def prepare_secret(self):
         admin = self.secret("infisical-bootstrap-credentials")
@@ -168,7 +178,9 @@ HTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
 '''.replace("VERSION", version)
         (source / "main.py").write_text(program)
         (source / ".python-version").write_text("3.13\n")
-        (source / "requirements.txt").write_text("# Standard library only: exercise Railpack without application dependency churn.\n")
+        # Keep Python's TLS and packaging tooling patched as well as the app.
+        # No scanner exception is granted to the fixture.
+        (source / "requirements.txt").write_text("pip==26.2.2\ncertifi==2026.10.23\n")
         for args in (["add", "main.py", ".python-version", "requirements.txt"],
                      ["-c", "commit.gpgsign=false", "commit", "-m", "fixture " + version], ["push", "origin", "main"]):
             self.command("git " + args[0], ["git", "-C", source, *args], env=env)
@@ -180,8 +192,8 @@ HTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
 
     def fingerprint(self):
         result = {}
-        for ns in ("kuberpack", "infisical", "kuberpack-build", "pipeline"):
-            for obj in self.kube("get", "secrets,deployments,pvc", "-n", ns)["items"]:
+        for ns in ("kuberpack", "infisical", "kuberpack-build", "pipeline", "external-apps", "cert-manager"):
+            for obj in self.kube("get", "secrets,deployments,configmaps,pvc", "-n", ns)["items"]:
                 if obj.get("type") in ("helm.sh/release.v1", "kubernetes.io/tls", "kubernetes.io/service-account-token"):
                     continue
                 identity = ns + "/" + obj["kind"] + "/" + obj["metadata"]["name"]
@@ -197,14 +209,14 @@ HTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
         operator = next(item for item in deployments if "controller-manager" in item["metadata"]["name"])
         operator_identity = "system:serviceaccount:infisical:" + operator["spec"]["template"]["spec"]["serviceAccountName"]
         control_identity = "system:serviceaccount:kuberpack:kuberpack"
-        for name, identity, resource, namespace, expected in (
-            ("operator project secrets", operator_identity, "secrets", "pipeline", "yes"),
-            ("operator system secrets", operator_identity, "secrets", "kube-system", "no"),
-            ("operator platform secrets", operator_identity, "secrets", "kuberpack", "no"),
-            ("control system secrets", control_identity, "secrets", "kube-system", "no"),
-            ("control pod execution", control_identity, "pods/exec", "pipeline", "no"),
+        for name, identity, verb, resource, namespace, expected in (
+            ("operator project secrets", operator_identity, "get", "secrets", "pipeline", "yes"),
+            ("operator system secrets", operator_identity, "get", "secrets", "kube-system", "no"),
+            ("operator platform secrets", operator_identity, "get", "secrets", "kuberpack", "no"),
+            ("operator Flux token creation", operator_identity, "create", "serviceaccounts/token", "flux-system", "no"),
+            ("control system secrets", control_identity, "get", "secrets", "kube-system", "no"),
+            ("control pod execution", control_identity, "create", "pods/exec", "pipeline", "no"),
         ):
-            verb = "create" if resource == "pods/exec" else "get"
             result = subprocess.run(["kubectl", "auth", "can-i", verb, resource, "-n", namespace, "--as", identity],
                                     env=self.environment, capture_output=True, text=True, timeout=20)
             self.check(name + " decision", result.stdout.strip(), expected)
@@ -227,10 +239,9 @@ HTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
         for token in (reader, self.token):
             self.request("POST", "/api/v2/projects/pipeline/plans", {"action": "destroy"}, token=token, expected=403)
         self.request("POST", "/api/v2/projects/pipeline/plans", {"action": "deploy"}, token=reader, expected=403)
-        manifest = {"project": "pipeline", "infisical": {"project_id": project_id}, "services": {"web": {
-            "repository": "kuberpack/source", "branch": "main", "hostname": "web.fixture.test", "port": 8080,
-            "healthcheck": "/healthz", "start_command": "python main.py", "secrets": ["PIPELINE_SECRET"]}},
-            "policies": {"defaultDeny": True, "internet": False}}
+        fixture = Path(__file__).resolve().parents[2] / "common/fixtures/source-project.yaml"
+        manifest = yaml.safe_load(fixture.read_text())
+        manifest["infisical"]["project_id"] = project_id
         manifest_path = self.directory / "kuberpack.yaml"
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
         args = ["deploy", "--file", str(manifest_path), "--request-id=fixture-first", "--yes", "--detach"]
@@ -257,6 +268,12 @@ HTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
         self.check("application version", body["version"], "one")
         self.check("human secret reached the application", body["secret_sha256"], expected_secret)
         self.scoped_rbac()
+        previous_head = self.remote_revision("applications")
+        repeated_configuration = self.cli("deploy", "--file", str(manifest_path), "--request-id=fixture-reapply", "--yes", "--timeout=3m", timeout=200)
+        self.check("unchanged configuration converges", repeated_configuration["status"], "succeeded")
+        self.check("unchanged configuration creates no GitOps commit", self.remote_revision("applications"), previous_head)
+        self.check("unchanged configuration creates no build", len(self.cli("builds", "list", "--service=web")["builds"]), 1)
+        self.check("control plane never writes application source", self.remote_revision("source"), commit)
         self.command("restart the actual control plane", ["kubectl", "rollout", "restart", "deployment/kuberpack", "-n=kuberpack"])
         self.command("wait for restarted control plane", ["kubectl", "rollout", "status", "deployment/kuberpack", "-n=kuberpack", "--timeout=120s"], timeout=130)
         self.check("accepted operation survives control plane restart", self.cli(*args)["deployment_id"], first["deployment_id"])
@@ -270,11 +287,25 @@ HTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
         self.check("webhook delivery retains the rotated secret", self.application()["secret_sha256"], rotated)
         builds = self.cli("builds", "list", "--service=web")["builds"]
         self.check("webhook built the pushed commit", any(b["commit_sha"] == next_commit and b["status"] == "succeeded" for b in builds), True)
+        self.command("create a persistent claim in the project", ["kubectl", "apply", "-f", "-"], data=json.dumps({
+            "apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "retain-data", "namespace": "pipeline"},
+            "spec": {"accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "64Mi"}}}}))
+        blocked = self.request("POST", "/api/v2/projects/pipeline/plans", {"action": "destroy"}, token=admin_token, expected=409)
+        self.check("administrator destruction is blocked by actual storage", blocked["error"]["code"], "destruction_blocked")
+        self.check("storage refusal is based on the live claim", blocked["error"]["message"], "namespace contains persistent claims")
         before = self.fingerprint()
+        revisions = (self.remote_revision("platform"), self.remote_revision("applications"))
         install(self.directory, self.artifacts, "reinstall")
         self.check("reinstallation preserves credentials, volumes and workload identities", self.fingerprint(), before)
+        self.check("reinstallation creates no GitOps commits", (self.remote_revision("platform"), self.remote_revision("applications")), revisions)
         self.check("reinstalled API remains scoped", self.cli("whoami")["role"], "maintainer")
         self.check("reinstalled delivery remains available", self.application()["version"], "two")
+        self.administrator_cli("projects", "create", "remove-me", "--yes")
+        revoked = self.issue_token("reader", project="remove-me")
+        plan = self.administrator_cli("projects", "destroy", "remove-me", "--plan")
+        removed = self.administrator_cli("projects", "destroy", "remove-me", "--plan-id", plan["id"], "--confirm-project=remove-me", "--yes")
+        self.check("administrator destroys an empty reservation", removed["status"], "succeeded")
+        self.request("GET", "/api/v2/session", token=revoked, expected=401)
 
 
 def main():
