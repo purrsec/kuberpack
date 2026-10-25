@@ -1,0 +1,37 @@
+- name: Prove Kubernetes admission and isolation on a disposable Docker cluster
+  hosts: localhost
+  gather_facts: false
+  environment:
+    KUBECONFIG: /tmp/kuberpack-kubeconfig.yaml
+    KUBERPACK_SECURITY_KUBECONFIG: /tmp/kuberpack-kubeconfig.yaml
+    KUBERPACK_TEST_RUN: "{{ run_id }}"
+  tasks:
+    - name: Run real cluster contracts and always collect evidence before cleanup
+      block:
+        - name: Create the disposable cluster
+          ansible.builtin.include_tasks: ../../common/tasks/cluster.yaml
+        - name: Check admission with the real API server and exact denial causes
+          ansible.builtin.command:
+            argv: [go, test, -json, -count=1, -timeout=120s, ./provisioning, -run=^TestBuildAdmissionLiveAPIServer$]
+            chdir: /workspace
+          register: admission
+          changed_when: false
+          failed_when: false
+        - name: Save admission test events
+          ansible.builtin.copy:
+            content: "{{ admission.stdout }}\n"
+            dest: "{{ artifacts }}/admission-tests.jsonl"
+            mode: '0600'
+        - name: Assert the live test ran without skips
+          ansible.builtin.assert:
+            that:
+              - admission.rc == 0
+              - "admission.stdout_lines | map('from_json') | selectattr('Action', 'equalto', 'skip') | list | length == 0"
+              - "admission.stdout_lines | map('from_json') | selectattr('Action', 'equalto', 'pass') | list | length > 1"
+        - name: Exercise real network and tenant contracts
+          ansible.builtin.include_tasks: network.yaml
+      always:
+        - name: Collect diagnostics before removing the cluster
+          ansible.builtin.include_tasks: ../../common/tasks/diagnostics.yaml
+        - name: Remove disposable resources even after failure
+          ansible.builtin.include_tasks: ../../common/tasks/cleanup.yaml

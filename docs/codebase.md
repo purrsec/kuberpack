@@ -60,7 +60,7 @@ internal/runtimecli/ control plane et reloader
 internal/platformcli/ installation et diagnostics opérateur
 internal/             logique métier, packages importables
 provisioning/         charts Helm embarqués + tests Go des charts
-testenv/              banc Docker (Forgejo + k3s) pour les tests réels
+test/                 suites Docker locales/CI, fixtures et playbooks Ansible
 examples/             manifestes d'exemple
 docs/                 contrat, exploitation, audits
 Dockerfile            image du control plane (sans shell)

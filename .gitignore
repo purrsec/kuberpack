@@ -42,3 +42,7 @@ testenv/pki/*.srl
 # Python
 __pycache__/
 *.pyc
+
+# Isolated test-run artifacts (may contain private fixture diagnostics).
+.test-results/
+.test-cache/

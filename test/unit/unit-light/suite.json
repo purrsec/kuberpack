@@ -1,0 +1,11 @@
+{
+  "name": "unit-light",
+  "budget_seconds": 60,
+  "description": "All offline Go tests, with fresh execution and randomized order.",
+  "allowed_skips": [
+    "TestResolveDigestOnTheInternet",
+    "TestTheClusterServicesAreFetchable",
+    "TestInfisicalChartsEnforceScopeAndRuntimeHardening",
+    "TestBuildAdmissionLiveAPIServer"
+  ]
+}

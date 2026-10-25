@@ -1,0 +1,29 @@
+- name: Read Kubernetes workload and event diagnostics without Secrets
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig=/tmp/kuberpack-kubeconfig.yaml, get, '{{ item }}', -A, -o, wide, --request-timeout=10s]
+  loop: [pods, deployments, jobs, events, networkpolicies]
+  register: diagnostics
+  changed_when: false
+  failed_when: false
+
+- name: Save Kubernetes diagnostics including collection errors
+  ansible.builtin.copy:
+    content: "{{ diagnostics.results | to_nice_json }}"
+    dest: "{{ artifacts }}/kubernetes-diagnostics.json"
+    mode: '0600'
+
+- name: Read test node logs
+  community.docker.docker_container_info:
+    name: "{{ run_id }}-k3s"
+  register: node_info
+
+- name: Save non-secret node state
+  ansible.builtin.copy:
+    content: "{{ {'state': node_info.container.State | default({}), 'network': node_info.container.NetworkSettings.Networks | default({})} | to_nice_json }}"
+    dest: "{{ artifacts }}/docker-state.json"
+    mode: '0600'
+
+- name: Collect redacted workload, controller and node logs
+  ansible.builtin.command:
+    argv: [python3, /workspace/test/common/diagnostics.py, '{{ run_id }}', '{{ artifacts }}']
+  changed_when: false

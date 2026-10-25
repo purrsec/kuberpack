@@ -1,0 +1,216 @@
+- name: Create contract namespaces
+  ansible.builtin.command:
+    argv: [kubectl, apply, -f, '-']
+    stdin: "{{ {'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': item}} | to_json }}"
+  loop: [contract-a, contract-b, kuberpack, kuberpack-build]
+  changed_when: true
+
+- name: Render the actual platform RBAC with tenant isolation
+  ansible.builtin.command:
+    argv: [helm, template, kuberpack, /workspace/provisioning/charts/kuberpack, --namespace=kuberpack, --set=tenantIsolation=true, --show-only=templates/rbac.yaml]
+  register: tenant_roles
+  changed_when: false
+
+- name: Apply the actual platform RBAC
+  ansible.builtin.command:
+    argv: [kubectl, apply, -f, '-']
+    stdin: "{{ tenant_roles.stdout }}"
+  changed_when: true
+
+- name: Bind a tokenless tenant identity only in its namespace
+  ansible.builtin.command:
+    argv: [kubectl, apply, -f, '-']
+    stdin: |
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: contract-tenant
+        namespace: kuberpack
+      automountServiceAccountToken: false
+      ---
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: contract-tenant
+        namespace: contract-a
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: kuberpack-tenant
+      subjects:
+        - kind: ServiceAccount
+          name: contract-tenant
+          namespace: kuberpack
+  changed_when: true
+
+- name: Check positive tenant access
+  ansible.builtin.command:
+    argv: [kubectl, auth, can-i, get, deployments, --namespace=contract-a, --as=system:serviceaccount:kuberpack:contract-tenant]
+  register: allowed_access
+  changed_when: false
+  failed_when: allowed_access.rc != 0 or allowed_access.stdout != 'yes'
+
+- name: Check forbidden cross-namespace access without accepting connection errors
+  ansible.builtin.command:
+    argv: [kubectl, auth, can-i, get, secrets, --namespace=kube-system, --as=system:serviceaccount:kuberpack:contract-tenant]
+  register: denied_access
+  changed_when: false
+  failed_when: denied_access.rc != 1 or denied_access.stdout != 'no'
+
+- name: Write service configurations for the actual runtime chart
+  ansible.builtin.copy:
+    dest: /tmp/{{ item.namespace }}-{{ item.name }}.yaml
+    mode: '0600'
+    content: "{{ service_values | to_nice_yaml }}"
+  vars:
+    service_values:
+      image: "{{ images.busybox }}"
+      port: 8080
+      hostname: '{{ item.name }}.{{ item.namespace }}.fixture.test'
+      command:
+        - sh
+        - -ec
+        - "mkdir -p /tmp/www; printf contract-ok > /tmp/www/index.html; httpd -p 9091 -h /tmp/www; exec httpd -f -p 8080 -h /tmp/www"
+      networkPolicy:
+        enabled: true
+        internet: false
+        strictPeers: true
+        project: "{{ item.namespace }}"
+        servicePeers: "{{ [{'name': 'back', 'port': 8080}] if item.name == 'front' else [] }}"
+        incomingPeers: "{{ ['front'] if item.name == 'back' else [] }}"
+  loop: &contract_services
+    - {namespace: contract-a, name: front}
+    - {namespace: contract-a, name: back}
+    - {namespace: contract-a, name: other}
+    - {namespace: contract-b, name: back}
+
+- name: Install real chart releases and wait for ready workloads
+  ansible.builtin.command:
+    argv: [helm, upgrade, --install, '{{ item.name }}', /workspace/provisioning/charts/stateless, '--namespace={{ item.namespace }}', '--values=/tmp/{{ item.namespace }}-{{ item.name }}.yaml', --wait, --timeout=90s]
+  loop: *contract_services
+  changed_when: true
+
+- name: Read ready pod addresses
+  ansible.builtin.command:
+    argv: [kubectl, get, pods, '--namespace={{ item.namespace }}', '-l=app.kubernetes.io/name={{ item.name }}', '-o=jsonpath={.items[0].status.podIP}']
+  loop: *contract_services
+  register: pod_ips
+  changed_when: false
+
+- name: Assert declared traffic succeeds before checking forbidden traffic
+  ansible.builtin.command:
+    argv: [kubectl, exec, --namespace=contract-a, deployment/front, --, wget, -q, -T, '3', -O, '-', 'http://back:8080']
+  register: positive_network
+  until: positive_network.rc == 0 and positive_network.stdout == 'contract-ok'
+  retries: 8
+  delay: 1
+  changed_when: false
+
+- name: Assert the auxiliary listener exists on the destination
+  ansible.builtin.command:
+    argv: [kubectl, exec, --namespace=contract-a, deployment/back, --, wget, -q, -T, '3', -O, '-', 'http://{{ pod_ips.results[1].stdout }}:9091']
+  register: auxiliary
+  changed_when: false
+  failed_when: auxiliary.rc != 0 or auxiliary.stdout != 'contract-ok'
+
+- name: Verify each destination is serving on the exact Pod IP under test
+  ansible.builtin.command:
+    argv: [kubectl, exec, '--namespace={{ item.namespace }}', 'deployment/{{ item.name }}', --, wget, -q, -T, '3', -O, '-', 'http://{{ pod_ips.results[index].stdout }}:8080']
+  loop: *contract_services
+  loop_control:
+    index_var: index
+  register: destinations_before
+  changed_when: false
+  failed_when: destinations_before.rc != 0 or destinations_before.stdout != 'contract-ok'
+
+- name: Prove forbidden traffic is rejected against verified live IP addresses
+  ansible.builtin.command:
+    argv: [kubectl, exec, --namespace=contract-a, 'deployment/{{ item.source }}', --, wget, -T, '2', -O, '-', 'http://{{ item.ip }}:{{ item.port }}']
+  loop:
+    - {name: undeclared-port, source: front, ip: '{{ pod_ips.results[1].stdout }}', port: 9091}
+    - {name: undeclared-neighbor, source: front, ip: '{{ pod_ips.results[2].stdout }}', port: 8080}
+    - {name: reverse-direction, source: back, ip: '{{ pod_ips.results[0].stdout }}', port: 8080}
+    - {name: other-service, source: other, ip: '{{ pod_ips.results[1].stdout }}', port: 8080}
+    - {name: other-project, source: front, ip: '{{ pod_ips.results[3].stdout }}', port: 8080}
+  loop_control:
+    label: '{{ item.name }}'
+  register: denied_network
+  changed_when: false
+  failed_when: denied_network.rc != 1 or ('download timed out' not in denied_network.stderr and 'Connection refused' not in denied_network.stderr)
+
+- name: Verify the destination listeners stayed healthy during denial checks
+  ansible.builtin.command:
+    argv: [kubectl, exec, '--namespace={{ item.namespace }}', 'deployment/{{ item.name }}', --, wget, -q, -T, '3', -O, '-', 'http://{{ pod_ips.results[index].stdout }}:8080']
+  loop: *contract_services
+  loop_control:
+    index_var: index
+  register: destinations_after
+  changed_when: false
+  failed_when: destinations_after.rc != 0 or destinations_after.stdout != 'contract-ok'
+
+- name: Create an unselected server to distinguish ingress and egress enforcement
+  ansible.builtin.command:
+    argv: [kubectl, apply, -f, '-']
+    stdin: "{{ unselected_probe | to_json }}"
+  vars:
+    unselected_probe:
+      apiVersion: v1
+      kind: Pod
+      metadata: {name: unselected-probe, namespace: contract-a}
+      spec:
+        automountServiceAccountToken: false
+        restartPolicy: Never
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65534
+          seccompProfile: {type: RuntimeDefault}
+        containers:
+          - name: probe
+            image: '{{ images.busybox }}'
+            command: [sh, -ec, 'mkdir -p /tmp/www; printf contract-ok > /tmp/www/index.html; exec httpd -f -p 8080 -h /tmp/www']
+            readinessProbe:
+              httpGet: {path: /, port: 8080}
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities: {drop: [ALL]}
+            volumeMounts:
+              - {name: tmp, mountPath: /tmp}
+        volumes:
+          - {name: tmp, emptyDir: {}}
+  changed_when: true
+
+- name: Wait for the independent probe server
+  ansible.builtin.command:
+    argv: [kubectl, wait, --namespace=contract-a, pod/unselected-probe, --for=condition=Ready, --timeout=60s]
+  changed_when: false
+
+- name: Read the independent probe address
+  ansible.builtin.command:
+    argv: [kubectl, get, pod, unselected-probe, --namespace=contract-a, '-o=jsonpath={.status.podIP}']
+  register: independent_ip
+  changed_when: false
+
+- name: Prove target ingress and source egress separately
+  ansible.builtin.command:
+    argv: [kubectl, exec, --namespace=contract-a, '{{ item.source }}', --, wget, -T, '2', -O, '-', 'http://{{ item.ip }}:8080']
+  loop:
+    - {name: target-ingress, source: pod/unselected-probe, ip: '{{ pod_ips.results[1].stdout }}'}
+    - {name: source-egress, source: deployment/front, ip: '{{ independent_ip.stdout }}'}
+  loop_control:
+    label: '{{ item.name }}'
+  register: independent_denial
+  changed_when: false
+  failed_when: independent_denial.rc != 1 or ('download timed out' not in independent_denial.stderr and 'Connection refused' not in independent_denial.stderr)
+
+- name: Assert the independent target remains healthy
+  ansible.builtin.command:
+    argv: [kubectl, exec, --namespace=contract-a, pod/unselected-probe, --, wget, -q, -T, '3', -O, '-', 'http://{{ independent_ip.stdout }}:8080']
+  register: independent_health
+  changed_when: false
+  failed_when: independent_health.rc != 0 or independent_health.stdout != 'contract-ok'
+
+- name: Assert DNS remains available
+  ansible.builtin.command:
+    argv: [kubectl, exec, --namespace=contract-a, deployment/front, --, nslookup, kubernetes.default.svc.cluster.local]
+  changed_when: false

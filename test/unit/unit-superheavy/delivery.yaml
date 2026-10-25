@@ -1,0 +1,81 @@
+- name: Install the pinned certificate operator for the local CA fixture
+  ansible.builtin.command:
+    argv: [helm, upgrade, --install, cert-manager, cert-manager, --repo=https://charts.jetstack.io, --version=v1.21.2, --namespace=cert-manager, --create-namespace, --set=crds.enabled=true, --wait, --timeout=180s]
+  changed_when: true
+
+- name: Create the issuer key as a Kubernetes Secret without logging it
+  ansible.builtin.command:
+    argv: [kubectl, apply, -f, '-']
+    stdin: "{{ issuer_key | to_json }}"
+  vars:
+    issuer_key:
+      apiVersion: v1
+      kind: Secret
+      metadata: {name: fixture-ca, namespace: cert-manager}
+      type: kubernetes.io/tls
+      data:
+        tls.crt: "{{ lookup('file', fixture_directory + '/ca.crt') | b64encode }}"
+        tls.key: "{{ lookup('file', fixture_directory + '/ca.key') | b64encode }}"
+  changed_when: true
+  no_log: true
+
+- name: Configure an actual CA issuer without public ACME
+  ansible.builtin.command:
+    argv: [kubectl, apply, -f, '-']
+    stdin: |
+      apiVersion: cert-manager.io/v1
+      kind: ClusterIssuer
+      metadata:
+        name: fixture-ca
+      spec:
+        ca:
+          secretName: fixture-ca
+  register: issuer_creation
+  until: issuer_creation.rc == 0
+  retries: 15
+  delay: 2
+  changed_when: true
+
+- name: Wait for the CA issuer readiness condition
+  ansible.builtin.command:
+    argv: [kubectl, wait, clusterissuer/fixture-ca, --for=condition=Ready, --timeout=60s]
+  changed_when: false
+
+- name: Write the non-secret installation configuration
+  ansible.builtin.copy:
+    dest: '{{ fixture_directory }}/platform.yaml'
+    mode: '0600'
+    content: "{{ platform_configuration | to_nice_yaml }}"
+  vars:
+    platform_configuration:
+      cluster: '{{ run_id }}'
+      gitProvider: forgejo
+      gitURL: 'https://{{ forge_ip }}:3000'
+      gitUser: kuberpack
+      gitopsURL: 'https://{{ forge_ip }}:3000/kuberpack/platform.git'
+      appsURL: 'https://{{ forge_ip }}:3000/kuberpack/applications.git'
+      host: kuberpack.fixture.test
+      infisicalHost: infisical.fixture.test
+      adminEmail: runner@fixture.test
+      issuer: fixture-ca
+      image: 'docker.io/kuberpack-test/trusted-control:{{ run_id }}'
+      builderImage: 'docker.io/kuberpack-test/trusted-builder:{{ run_id }}'
+      buildkitImage: 'docker.io/kuberpack-test/trusted-buildkit:{{ run_id }}'
+      builderMemory: 3Gi
+      buildkitMemory: 3Gi
+      privateBuildEgress: true
+      webhookURL: https://kuberpack.fixture.test/hooks/git
+      timeout: 8m
+
+- name: Install the platform and retain a redacted installation log
+  ansible.builtin.command:
+    argv: [python3, /workspace/test/unit/unit-superheavy/install.py, '{{ fixture_directory }}', '{{ artifacts }}', first]
+  changed_when: true
+
+- name: Prove real build, digest pin, Flux, HTTPS, credentials, secret rotation and reinstall
+  ansible.builtin.command:
+    argv: [python3, /workspace/test/unit/unit-superheavy/contracts.py, '{{ fixture_directory }}', '{{ artifacts }}']
+  changed_when: false
+
+- name: Exercise all live network and tenant contracts on the installed platform
+  ansible.builtin.include_tasks: ../unit-heavy/network.yaml

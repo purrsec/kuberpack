@@ -1,0 +1,68 @@
+- name: Create the isolated Docker network
+  community.docker.docker_network:
+    name: "{{ run_id }}"
+    labels:
+      org.kuberpack.test.run: "{{ run_id }}"
+    connected:
+      - "{{ run_id }}-runner"
+
+- name: Create the isolated Kubernetes data volume
+  community.docker.docker_volume:
+    name: "{{ run_id }}-k3s"
+    labels:
+      org.kuberpack.test.run: "{{ run_id }}"
+
+- name: Start a fresh Kubernetes node without host ports
+  community.docker.docker_container:
+    name: "{{ run_id }}-k3s"
+    image: "{{ images.k3s }}"
+    state: started
+    privileged: true
+    cgroupns_mode: private
+    labels:
+      org.kuberpack.test.run: "{{ run_id }}"
+    networks:
+      - name: "{{ run_id }}"
+        aliases: [k3s]
+    volumes:
+      - "{{ run_id }}-k3s:/var/lib/rancher/k3s"
+    tmpfs:
+      - /run
+      - /var/lib/kubelet:exec,size={{ kubelet_tmpfs_size | default('2g') }}
+    command:
+      - server
+      - --node-name={{ run_id }}
+      - --tls-san=k3s
+      - --flannel-iface=eth0
+      - --disable=metrics-server
+      - --write-kubeconfig-mode=600
+      - --kubelet-arg=cgroup-driver=cgroupfs
+
+- name: Wait for the node kubeconfig
+  community.docker.docker_container_exec:
+    container: "{{ run_id }}-k3s"
+    argv: [cat, /etc/rancher/k3s/k3s.yaml]
+  register: kubeconfig_result
+  until: kubeconfig_result.rc == 0
+  retries: 45
+  delay: 2
+  changed_when: false
+  no_log: true
+
+- name: Write a private fixture kubeconfig
+  ansible.builtin.copy:
+    content: "{{ kubeconfig_result.stdout | replace('127.0.0.1', 'k3s') }}"
+    dest: /tmp/kuberpack-kubeconfig.yaml
+    mode: '0600'
+  no_log: true
+
+- name: Wait for the actual Kubernetes node Ready condition
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig=/tmp/kuberpack-kubeconfig.yaml, wait, 'node/{{ run_id }}', --for=condition=Ready, --timeout=120s]
+  changed_when: false
+
+- name: Mark the cluster as owned by this disposable test run
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig=/tmp/kuberpack-kubeconfig.yaml, apply, -f, '-']
+    stdin: "{{ {'apiVersion': 'v1', 'kind': 'ConfigMap', 'metadata': {'name': 'kuberpack-test-fixture', 'namespace': 'kube-system'}, 'data': {'run_id': run_id}} | to_json }}"
+  changed_when: true

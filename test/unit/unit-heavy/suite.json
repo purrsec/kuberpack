@@ -1,0 +1,5 @@
+{
+  "name": "unit-heavy",
+  "budget_seconds": 300,
+  "description": "Race detector and real Kubernetes admission/tenant/network contracts."
+}

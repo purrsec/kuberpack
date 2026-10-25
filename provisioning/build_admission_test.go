@@ -15,6 +15,7 @@ import (
 	"helm.sh/helm/v3/pkg/engine"
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
+	nodev1 "k8s.io/api/node/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -174,16 +175,34 @@ func TestBuildAdmissionLiveAPIServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSuffix(config.Host, "/") != "https://172.29.90.11:6443" {
-		t.Fatal("security admission test is restricted to the disposable Docker cluster")
-	}
 	config.Timeout = 15 * time.Second
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	runID := os.Getenv("KUBERPACK_TEST_RUN")
+	marker, err := client.CoreV1().ConfigMaps("kube-system").Get(ctx, "kuberpack-test-fixture", metav1.GetOptions{})
+	if err != nil || runID == "" || marker.Data["run_id"] != runID {
+		cancel()
+		t.Fatal("security admission test requires the marker of its own disposable Docker run")
+	}
 	defer cancel()
+	// Ensure the RuntimeClass admission plugin accepts the alternate class,
+	// so rejection below must come from our policy rather than a missing class.
+	otherRuntime, err := client.NodeV1().RuntimeClasses().Create(ctx, &nodev1.RuntimeClass{
+		ObjectMeta: metav1.ObjectMeta{GenerateName: "kuberpack-admission-"}, Handler: "runc",
+	}, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := client.NodeV1().RuntimeClasses().Delete(cleanup, otherRuntime.Name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+			t.Errorf("cleanup runtime class: %v", err)
+		}
+	})
 	ns, err := client.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "kuberpack-admission-audit-", Labels: map[string]string{"pod-security.kubernetes.io/enforce": "privileged"}}}, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -282,7 +301,7 @@ func TestBuildAdmissionLiveAPIServer(t *testing.T) {
 			if err := submit(*base.Spec.Template.Spec.DeepCopy()); err != nil {
 				t.Fatalf("JobRunner.NewJob was rejected: %v", err)
 			}
-			for _, test := range buildAdmissionAttacks() {
+			for _, test := range buildAdmissionAttacks(otherRuntime.Name) {
 				t.Run(test.name, func(t *testing.T) {
 					spec := base.Spec.Template.Spec.DeepCopy()
 					test.mutate(spec)
@@ -299,7 +318,7 @@ func TestBuildAdmissionLiveAPIServer(t *testing.T) {
 	}
 	t.Run("Pod updates and ephemeral-container subresource", func(t *testing.T) {
 		spec := base.Spec.Template.Spec.DeepCopy()
-		spec.NodeSelector = map[string]string{"kuberpack.audit/scheduling": ns.Name}
+		spec.SchedulingGates = []corev1.PodSchedulingGate{{Name: "kuberpack.test/admission-audit"}}
 		pod, err := client.CoreV1().Pods(ns.Name).Create(ctx, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{GenerateName: "admission-pending-"}, Spec: *spec}, metav1.CreateOptions{})
 		if err != nil {
 			t.Fatal(err)
@@ -338,7 +357,7 @@ type buildAdmissionAttack struct {
 	mutate func(*corev1.PodSpec)
 }
 
-func buildAdmissionAttacks() []buildAdmissionAttack {
+func buildAdmissionAttacks(otherRuntime string) []buildAdmissionAttack {
 	return []buildAdmissionAttack{
 		{"hostPath", func(p *corev1.PodSpec) {
 			p.Volumes = append(p.Volumes, corev1.Volume{Name: "host", VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: "/"}}})
@@ -352,7 +371,7 @@ func buildAdmissionAttacks() []buildAdmissionAttack {
 		{"host PID", func(p *corev1.PodSpec) { p.HostPID = true }},
 		{"host IPC", func(p *corev1.PodSpec) { p.HostIPC = true }},
 		{"shared process namespace", func(p *corev1.PodSpec) { p.ShareProcessNamespace = ptr.To(true) }},
-		{"another runtime class", func(p *corev1.PodSpec) { p.RuntimeClassName = ptr.To("runc") }},
+		{"another runtime class", func(p *corev1.PodSpec) { p.RuntimeClassName = ptr.To(otherRuntime) }},
 		{"another node pool", func(p *corev1.PodSpec) {
 			p.NodeSelector = map[string]string{"kubernetes.io/arch": "arm64"}
 		}},

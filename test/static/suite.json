@@ -1,0 +1,5 @@
+{
+  "name": "static",
+  "budget_seconds": 60,
+  "description": "Go formatting/vet, chart validation and test infrastructure contracts."
+}

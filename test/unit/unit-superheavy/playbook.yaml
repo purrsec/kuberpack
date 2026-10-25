@@ -1,0 +1,38 @@
+- name: Prove installation and the full delivery pipeline on fresh Docker infrastructure
+  hosts: localhost
+  gather_facts: false
+  vars:
+    kubelet_tmpfs_size: 12g
+  environment:
+    KUBECONFIG: /tmp/kuberpack-kubeconfig.yaml
+    KUBERPACK_TEST_RUN: "{{ run_id }}"
+  tasks:
+    - name: Run the release contracts with diagnostics and cleanup on every outcome
+      block:
+        - name: Build the actual production images from this checkout
+          community.docker.docker_image_build:
+            name: "kuberpack-test/{{ item.name }}:{{ run_id }}"
+            path: /workspace
+            dockerfile: "{{ item.dockerfile }}"
+            platform: [linux/amd64]
+            labels:
+              org.kuberpack.test.run: "{{ run_id }}"
+          loop:
+            - {name: control, dockerfile: Dockerfile}
+            - {name: builder, dockerfile: Dockerfile.builder}
+        - name: Start fresh Kubernetes infrastructure
+          ansible.builtin.include_tasks: ../../common/tasks/cluster.yaml
+        - name: Configure the isolated HTTPS forge and registry
+          ansible.builtin.include_tasks: forgejo.yaml
+        - name: Prepare trusted images for this run
+          ansible.builtin.include_tasks: images.yaml
+        - name: Execute the installation and delivery contracts
+          ansible.builtin.include_tasks: delivery.yaml
+      always:
+        - name: Preserve evidence before cleanup
+          block:
+            - name: Collect Kubernetes and Docker diagnostics
+              ansible.builtin.include_tasks: ../../common/tasks/diagnostics.yaml
+          always:
+            - name: Remove only this run's disposable infrastructure
+              ansible.builtin.include_tasks: ../../common/tasks/cleanup.yaml

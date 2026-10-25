@@ -1,0 +1,209 @@
+- name: Create the isolated forge data volume
+  community.docker.docker_volume:
+    name: "{{ run_id }}-forgejo"
+    labels:
+      org.kuberpack.test.run: "{{ run_id }}"
+
+- name: Prepare the forge container before accepting requests
+  community.docker.docker_container:
+    name: "{{ run_id }}-forgejo"
+    image: "{{ images.forgejo }}"
+    state: started
+    entrypoint: [/bin/sleep]
+    command: ['3600']
+    labels:
+      org.kuberpack.test.run: "{{ run_id }}"
+    networks:
+      - name: "{{ run_id }}"
+        aliases: [forgejo]
+    volumes:
+      - "{{ run_id }}-forgejo:/var/lib/gitea"
+
+- name: Inspect only the network addresses assigned by Docker
+  community.docker.docker_container_info:
+    name: "{{ run_id }}-{{ item }}"
+  loop: [k3s, forgejo]
+  register: fixture_addresses
+
+- name: Record dynamically assigned node and forge addresses
+  ansible.builtin.set_fact:
+    node_ip: "{{ fixture_addresses.results[0].container.NetworkSettings.Networks[run_id].IPAddress }}"
+    forge_ip: "{{ fixture_addresses.results[1].container.NetworkSettings.Networks[run_id].IPAddress }}"
+    fixture_directory: /tmp/kuberpack-fixture
+
+- name: Create the private fixture workspace
+  ansible.builtin.file:
+    path: "{{ fixture_directory }}"
+    state: directory
+    mode: '0700'
+
+- name: Create a unique certificate authority private key
+  community.crypto.openssl_privatekey:
+    path: "{{ fixture_directory }}/ca.key"
+    type: ECC
+    curve: secp256r1
+    mode: '0600'
+
+- name: Create the certificate authority request
+  community.crypto.openssl_csr:
+    path: "{{ fixture_directory }}/ca.csr"
+    privatekey_path: "{{ fixture_directory }}/ca.key"
+    common_name: "{{ run_id }}"
+    basic_constraints: [CA:TRUE]
+    basic_constraints_critical: true
+    key_usage: [keyCertSign, cRLSign]
+    key_usage_critical: true
+
+- name: Sign this run's certificate authority
+  community.crypto.x509_certificate:
+    path: "{{ fixture_directory }}/ca.crt"
+    privatekey_path: "{{ fixture_directory }}/ca.key"
+    csr_path: "{{ fixture_directory }}/ca.csr"
+    provider: selfsigned
+    selfsigned_not_after: '+2d'
+
+- name: Create the HTTPS private key
+  community.crypto.openssl_privatekey:
+    path: "{{ fixture_directory }}/server.key"
+    type: ECC
+    curve: secp256r1
+    mode: '0600'
+
+- name: Create a certificate request for the actual fixture addresses
+  community.crypto.openssl_csr:
+    path: "{{ fixture_directory }}/server.csr"
+    privatekey_path: "{{ fixture_directory }}/server.key"
+    common_name: forgejo
+    subject_alt_name:
+      - DNS:forgejo
+      - DNS:kuberpack.fixture.test
+      - DNS:infisical.fixture.test
+      - DNS:web.fixture.test
+      - IP:{{ forge_ip }}
+      - IP:{{ node_ip }}
+    extended_key_usage: [serverAuth]
+
+- name: Sign the fixture HTTPS certificate
+  community.crypto.x509_certificate:
+    path: "{{ fixture_directory }}/server.crt"
+    csr_path: "{{ fixture_directory }}/server.csr"
+    ownca_path: "{{ fixture_directory }}/ca.crt"
+    ownca_privatekey_path: "{{ fixture_directory }}/ca.key"
+    provider: ownca
+    ownca_not_after: '+2d'
+
+- name: Add the fixture authority to the runner's trust bundle
+  ansible.builtin.copy:
+    content: "{{ lookup('file', '/etc/ssl/certs/ca-certificates.crt') }}\n{{ lookup('file', fixture_directory + '/ca.crt') }}\n"
+    dest: "{{ fixture_directory }}/bundle.crt"
+    mode: '0644'
+
+- name: Resolve fixture ingress names locally without public DNS
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: "{{ node_ip }} kuberpack.fixture.test infisical.fixture.test web.fixture.test"
+    unsafe_writes: true
+
+- name: Resolve the same ingress names inside the cluster
+  ansible.builtin.command:
+    argv: [kubectl, --namespace=kube-system, patch, configmap, coredns, --type=merge, --patch, '{{ dns_patch | to_json }}']
+  vars:
+    dns_patch:
+      data:
+        NodeHosts: "{{ node_ip }} kuberpack.fixture.test infisical.fixture.test web.fixture.test\n"
+  changed_when: true
+
+- name: Create forge configuration directories in its private volume
+  community.docker.docker_container_exec:
+    container: "{{ run_id }}-forgejo"
+    argv: [mkdir, -p, /var/lib/gitea/fixture]
+  register: forge_directory
+  failed_when: forge_directory.rc != 0
+
+- name: Copy the forge certificate and key without host bind mounts
+  community.docker.docker_container_copy_into:
+    container: "{{ run_id }}-forgejo"
+    path: "{{ fixture_directory }}/{{ item }}"
+    container_path: /var/lib/gitea/fixture/{{ item }}
+    owner_id: 1000
+    group_id: 1000
+    mode: '0600'
+    mode_parse: octal_string_only
+  loop: [server.crt, server.key, bundle.crt]
+  no_log: true
+
+- name: Configure HTTPS Git, API and the real OCI registry
+  community.docker.docker_container_copy_into:
+    container: "{{ run_id }}-forgejo"
+    container_path: /var/lib/gitea/fixture/app.ini
+    owner_id: 1000
+    group_id: 1000
+    mode: '0600'
+    mode_parse: octal_string_only
+    content: |
+      APP_NAME = Kuberpack disposable test
+      RUN_USER = git
+      RUN_MODE = prod
+      WORK_PATH = /var/lib/gitea
+      [database]
+      DB_TYPE = sqlite3
+      PATH = /var/lib/gitea/forgejo.db
+      [server]
+      PROTOCOL = https
+      HTTP_ADDR = 0.0.0.0
+      HTTP_PORT = 3000
+      ROOT_URL = https://{{ forge_ip }}:3000/
+      DOMAIN = {{ forge_ip }}
+      CERT_FILE = /var/lib/gitea/fixture/server.crt
+      KEY_FILE = /var/lib/gitea/fixture/server.key
+      DISABLE_SSH = true
+      OFFLINE_MODE = true
+      [repository]
+      ROOT = /var/lib/gitea/repositories
+      DEFAULT_BRANCH = main
+      [security]
+      INSTALL_LOCK = true
+      [service]
+      DISABLE_REGISTRATION = true
+      [webhook]
+      ALLOWED_HOST_LIST = private
+      [actions]
+      ENABLED = false
+      [log]
+      MODE = console
+      LEVEL = warn
+
+- name: Start the configured HTTPS forge
+  community.docker.docker_container:
+    name: "{{ run_id }}-forgejo"
+    image: "{{ images.forgejo }}"
+    state: started
+    entrypoint: [/usr/local/bin/forgejo]
+    command: [web, --config, /var/lib/gitea/fixture/app.ini]
+    env:
+      SSL_CERT_FILE: /var/lib/gitea/fixture/bundle.crt
+      TMPDIR: /tmp
+    etc_hosts:
+      kuberpack.fixture.test: '{{ node_ip }}'
+    labels:
+      org.kuberpack.test.run: "{{ run_id }}"
+    networks:
+      - name: "{{ run_id }}"
+        aliases: [forgejo]
+    volumes:
+      - "{{ run_id }}-forgejo:/var/lib/gitea"
+
+- name: Wait for the forge HTTPS API with certificate verification
+  ansible.builtin.uri:
+    url: https://{{ forge_ip }}:3000/api/v1/version
+    ca_path: "{{ fixture_directory }}/ca.crt"
+    status_code: 200
+  register: forge_health
+  until: forge_health.status == 200
+  retries: 30
+  delay: 2
+
+- name: Seed private test credentials and two empty GitOps repositories
+  ansible.builtin.command:
+    argv: [python3, /workspace/test/unit/unit-superheavy/seed.py, '{{ run_id }}', '{{ forge_ip }}', '{{ fixture_directory }}']
+  changed_when: true

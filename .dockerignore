@@ -3,6 +3,12 @@ bin/
 hello-world/
 .env
 .env.*
+.gocache
+.worktrees
+.test-results
+.test-cache
+testenv
+**/*.key
 *.sqlite
 data/
 .DS_Store

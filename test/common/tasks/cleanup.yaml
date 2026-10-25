@@ -1,0 +1,26 @@
+- name: Remove containers belonging to this run
+  community.docker.docker_container:
+    name: "{{ item }}"
+    state: absent
+    force_kill: true
+  loop:
+    - "{{ run_id }}-k3s"
+    - "{{ run_id }}-forgejo"
+
+- name: Remove data volumes belonging to this run
+  community.docker.docker_volume:
+    name: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ run_id }}-k3s"
+    - "{{ run_id }}-forgejo"
+
+- name: Disconnect the runner before removing its private network
+  community.docker.docker_network:
+    name: "{{ run_id }}"
+    connected: []
+
+- name: Remove the network belonging to this run
+  community.docker.docker_network:
+    name: "{{ run_id }}"
+    state: absent

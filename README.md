@@ -46,13 +46,18 @@ L'installation prépare Flux, les dépendances, Infisical et le control plane de
 ## Développer Kuberpack
 
 ```bash
+make test-static
 make test
+make test-heavy
+make test-superheavy
 make build
 ./bin/kuberpack --help
 ./bin/kuberpack-admin --help
 ```
 
 `make build` produit les cinq exécutables. `Dockerfile` embarque `kuberpack-control-plane` et `kuberpack-reloader` ; `Dockerfile.builder` embarque `kuberpack-builder`. Les images, les charts et les règles d'admission des Jobs doivent évoluer ensemble.
+
+Les tests utilisent Docker et Python 3 sur l'hôte. Leurs outils et fixtures sont fournis par les mêmes conteneurs qu'en CI ; [test/](test/README.md) décrit les niveaux et les rapports.
 
 L'API v2 apporte les rôles `reader`, `deployer`, `maintainer` et `admin`, les plans expirants, les demandes persistantes et leur idempotence. Les écritures historiques v1 sont retirées ; les lectures de diagnostic v1 restent disponibles. La mise à niveau d'une instance et le remplacement de ses anciens jetons restent des opérations d'administration explicites.
 

@@ -20,6 +20,11 @@ import (
 
 func testApp(t *testing.T) (*App, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
+	// Interactive fixtures model a developer terminal independently of the
+	// runner environment. Tests of CI behaviour opt in explicitly below.
+	for _, name := range []string{"CI", "KUBERPACK_API_URL", "KUBERPACK_API_TOKEN"} {
+		t.Setenv(name, "")
+	}
 	var out, err bytes.Buffer
 	return &App{In: strings.NewReader(""), Out: &out, Err: &err, WorkDir: t.TempDir(), ConfigDir: t.TempDir()}, &out, &err
 }
@@ -68,6 +73,15 @@ func TestWizardRefusesMachineModesAndDoesNotReadInput(t *testing.T) {
 		if err := a.Run(context.Background(), args); err == nil || Code(err) != 2 {
 			t.Fatalf("wizard accepted machine mode %v: %v", args, err)
 		}
+	}
+}
+
+func TestWizardRefusesCIOnAnInteractiveTerminal(t *testing.T) {
+	a, _, _ := testApp(t)
+	a.Interactive = true
+	t.Setenv("CI", "true")
+	if err := a.Run(context.Background(), []string{"wizard"}); err == nil || Code(err) != 2 {
+		t.Fatalf("wizard accepted a CI terminal: %v", err)
 	}
 }
 func TestLoginVerifiesAndPersistsPrivateCredentialWithoutPrintingIt(t *testing.T) {

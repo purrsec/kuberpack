@@ -1,0 +1,86 @@
+- name: Create certificate-only build contexts
+  ansible.builtin.file:
+    path: '{{ fixture_directory }}/images/{{ item }}'
+    state: directory
+    mode: '0700'
+  loop: [control, builder, buildkit]
+
+- name: Copy only the public CA bundle into image build contexts
+  ansible.builtin.copy:
+    src: '{{ fixture_directory }}/bundle.crt'
+    dest: '{{ fixture_directory }}/images/{{ item }}/bundle.crt'
+    mode: '0644'
+  loop: [control, builder, buildkit]
+
+- name: Define trusted runtime image layers without private fixture keys
+  ansible.builtin.copy:
+    dest: '{{ fixture_directory }}/images/{{ item.name }}/Dockerfile'
+    mode: '0600'
+    content: |
+      FROM {{ item.base }}
+      COPY bundle.crt /etc/ssl/certs/ca-certificates.crt
+  loop:
+    - {name: control, base: 'kuberpack-test/control:{{ run_id }}'}
+    - {name: builder, base: 'kuberpack-test/builder:{{ run_id }}'}
+    - {name: buildkit, base: 'docker.io/moby/buildkit:v0.33.0-rootless@sha256:80b15f0735e87bab7bf59ec4d695dfb4a7cfb25521cf56dc75d6f256285b63ef'}
+
+- name: Build trusted runtime layers for the actual production binaries
+  community.docker.docker_image_build:
+    name: 'kuberpack-test/trusted-{{ item }}:{{ run_id }}'
+    path: '{{ fixture_directory }}/images/{{ item }}'
+    labels:
+      org.kuberpack.test.run: '{{ run_id }}'
+  loop: [control, builder, buildkit]
+
+- name: Import fixture runtime images into the disposable node
+  ansible.builtin.command:
+    argv:
+      - python3
+      - /workspace/test/common/import_images.py
+      - --node
+      - '{{ run_id }}-k3s'
+      - 'kuberpack-test/trusted-control:{{ run_id }}'
+      - 'kuberpack-test/trusted-builder:{{ run_id }}'
+      - 'kuberpack-test/trusted-buildkit:{{ run_id }}'
+  changed_when: true
+
+- name: Add the private registry's public CA to the node
+  community.docker.docker_container_copy_into:
+    container: '{{ run_id }}-k3s'
+    path: '{{ fixture_directory }}/ca.crt'
+    container_path: /etc/rancher/k3s/fixture-ca.crt
+    owner_id: 0
+    group_id: 0
+    mode: '0644'
+    mode_parse: octal_string_only
+
+- name: Configure verified TLS for first pulls from the real private registry
+  community.docker.docker_container_copy_into:
+    container: '{{ run_id }}-k3s'
+    content: "{{ registry_configuration | to_nice_yaml }}"
+    container_path: /etc/rancher/k3s/registries.yaml
+    owner_id: 0
+    group_id: 0
+    mode: '0600'
+    mode_parse: octal_string_only
+  vars:
+    registry_configuration:
+      configs:
+        '{{ forge_ip }}:3000':
+          tls:
+            ca_file: /etc/rancher/k3s/fixture-ca.crt
+
+- name: Restart only the disposable node to load its registry trust
+  community.docker.docker_container:
+    name: '{{ run_id }}-k3s'
+    state: started
+    restart: true
+
+- name: Wait for the restarted node API
+  ansible.builtin.command:
+    argv: [kubectl, get, --raw=/readyz, --request-timeout=5s]
+  register: node_health
+  until: node_health.rc == 0 and node_health.stdout == 'ok'
+  retries: 30
+  delay: 2
+  changed_when: false

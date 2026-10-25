@@ -1,0 +1,5 @@
+{
+  "name": "unit-superheavy",
+  "budget_seconds": 1800,
+  "description": "Fresh installation, real build and scan, GitOps delivery, secrets, reloader and reinstall."
+}

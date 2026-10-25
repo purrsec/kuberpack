@@ -1,10 +1,19 @@
-.PHONY: test vet build image image-builder
+.PHONY: test test-static test-heavy test-superheavy vet build image image-builder
 
 vet:
 	go vet ./...
 
-test: vet
-	go test ./...
+test:
+	python3 test/run.py light
+
+test-static:
+	python3 test/run.py static
+
+test-heavy:
+	python3 test/run.py heavy
+
+test-superheavy:
+	python3 test/run.py superheavy
 
 build:
 	mkdir -p bin
