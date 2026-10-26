@@ -153,6 +153,27 @@ class HarnessContracts(unittest.TestCase):
             self.assertEqual(node["cgroupns_mode"], "private")
             self.assertFalse(node.get("published_ports"))
 
+    def test_every_declared_k3s_volume_is_named_and_removed(self):
+        tasks = yaml.safe_load((COMMON / "tasks/cluster.yaml").read_text())
+        node = next(task["community.docker.docker_container"] for task in tasks
+                    if "community.docker.docker_container" in task)
+        destinations = {volume.rsplit(":", 1)[-1] for volume in node["volumes"]}
+        self.assertEqual(destinations, {"/var/lib/rancher/k3s", "/var/lib/kubelet", "/etc/rancher/k3s",
+                                        "/var/lib/cni", "/var/log"})
+        cleanup = (COMMON / "tasks/cleanup.yaml").read_text()
+        for suffix in ("k3s", "kubelet", "k3s-config", "k3s-cni", "k3s-log"):
+            self.assertIn('"{{ run_id }}-' + suffix + '"', cleanup)
+
+    def test_registry_hostname_is_rendered_before_k3s_reads_it(self):
+        tasks = yaml.safe_load((COMMON.parent / "unit/unit-superheavy/images.yaml").read_text())
+        configure = next(task["community.docker.docker_container_copy_into"] for task in tasks
+                         if task.get("name") == "Configure verified TLS for first pulls from the real private registry")
+        self.assertIn("'{{ forge_ip }}:3000'", configure["content"])
+        self.assertNotIn("to_nice_yaml", configure["content"])
+        verification = next(task["community.docker.docker_container_exec"] for task in tasks
+                            if task.get("name") == "Verify the rendered registry endpoint was loaded by containerd")
+        self.assertIn("{{ forge_ip }}:3000", verification["argv"])
+
 
 if __name__ == "__main__":
     unittest.main()

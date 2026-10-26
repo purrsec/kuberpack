@@ -57,18 +57,16 @@
 - name: Configure verified TLS for first pulls from the real private registry
   community.docker.docker_container_copy_into:
     container: '{{ run_id }}-k3s'
-    content: "{{ registry_configuration | to_nice_yaml }}"
+    content: |
+      configs:
+        '{{ forge_ip }}:3000':
+          tls:
+            ca_file: /etc/rancher/k3s/fixture-ca.crt
     container_path: /etc/rancher/k3s/registries.yaml
     owner_id: 0
     group_id: 0
     mode: '0600'
     mode_parse: octal_string_only
-  vars:
-    registry_configuration:
-      configs:
-        '{{ forge_ip }}:3000':
-          tls:
-            ca_file: /etc/rancher/k3s/fixture-ca.crt
 
 - name: Restart only the disposable node to load its registry trust
   community.docker.docker_container:
@@ -83,4 +81,24 @@
   until: node_health.rc == 0 and node_health.stdout == 'ok'
   retries: 30
   delay: 2
+  changed_when: false
+
+- name: Verify the restarted node retained its private registry configuration
+  community.docker.docker_container_exec:
+    container: '{{ run_id }}-k3s'
+    argv: [test, -s, '{{ item }}']
+  loop:
+    - /etc/rancher/k3s/fixture-ca.crt
+    - /etc/rancher/k3s/registries.yaml
+  changed_when: false
+
+- name: Verify the rendered registry endpoint was loaded by containerd
+  community.docker.docker_container_exec:
+    container: '{{ run_id }}-k3s'
+    argv:
+      - grep
+      - -F
+      - --
+      - '{{ forge_ip }}:3000'
+      - '/var/lib/rancher/k3s/agent/etc/containerd/certs.d/{{ forge_ip }}:3000/hosts.toml'
   changed_when: false

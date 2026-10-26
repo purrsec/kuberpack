@@ -3,6 +3,7 @@
     name: "{{ item }}"
     state: absent
     force_kill: true
+    keep_volumes: false
   loop:
     - "{{ run_id }}-k3s"
     - "{{ run_id }}-forgejo"
@@ -14,6 +15,9 @@
   loop:
     - "{{ run_id }}-k3s"
     - "{{ run_id }}-kubelet"
+    - "{{ run_id }}-k3s-config"
+    - "{{ run_id }}-k3s-cni"
+    - "{{ run_id }}-k3s-log"
     - "{{ run_id }}-forgejo"
 
 - name: Disconnect the runner before removing its private network

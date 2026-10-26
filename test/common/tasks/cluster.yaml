@@ -11,7 +11,7 @@
     name: "{{ run_id }}-{{ item }}"
     labels:
       org.kuberpack.test.run: "{{ run_id }}"
-  loop: [k3s, kubelet]
+  loop: [k3s, kubelet, k3s-config, k3s-cni, k3s-log]
 
 - name: Start a fresh Kubernetes node without host ports
   community.docker.docker_container:
@@ -28,6 +28,9 @@
     volumes:
       - "{{ run_id }}-k3s:/var/lib/rancher/k3s"
       - "{{ run_id }}-kubelet:/var/lib/kubelet"
+      - "{{ run_id }}-k3s-config:/etc/rancher/k3s"
+      - "{{ run_id }}-k3s-cni:/var/lib/cni"
+      - "{{ run_id }}-k3s-log:/var/log"
     tmpfs:
       - /run
     command:

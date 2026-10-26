@@ -160,7 +160,9 @@ La matrice détaillée (EKS VPC CNI standard/strict, GKE Dataplane V2/Calico,
 k3s/kube-router), les limites et les commandes manuelles sont dans
 [network-matrix.md](network-matrix.md). Le banc Docker k3s `v1.37.1+k3s1` a
 exécuté `doctor network` le 23 octobre 2026 (joignable avant deny-all, bloqué
-après, namespace supprimé) en plus des scénarios de `security-smoke.py`.
+après, namespace supprimé). Les scénarios actuels d’admission, de RBAC et de
+trafic réseau sont exécutés par `python3 test/run.py heavy` ; voir
+[le guide des tests](testing.md).
 EKS, GKE et AKS n'ont pas été exécutés dans cette passe et restent à valider
 sur leurs clusters.
 
