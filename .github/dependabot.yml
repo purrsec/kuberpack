@@ -12,6 +12,17 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # kustomize >= 0.21.2 pulls structured-merge-diff/v7, which breaks
+      # k8s.io/apimachinery v0.37.1 (built on smd/v6). Re-allow when the
+      # k8s stack moves to smd/v7.
+      - dependency-name: "sigs.k8s.io/kustomize/api"
+        versions: [">= 0.21.2"]
+      - dependency-name: "sigs.k8s.io/kustomize/kyaml"
+        versions: [">= 0.21.2"]
+      # Same conflict via k8s.io/kube-openapi (2026-10-01 uses smd/v7).
+      - dependency-name: "k8s.io/kube-openapi"
+        versions: ["> 0.0.0-20260721132016-d427ff9ee9ad"]
   - package-ecosystem: docker
     directory: /
     schedule:
@@ -22,6 +33,12 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    ignore:
+      # ansible-core 2.21.3 crashes at import on Python >= 3.14
+      # (dataclasses._is_type was removed). Re-allow once ansible
+      # supports newer controllers; 3.13.x patches still flow.
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
   - package-ecosystem: docker
     directory: /test/examples
     schedule:
