@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -95,7 +96,12 @@ func (s *Server) executeV2(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().UTC()
-	id := "dep_" + deliveryNonce()
+	nonce, err := deliveryNonce()
+	if err != nil {
+		apiError(w, 500, "randomness_unavailable", "cannot generate deployment identifier")
+		return
+	}
+	id := "dep_" + nonce
 	targets := append([]api.Target{}, plan.Targets...)
 	for i := range targets {
 		if targets[i].Repository != "" {
@@ -213,8 +219,13 @@ func (s *Server) deploymentLoop(ctx context.Context) {
 	timer := time.NewTicker(time.Second)
 	defer timer.Stop()
 	for {
+		// The loop is a single goroutine and executeV2 only creates new
+		// deployment objects (or reads them idempotently), so advanceDeployment
+		// and JSON (un)marshaling run unlocked. The mutex only protects the
+		// listing snapshot and each per-object store write.
 		s.deploymentMu.Lock()
 		objects, err := s.cfg.Store.Objects(ctx, "deployment", "")
+		s.deploymentMu.Unlock()
 		if err == nil {
 			for _, o := range objects {
 				var d savedDeployment
@@ -230,14 +241,21 @@ func (s *Server) deploymentLoop(ctx context.Context) {
 				d.UpdatedAt = time.Now().UTC()
 				if api.Terminal(d.Status) {
 					event, _ := json.Marshal(map[string]any{"credential": d.TokenID, "action": "deployment." + d.Status, "deployment_id": d.ID, "project": d.Project, "step": d.Step, "infra_commit": d.InfraCommit, "at": d.UpdatedAt})
-					_ = s.cfg.Store.CreateObject(ctx, store.Object{Kind: "audit", ID: deliveryNonce(), Project: d.Project, Owner: o.Owner, Payload: event})
+					if nonce, err := deliveryNonce(); err != nil {
+						log.Printf("kuberpack deployments: audit entry skipped: %v", err)
+					} else {
+						s.deploymentMu.Lock()
+						_ = s.cfg.Store.CreateObject(ctx, store.Object{Kind: "audit", ID: nonce, Project: d.Project, Owner: o.Owner, Payload: event})
+						s.deploymentMu.Unlock()
+					}
 				}
 				b, _ := json.Marshal(d)
 				o.Payload = b
+				s.deploymentMu.Lock()
 				_ = s.cfg.Store.SaveObject(ctx, o)
+				s.deploymentMu.Unlock()
 			}
 		}
-		s.deploymentMu.Unlock()
 		select {
 		case <-ctx.Done():
 			return
@@ -480,8 +498,13 @@ func (s *Server) saveDeployment(ctx context.Context, d savedDeployment) error {
 	return s.cfg.Store.SaveObject(ctx, store.Object{Kind: "deployment", ID: d.ID, Payload: b})
 }
 func (s *Server) audit(ctx context.Context, p Principal, project, action, id string) {
+	nonce, err := deliveryNonce()
+	if err != nil {
+		log.Printf("kuberpack audit entry skipped: %v", err)
+		return
+	}
 	b, _ := json.Marshal(map[string]any{"credential": p.TokenID, "name": p.Name, "action": action, "resource": id, "at": time.Now().UTC()})
-	_ = s.cfg.Store.CreateObject(ctx, store.Object{Kind: "audit", ID: deliveryNonce(), Project: project, Owner: p.ownerKey(), Payload: b})
+	_ = s.cfg.Store.CreateObject(ctx, store.Object{Kind: "audit", ID: nonce, Project: project, Owner: p.ownerKey(), Payload: b})
 }
 
 func (s *Server) requestV2(w http.ResponseWriter, r *http.Request) {

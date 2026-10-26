@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -72,5 +73,6 @@ func (i *installation) forwardService(ctx context.Context, namespace, name strin
 		close(stop)
 		return "", nil, fmt.Errorf("could not allocate a local port for %s", name)
 	}
-	return fmt.Sprintf("http://127.0.0.1:%d", ports[0].Local), func() { close(stop) }, nil
+	var once sync.Once
+	return fmt.Sprintf("http://127.0.0.1:%d", ports[0].Local), func() { once.Do(func() { close(stop) }) }, nil
 }

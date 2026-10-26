@@ -102,7 +102,11 @@ func (a *App) adminCommands(root *cobra.Command) {
 			return err
 		}
 		if requestID == "" {
-			requestID = "admin_" + nonce()
+			nonce, err := nonce()
+			if err != nil {
+				return err
+			}
+			requestID = "admin_" + nonce
 		}
 		var d api.Deployment
 		if err := c.json(a.ctx, http.MethodPost, base+"/deployments", api.DeploymentRequest{PlanID: planID, RequestID: requestID, ConfirmProject: confirmProject}, &d); err != nil {

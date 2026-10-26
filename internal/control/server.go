@@ -14,7 +14,6 @@ import (
 	"net/netip"
 	"runtime/debug"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -37,12 +36,14 @@ import (
 // user action (register, redeploy) must always queue a new build, even for a
 // commit that was already built: the delivery id is the primary key of
 // webhook_deliveries, so a repeated one would be dropped as a duplicate.
-func deliveryNonce() string {
+// A randomness failure is an error: falling back to the clock would make ids
+// predictable.
+func deliveryNonce() (string, error) {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return strconv.FormatInt(time.Now().UnixNano(), 16)
+		return "", fmt.Errorf("generate delivery nonce: %w", err)
 	}
-	return hex.EncodeToString(b[:])
+	return hex.EncodeToString(b[:]), nil
 }
 
 const maxBody = 1 << 20

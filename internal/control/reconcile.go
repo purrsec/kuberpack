@@ -273,7 +273,11 @@ func (s *Server) queueFirstBuild(ctx context.Context, app store.App) error {
 		log.Printf("kuberpack app %s: branch %s of %s is empty", app.Name, app.ProductionBranch, app.ForgejoRepository)
 		return nil
 	}
-	del := "register-" + app.Name + "-" + sha + "-" + deliveryNonce()
+	nonce, err := deliveryNonce()
+	if err != nil {
+		return err
+	}
+	del := "register-" + app.Name + "-" + sha + "-" + nonce
 	if err := s.cfg.Store.InsertProductionDeliveryOnce(ctx, store.Delivery{
 		ID:        del,
 		AppID:     app.ID,

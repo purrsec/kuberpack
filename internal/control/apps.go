@@ -1,6 +1,7 @@
 package control
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -67,7 +68,7 @@ func (s *Server) fluxHook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
 		return
 	}
-	if !hmacsig.Valid(s.cfg.FluxSecret, hmacsig.Header(r.Header), body) && strings.TrimSpace(r.Header.Get("Authorization")) != "Bearer "+s.cfg.FluxSecret {
+	if !hmacsig.Valid(s.cfg.FluxSecret, hmacsig.Header(r.Header), body) && subtle.ConstantTimeCompare([]byte(strings.TrimSpace(r.Header.Get("Authorization"))), []byte("Bearer "+s.cfg.FluxSecret)) != 1 {
 		http.Error(w, "invalid signature", http.StatusUnauthorized)
 		return
 	}

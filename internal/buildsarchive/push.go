@@ -43,6 +43,12 @@ func Push(ctx context.Context, req Request) (Result, error) {
 	if app == "" || sha == "" {
 		return Result{}, fmt.Errorf("app and commit SHA are required")
 	}
+	if app == "." || app == ".." || strings.Contains(app, "/") || strings.Contains(app, "\\") || strings.Contains(app, "..") {
+		return Result{}, fmt.Errorf("invalid app name")
+	}
+	if !validCommitSHA(sha) {
+		return Result{}, fmt.Errorf("invalid commit SHA")
+	}
 	env := strings.TrimSpace(req.Environment)
 	if env == "" {
 		env = "production"
@@ -149,6 +155,21 @@ func sanitize(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = strings.ReplaceAll(s, "/", "-")
 	return s
+}
+
+// validCommitSHA reports whether s is a full lowercase hex commit SHA.
+func validCommitSHA(s string) bool {
+	if len(s) != 40 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= '0' && c <= '9' || c >= 'a' && c <= 'f' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func min(a, b int) int {

@@ -52,7 +52,11 @@ func (a *App) login(o loginOptions) error {
 	}
 	var token string
 	if o.stdin {
+		// Shares the buffered reader with ask(); hold the prompt lock so a
+		// concurrent prompt can never read it at the same time.
+		a.promptMu.Lock()
 		b, err := io.ReadAll(io.LimitReader(a.reader, 8193))
+		a.promptMu.Unlock()
 		if err != nil {
 			return err
 		}

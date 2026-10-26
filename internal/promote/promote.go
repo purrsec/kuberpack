@@ -77,6 +77,9 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		if _, err := req.remoteGit(ctx, "", "clone", "--branch", req.GitOpsBranch, "--single-branch", req.GitOpsURL, work); err != nil {
 			return Result{}, err
 		}
+		if err := rejectRepoSymlinks(work, filepath.Dir(req.ValuesPath)); err != nil {
+			return Result{}, err
+		}
 
 		valuesFile := filepath.Join(work, filepath.FromSlash(req.ValuesPath))
 		if _, err := os.Stat(valuesFile); os.IsNotExist(err) {

@@ -145,6 +145,18 @@ func fetchChart(settings *cli.EnvSettings, service clusterService) (*chart.Chart
 //
 // The paths of the archive are checked: a chart that writes outside of
 // its directory is refused.
+//
+// The archive is bounded: operator-pinned charts are kilobytes in
+// practice, so these caps never trigger on legitimate charts.
+const (
+	// maxChartFileBytes caps a single unpacked chart file.
+	maxChartFileBytes = 32 << 20
+	// maxChartTotalBytes caps the total unpacked bytes of a chart.
+	maxChartTotalBytes = 128 << 20
+	// maxChartEntries caps the number of entries of a chart archive.
+	maxChartEntries = 1000
+)
+
 func untar(src, dest string) error {
 	file, err := os.Open(src)
 	if err != nil {
@@ -157,6 +169,8 @@ func untar(src, dest string) error {
 	}
 	defer reader.Close()
 	archive := tar.NewReader(reader)
+	var total int64
+	entries := 0
 	for {
 		header, err := archive.Next()
 		if errors.Is(err, io.EOF) {
@@ -164,6 +178,10 @@ func untar(src, dest string) error {
 		}
 		if err != nil {
 			return err
+		}
+		entries++
+		if entries > maxChartEntries {
+			return fmt.Errorf("the chart archive holds more than %d entries", maxChartEntries)
 		}
 		target := filepath.Join(dest, filepath.Clean("/"+header.Name))
 		switch header.Typeflag {
@@ -179,12 +197,23 @@ func untar(src, dest string) error {
 			if err != nil {
 				return err
 			}
-			if _, err := io.Copy(out, archive); err != nil {
-				_ = out.Close()
-				return err
+			written, copyErr := io.CopyN(out, archive, maxChartFileBytes+1)
+			if closeErr := out.Close(); closeErr != nil {
+				return closeErr
 			}
-			if err := out.Close(); err != nil {
-				return err
+			if copyErr != nil && !errors.Is(copyErr, io.EOF) {
+				return copyErr
+			}
+			if written > maxChartFileBytes {
+				// Discard the remainder so the tar stream stays in sync.
+				if _, err := io.Copy(io.Discard, archive); err != nil {
+					return err
+				}
+				return fmt.Errorf("the chart file %q exceeds %d bytes", header.Name, maxChartFileBytes)
+			}
+			total += written
+			if total > maxChartTotalBytes {
+				return fmt.Errorf("the chart archive exceeds %d bytes unpacked", maxChartTotalBytes)
 			}
 		}
 	}

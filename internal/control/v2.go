@@ -138,7 +138,7 @@ func (s *Server) projectsV2(w http.ResponseWriter, r *http.Request) {
 	names := map[string]bool{}
 	if p.Project != "" {
 		names[p.Project] = true
-	} else {
+	} else if p.isAdmin() {
 		items, err := promote.ListProjects(r.Context(), s.requestProject(r.Context(), ""))
 		if err != nil {
 			apiError(w, 502, "gitops_unavailable", "cannot read project inventory")
@@ -420,7 +420,12 @@ func (s *Server) planV2(w http.ResponseWriter, r *http.Request) {
 		apiError(w, 409, "stale_manifest", "project changed; retrieve the complete manifest before continuing")
 		return
 	}
-	plan := api.Plan{ID: "plan_" + deliveryNonce(), Project: project, Action: body.Action, BaseRevision: base, PolicyRevision: policyHash, ExpiresAt: time.Now().UTC().Add(15 * time.Minute), Changes: []api.Change{}, Targets: []api.Target{}}
+	nonce, err := deliveryNonce()
+	if err != nil {
+		apiError(w, 500, "randomness_unavailable", "cannot generate plan identifier")
+		return
+	}
+	plan := api.Plan{ID: "plan_" + nonce, Project: project, Action: body.Action, BaseRevision: base, PolicyRevision: policyHash, ExpiresAt: time.Now().UTC().Add(15 * time.Minute), Changes: []api.Change{}, Targets: []api.Target{}}
 	if body.Action == "destroy" {
 		if err := s.checkDestroy(r.Context(), project, old, policy.Namespace); err != nil {
 			apiError(w, 409, "destruction_blocked", err.Error())

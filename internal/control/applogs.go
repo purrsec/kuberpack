@@ -19,7 +19,15 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
-const maxAppLogStreams = 5
+const (
+	maxAppLogStreams = 5
+	// maxAppLogTailLines caps tailLines: -1 (all) keeps its meaning and
+	// stays bounded by the snapshot byte cap below.
+	maxAppLogTailLines = 5000
+	// maxAppLogSnapshotBytes caps a single snapshot stream. Follow
+	// (streaming) mode stays unbounded.
+	maxAppLogSnapshotBytes = 1 << 20
+)
 
 // getAppLogs streams the containers of the observed deployment, for both
 // source-built applications and published images. Pod names and selectors are
@@ -85,6 +93,9 @@ func (s *Server) getAppLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	if !options.Follow {
+		// Bound the snapshot: ask the kubelet first, and enforce while
+		// reading below even when it ignores LimitBytes.
+		options.LimitBytes = int64Ptr(maxAppLogSnapshotBytes)
 		for _, pod := range pods {
 			stream, err := s.cfg.Kube.CoreV1().Pods(app.Namespace).GetLogs(pod.Name, &options).Stream(ctx)
 			if err != nil {
@@ -142,9 +153,19 @@ func (s *Server) getAppLogs(w http.ResponseWriter, r *http.Request) {
 				prefix = "[" + pod.Name + "/" + options.Container + "] "
 			}
 			writer := &appLogWriter{writer: w, mu: &mu, prefix: prefix, lineStart: true}
-			if _, err := io.Copy(writer, stream); err != nil && r.Context().Err() == nil {
+			source := io.Reader(stream)
+			if !options.Follow {
+				// Enforce the bound while reading, even when a kubelet ignores
+				// LimitBytes or returns a single line larger than that limit.
+				source = io.LimitReader(stream, maxAppLogSnapshotBytes+1)
+			}
+			written, err := io.Copy(writer, source)
+			if err != nil && r.Context().Err() == nil {
 				failures <- fmt.Sprintf("log stream interrupted for %s/%s", pod.Name, options.Container)
 				cancel()
+			}
+			if !options.Follow && err == nil && written > maxAppLogSnapshotBytes {
+				_, _ = io.WriteString(writer, fmt.Sprintf("... log stream exceeded %d bytes; output truncated ...\n", maxAppLogSnapshotBytes))
 			}
 		}()
 	}
@@ -181,6 +202,9 @@ func appLogOptions(query url.Values) (corev1.PodLogOptions, error) {
 			if number == -1 {
 				out.TailLines = nil
 			} else {
+				if number > maxAppLogTailLines {
+					number = maxAppLogTailLines
+				}
 				out.TailLines = &number
 			}
 		case "sinceSeconds":

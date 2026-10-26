@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -36,6 +37,7 @@ type App struct {
 	config                                                                 configuration
 	ctx                                                                    context.Context
 	reader                                                                 *bufio.Reader
+	promptMu                                                               sync.Mutex
 	contextName, project, service, output, caFile, resolvedContext, secret string
 	nonInteractive, yes                                                    bool
 	timeout                                                                time.Duration
@@ -215,6 +217,11 @@ func (a *App) interactive() bool {
 	return a.Interactive && !a.nonInteractive && a.output != "json" && os.Getenv("CI") == ""
 }
 func (a *App) ask(label, def string) (string, error) {
+	// Serializes all interactive reads: two goroutines must never share the
+	// bufio.Reader concurrently (an abandoned ReadString after ctx-cancel
+	// would otherwise race with the next prompt).
+	a.promptMu.Lock()
+	defer a.promptMu.Unlock()
 	if !a.interactive() {
 		if def != "" {
 			return def, nil

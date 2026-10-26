@@ -45,12 +45,12 @@ func (a *App) deployCommand(rebuild bool) *cobra.Command {
 	c.Flags().BoolVar(&o.wait, "wait", false, "Wait for convergence (default)")
 	return c
 }
-func nonce() string {
+func nonce() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return fmt.Sprint(time.Now().UnixNano())
+		return "", fmt.Errorf("generate request nonce: %w", err)
 	}
-	return hex.EncodeToString(b[:])
+	return hex.EncodeToString(b[:]), nil
 }
 func (a *App) deploy(o deployOptions, rebuild bool) error {
 	if o.detach && o.wait {
@@ -171,7 +171,11 @@ func (a *App) deploy(o deployOptions, rebuild bool) error {
 		return err
 	}
 	if o.requestID == "" {
-		o.requestID = "cli_" + nonce()
+		nonce, err := nonce()
+		if err != nil {
+			return err
+		}
+		o.requestID = "cli_" + nonce
 	}
 	var deployment api.Deployment
 	if err := c.json(a.ctx, http.MethodPost, path+"/deployments", api.DeploymentRequest{PlanID: plan.ID, RequestID: o.requestID, Fingerprint: fingerprint}, &deployment); err != nil {
