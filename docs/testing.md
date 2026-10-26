@@ -32,12 +32,13 @@ donc plus longtemps qu’un lancement avec caches. Les rapports conservent le
 temps des contrôles **et** le temps total de l’invocation ; aucun téléchargement
 ou coût de compilation n’est présenté comme gratuit.
 
-Mesures locales Docker : dix passages légers consécutifs réussis, médiane
-22,1 s et p95 de cet échantillon 22,7 s ; dernier passage lourd 171,7 s
-(180,3 s avec préparation). Sur GitHub, les trois premiers niveaux passent.
-Ces mesures ne constituent pas un p95 représentatif des runners GitHub.
-Le parcours complet reste en qualification tant que son exécution locale
-et son job GitHub ne sont pas tous deux verts.
+Mesures locales Docker sur la révision de code `492af22` : statique 4,9 s, léger
+21,2 s, lourd 171,4 s et très lourd 1 038,9 s. Les durées totales avec
+préparation sont respectivement 5,8 s, 22,2 s, 172,5 s et 1 040,3 s. Dix
+passages légers consécutifs avaient auparavant donné une médiane de 22,1 s et
+un p95 d'échantillon de 22,7 s. Ces mesures ne constituent pas un p95
+représentatif des runners GitHub. Une révision n'est qualifiée que lorsque les
+quatre niveaux passent également sur son SHA dans GitHub Actions.
 
 ## Arborescence
 
