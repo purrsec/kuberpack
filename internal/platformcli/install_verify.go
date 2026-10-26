@@ -191,12 +191,12 @@ func (i *installation) verify(ctx context.Context) error {
 		}
 		resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 		if err != nil {
-			return fmt.Errorf("API verification: %w", err)
+			return fmt.Errorf("api verification: %w", err)
 		}
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode != check.status {
-			return fmt.Errorf("API verification %s: HTTP %d, expected %d", check.path, resp.StatusCode, check.status)
+			return fmt.Errorf("api verification %s: HTTP %d, expected %d", check.path, resp.StatusCode, check.status)
 		}
 	}
 	if i.c.Ingress {
@@ -236,9 +236,9 @@ func (i *installation) verify(ctx context.Context) error {
 					last = err
 					return false, nil
 				}
-				response.Body.Close()
+				_ = response.Body.Close()
 				if response.StatusCode != 200 {
-					last = fmt.Errorf("HTTP %d", response.StatusCode)
+					last = fmt.Errorf("http %d", response.StatusCode)
 					return false, nil
 				}
 				return true, nil

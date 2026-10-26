@@ -36,7 +36,7 @@ func NewGitLab(apiURL, token string) (*GitLabProvider, error) {
 		apiURL = "https://gitlab.com/api/v4"
 	}
 	if _, err := url.Parse(apiURL); err != nil {
-		return nil, fmt.Errorf("GitLab API URL: %w", err)
+		return nil, fmt.Errorf("gitlab API URL: %w", err)
 	}
 	// An empty token means an anonymous access: enough to read a public
 	// repository of a forge the platform has no token for.

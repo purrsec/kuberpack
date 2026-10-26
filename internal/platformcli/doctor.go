@@ -86,7 +86,7 @@ func runDoctor(args []string) error {
 	case netcheck.VerdictEnforced:
 		return nil
 	case netcheck.VerdictNotEnforced:
-		return fmt.Errorf("NetworkPolicy non appliquée : le deny-all n'a pas bloqué le trafic (moteur réseau, agent ou mode à vérifier)")
+		return fmt.Errorf("networkPolicy non appliquée : le deny-all n'a pas bloqué le trafic (moteur réseau, agent ou mode à vérifier)")
 	default:
 		return fmt.Errorf("probe réseau non concluante : le contrôle positif ou le deny-all n'a pas produit d'observation fiable")
 	}

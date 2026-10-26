@@ -13,7 +13,7 @@ func TestRepoAndBranchSHA(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/repos/pepe/flask-uv", func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "token test-token" {
-			t.Errorf("Authorization: %q", got)
+			t.Errorf("authorization: %q", got)
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}

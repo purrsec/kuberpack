@@ -89,7 +89,7 @@ func runInstall(args []string) error {
 		return fmt.Errorf("--context is required; no implicit current Kubernetes context is used")
 	}
 	if c.NodePort != 0 {
-		return fmt.Errorf("NodePort exposure is not supported; use the HTTPS ingress")
+		return fmt.Errorf("nodePort exposure is not supported; use the HTTPS ingress")
 	}
 	if !c.TLS {
 		return fmt.Errorf("the installed API requires TLS; plaintext API exposure is not supported")

@@ -140,13 +140,13 @@ func (c Config) Validate() error {
 		}
 	}
 	if c.TLS && !c.Ingress {
-		return fmt.Errorf("TLS requires ingress")
+		return fmt.Errorf("tls requires ingress")
 	}
 	if c.TLS && c.Issuer == "" {
-		return fmt.Errorf("TLS requires a certificate issuer")
+		return fmt.Errorf("tls requires a certificate issuer")
 	}
 	if c.Infisical && !c.Ingress {
-		return fmt.Errorf("Infisical needs a hostname and ingress for developer access")
+		return fmt.Errorf("infisical needs a hostname and ingress for developer access")
 	}
 	if c.NodePort != 0 && (c.NodePort < 30000 || c.NodePort > 32767) {
 		return fmt.Errorf("node port must be between 30000 and 32767")

@@ -31,7 +31,7 @@ func runServe(args []string) error {
 	if raw := os.Getenv("KUBERPACK_INGRESS_POD_SELECTOR"); raw != "" {
 		var selector map[string]string
 		if err := json.Unmarshal([]byte(raw), &selector); err != nil || len(selector) == 0 {
-			return fmt.Errorf("KUBERPACK_INGRESS_POD_SELECTOR must be a nonempty JSON label map")
+			return fmt.Errorf("env KUBERPACK_INGRESS_POD_SELECTOR must be a nonempty JSON label map")
 		}
 	}
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
@@ -77,7 +77,7 @@ func runServe(args []string) error {
 	// must never implicitly become a remotely usable administrator token.
 	apiToken := strings.TrimSpace(os.Getenv("KUBERPACK_API_TOKEN"))
 	if apiToken != "" && apiToken == token {
-		return fmt.Errorf("KUBERPACK_API_TOKEN must be distinct from KUBERPACK_GIT_TOKEN")
+		return fmt.Errorf("env KUBERPACK_API_TOKEN must be distinct from KUBERPACK_GIT_TOKEN")
 	}
 	provider, err := git.New(git.Config{
 		Kind:  *gitProvider,
@@ -122,17 +122,17 @@ func runServe(args []string) error {
 		// créer des Jobs sur un nœud ou un runtime non prévus.
 		runtimeClass := strings.TrimSpace(os.Getenv("KUBERPACK_BUILDER_RUNTIME_CLASS"))
 		if err := builder.ValidateRuntimeClass(runtimeClass); err != nil {
-			return fmt.Errorf("KUBERPACK_BUILDER_RUNTIME_CLASS: %w", err)
+			return fmt.Errorf("env KUBERPACK_BUILDER_RUNTIME_CLASS: %w", err)
 		}
 		runner.RuntimeClass = runtimeClass
 		selector, err := builder.ParseNodeSelector(os.Getenv("KUBERPACK_BUILDER_NODE_SELECTOR"))
 		if err != nil {
-			return fmt.Errorf("KUBERPACK_BUILDER_NODE_SELECTOR: %w", err)
+			return fmt.Errorf("env KUBERPACK_BUILDER_NODE_SELECTOR: %w", err)
 		}
 		runner.NodeSelector = selector
 		tolerations, err := builder.ParseTolerations(os.Getenv("KUBERPACK_BUILDER_TOLERATIONS"))
 		if err != nil {
-			return fmt.Errorf("KUBERPACK_BUILDER_TOLERATIONS: %w", err)
+			return fmt.Errorf("env KUBERPACK_BUILDER_TOLERATIONS: %w", err)
 		}
 		runner.Tolerations = tolerations
 		runner.AcceptedVulnerabilities = splitList(os.Getenv("KUBERPACK_TRIVY_IGNORE"))
@@ -140,7 +140,7 @@ func runServe(args []string) error {
 		jobBuilder = runner
 	}
 	if jobBuilder == nil {
-		return fmt.Errorf("KUBERPACK_BUILDER_IMAGE is required")
+		return fmt.Errorf("env KUBERPACK_BUILDER_IMAGE is required")
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

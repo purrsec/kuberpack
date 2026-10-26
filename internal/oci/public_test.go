@@ -115,7 +115,7 @@ func TestPinKeepsTheRepository(t *testing.T) {
 	}
 	for reference, want := range cases {
 		if got := Pin(reference, "sha256:abc"); got != want {
-			t.Errorf("Pin(%q) = %q, want %q", reference, got, want)
+			t.Errorf("pin(%q) = %q, want %q", reference, got, want)
 		}
 	}
 }
@@ -124,6 +124,6 @@ func TestPinKeepsTheRepository(t *testing.T) {
 func TestPinLeavesAPinnedReferenceAlone(t *testing.T) {
 	reference := "docker.io/app@sha256:abc"
 	if got := Pin(reference, "sha256:def"); got != reference {
-		t.Errorf("Pin(%q) = %q, want %q", reference, got, reference)
+		t.Errorf("pin(%q) = %q, want %q", reference, got, reference)
 	}
 }

@@ -132,7 +132,7 @@ func (i *installation) ensureSecretsPlatform(ctx context.Context) error {
 		return len(s.Data["token"]) > 0 && len(s.Data["organizationId"]) > 0, nil
 	})
 	if err != nil {
-		return fmt.Errorf("Infisical bootstrap credentials: %w", err)
+		return fmt.Errorf("infisical bootstrap credentials: %w", err)
 	}
 	base, closeForward, err := i.forwardService(ctx, infisicalNamespace, "infisical-infisical-standalone-infisical", 8080)
 	if err != nil {
@@ -201,5 +201,5 @@ func (i *installation) resumeInfisicalBootstrap(ctx context.Context) error {
 		}
 		return err
 	}
-	return fmt.Errorf("Infisical chart has no bootstrap hook to resume")
+	return fmt.Errorf("infisical chart has no bootstrap hook to resume")
 }

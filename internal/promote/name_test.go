@@ -13,7 +13,7 @@ func TestAppName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		if got := AppName(tt.path, tt.repo); got != tt.want {
-			t.Errorf("AppName(%q, %q)=%q want %q", tt.path, tt.repo, got, tt.want)
+			t.Errorf("appName(%q, %q)=%q want %q", tt.path, tt.repo, got, tt.want)
 		}
 	}
 }

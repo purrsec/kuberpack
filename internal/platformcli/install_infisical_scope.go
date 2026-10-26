@@ -70,7 +70,7 @@ func (i *installation) seedInfisicalOperatorScope(ctx context.Context) (map[stri
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("Infisical operator scope: %w", err)
+		return nil, fmt.Errorf("infisical operator scope: %w", err)
 	}
 	return values, nil
 }

@@ -180,7 +180,7 @@ func untar(src, dest string) error {
 				return err
 			}
 			if _, err := io.Copy(out, archive); err != nil {
-				out.Close()
+				_ = out.Close()
 				return err
 			}
 			if err := out.Close(); err != nil {

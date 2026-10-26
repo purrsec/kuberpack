@@ -35,13 +35,13 @@ type Repo struct {
 func New(baseURL, token string) (*Client, error) {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
-		return nil, fmt.Errorf("Forgejo URL is empty")
+		return nil, fmt.Errorf("forgejo URL is empty")
 	}
 	if _, err := url.Parse(baseURL); err != nil {
-		return nil, fmt.Errorf("Forgejo URL: %w", err)
+		return nil, fmt.Errorf("forgejo URL: %w", err)
 	}
 	if strings.TrimSpace(token) == "" {
-		return nil, fmt.Errorf("Forgejo token is empty")
+		return nil, fmt.Errorf("forgejo token is empty")
 	}
 	return &Client{
 		BaseURL:    baseURL,
@@ -281,7 +281,7 @@ func (c *Client) doRaw(ctx context.Context, method, path string, body []byte, wa
 		return nil, err
 	}
 	if len(raw) > maxBody {
-		return nil, fmt.Errorf("Forgejo response too large")
+		return nil, fmt.Errorf("forgejo response too large")
 	}
 
 	ok := false
@@ -296,11 +296,11 @@ func (c *Client) doRaw(ctx context.Context, method, path string, body []byte, wa
 	}
 	switch res.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return nil, fmt.Errorf("Forgejo rejected the token (%s)%s", res.Status, hintBody(raw))
+		return nil, fmt.Errorf("forgejo rejected the token (%s)%s", res.Status, hintBody(raw))
 	case http.StatusNotFound:
-		return nil, fmt.Errorf("Forgejo repository not found%s", hintBody(raw))
+		return nil, fmt.Errorf("forgejo repository not found%s", hintBody(raw))
 	default:
-		return nil, fmt.Errorf("Forgejo API %s%s", res.Status, hintBody(raw))
+		return nil, fmt.Errorf("forgejo API %s%s", res.Status, hintBody(raw))
 	}
 }
 

@@ -30,7 +30,7 @@ func (r *scriptedRunner) Run(_ context.Context, _ string, job *batchv1.Job) (Out
 	}
 	outcome, ok := r.outcomes[job.Name]
 	if !ok {
-		return OutcomeInconclusive, fmt.Errorf("Job inattendu: %s", job.Name)
+		return OutcomeInconclusive, fmt.Errorf("job inattendu: %s", job.Name)
 	}
 	return outcome, nil
 }

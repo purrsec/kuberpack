@@ -19,13 +19,13 @@ func hardenInfisicalRuntimeChart(loaded *chart.Chart) error {
 		}
 		marker := []byte("    spec:\n      serviceAccountName:")
 		if !bytes.Contains(template.Data, marker) {
-			return fmt.Errorf("Infisical chart changed: cannot disable the runtime Kubernetes credential safely")
+			return fmt.Errorf("infisical chart changed: cannot disable the runtime Kubernetes credential safely")
 		}
 		template.Data = bytes.Replace(template.Data, marker,
 			[]byte("    spec:\n      automountServiceAccountToken: false\n      serviceAccountName:"), 1)
 		return nil
 	}
-	return fmt.Errorf("Infisical chart is missing its runtime deployment template")
+	return fmt.Errorf("infisical chart is missing its runtime deployment template")
 }
 
 // Flux fetches the original chart again. Apply the same deployment-only patch

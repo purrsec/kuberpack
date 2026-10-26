@@ -41,7 +41,7 @@ func (a InfisicalAPI) EnsureIdentity(ctx context.Context, organizationID, name s
 		return "", err
 	}
 	if created.Identity.ID == "" {
-		return "", fmt.Errorf("Infisical returned an empty identity ID")
+		return "", fmt.Errorf("infisical returned an empty identity ID")
 	}
 	return created.Identity.ID, nil
 }
@@ -67,18 +67,18 @@ func (a InfisicalAPI) call(ctx context.Context, method, path string, input, outp
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("Infisical %s %s: connection failed", method, path)
+		return 0, fmt.Errorf("infisical %s %s: connection failed", method, path)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == 404 {
 		return 404, nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return resp.StatusCode, fmt.Errorf("Infisical %s %s: HTTP %d", method, path, resp.StatusCode)
+		return resp.StatusCode, fmt.Errorf("infisical %s %s: HTTP %d", method, path, resp.StatusCode)
 	}
 	if output != nil {
 		if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(output); err != nil {
-			return resp.StatusCode, fmt.Errorf("Infisical %s: invalid JSON response", path)
+			return resp.StatusCode, fmt.Errorf("infisical %s: invalid JSON response", path)
 		}
 	}
 	return resp.StatusCode, nil
@@ -107,7 +107,7 @@ func (a InfisicalAPI) Configure(ctx context.Context, slug, identityID, adminEmai
 		project.Project.ID = project.ID
 	}
 	if project.Project.ID == "" {
-		return "", fmt.Errorf("Infisical returned an empty project ID")
+		return "", fmt.Errorf("infisical returned an empty project ID")
 	}
 	projectID := project.Project.ID
 	authPath := "/api/v1/auth/kubernetes-auth/identities/" + url.PathEscape(identityID)

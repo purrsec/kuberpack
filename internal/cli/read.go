@@ -377,7 +377,7 @@ func (a *App) buildCommands(root *cobra.Command) {
 				return err
 			}
 			b, err := io.ReadAll(io.LimitReader(resp.Body, (8<<20)+1))
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if err != nil {
 				return err
 			}

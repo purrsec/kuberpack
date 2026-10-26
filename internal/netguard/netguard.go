@@ -174,7 +174,7 @@ func (p *Policy) CheckRemoteURL(ctx context.Context, raw string) error {
 	}
 	target, err := url.Parse(raw)
 	if err != nil {
-		return fmt.Errorf("URL distante %q: %w", raw, err)
+		return fmt.Errorf("url distante %q: %w", raw, err)
 	}
 	if target.Scheme == "" {
 		return nil
@@ -365,7 +365,7 @@ func (p *Policy) add(entry string) error {
 	if strings.Contains(entry, "/") {
 		prefix, err := netip.ParsePrefix(entry)
 		if err != nil {
-			return fmt.Errorf("CIDR %q: %w", entry, err)
+			return fmt.Errorf("invalid CIDR %q: %w", entry, err)
 		}
 		prefix = netip.PrefixFrom(prefix.Addr().Unmap(), prefix.Bits())
 		p.prefixes = append(p.prefixes, prefix.Masked())

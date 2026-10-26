@@ -81,7 +81,7 @@ func (s *Server) getAppLogs(w http.ResponseWriter, r *http.Request) {
 	streams := make([]io.ReadCloser, 0, len(pods))
 	defer func() {
 		for _, stream := range streams {
-			stream.Close()
+			_ = stream.Close()
 		}
 	}()
 	if !options.Follow {

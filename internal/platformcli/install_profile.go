@@ -24,7 +24,7 @@ func saveInstallProfile(cluster, url, token string) (string, error) {
 	file := filepath.Join(dir, cluster+".env")
 	if existing, err := os.ReadFile(file); err == nil {
 		if string(existing) != data {
-			return "", fmt.Errorf("CLI profile %s already contains different credentials; it was preserved", file)
+			return "", fmt.Errorf("cli profile %s already contains different credentials; it was preserved", file)
 		}
 		return file, os.Chmod(file, 0600)
 	} else if !os.IsNotExist(err) {

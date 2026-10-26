@@ -41,10 +41,10 @@ func InfisicalOperatorNamespaces(work string, p Platform) ([]string, error) {
 		}
 		manifest, err := ParseProjectManifest(raw)
 		if err != nil {
-			return nil, fmt.Errorf("Infisical scope for project %s: %w", entry.Name(), err)
+			return nil, fmt.Errorf("infisical scope for project %s: %w", entry.Name(), err)
 		}
 		if sanitizeName(manifest.Project) != entry.Name() {
-			return nil, fmt.Errorf("Infisical scope: manifest project does not match directory %s", entry.Name())
+			return nil, fmt.Errorf("infisical scope: manifest project does not match directory %s", entry.Name())
 		}
 		namespace := projectNamespace(manifest, entry.Name())
 		if err := validateInfisicalProjectNamespace(namespace, p); err != nil {
@@ -65,7 +65,7 @@ func validateInfisicalProjectNamespace(namespace string, p Platform) error {
 		return fmt.Errorf("invalid Infisical project namespace %q", namespace)
 	}
 	if strings.HasPrefix(namespace, "kube-") || namespace == "default" || namespace == "flux-system" || namespace == p.BuildNamespace || namespace == p.ControlPlaneNamespace || namespace == p.InfisicalNamespace {
-		return fmt.Errorf("Infisical operator must not receive project access to protected namespace %q", namespace)
+		return fmt.Errorf("infisical operator must not receive project access to protected namespace %q", namespace)
 	}
 	return nil
 }
@@ -75,7 +75,7 @@ func validateInfisicalProjectNamespace(namespace string, p Platform) error {
 func RenderInfisicalOperatorScope(p Platform, namespaces []string) ([]byte, error) {
 	p = p.withDefaults()
 	if len(namespaces) == 0 {
-		return nil, fmt.Errorf("Infisical operator scope must not be empty")
+		return nil, fmt.Errorf("infisical operator scope must not be empty")
 	}
 	values, err := yaml.Marshal(map[string]any{"scopedRBAC": true, "scopedNamespaces": namespaces})
 	if err != nil {

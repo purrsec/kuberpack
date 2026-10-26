@@ -196,7 +196,7 @@ func (s *Server) appUsageSamples(ctx context.Context, namespace, selector string
 	}
 	list, err := dyn.Resource(schema.GroupVersionResource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "pods"}).Namespace(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
 	if err != nil {
-		return out, fmt.Errorf("Cannot read resource metrics (%s); check metrics-server and the project read permissions", apierrors.ReasonForError(err))
+		return out, fmt.Errorf("cannot read resource metrics (%s); check metrics-server and the project read permissions", apierrors.ReasonForError(err))
 	}
 	now := time.Now()
 	for _, pod := range list.Items {

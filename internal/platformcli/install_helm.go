@@ -40,10 +40,10 @@ func (i *installation) ensureHelm(ctx context.Context, s clusterService, loaded 
 	}
 	if err == nil && current.Labels[installOwner] != i.c.Cluster {
 		if s.Name == "kuberpack" {
-			return fmt.Errorf("Helm release %s/%s is managed externally; keep its Helmfile workflow or choose a separate namespace", s.Namespace, s.Name)
+			return fmt.Errorf("helm release %s/%s is managed externally; keep its Helmfile workflow or choose a separate namespace", s.Namespace, s.Name)
 		}
 		if current.Chart.Metadata.Name != loaded.Metadata.Name {
-			return fmt.Errorf("Helm release %s/%s contains another chart; refusing adoption", s.Namespace, s.Name)
+			return fmt.Errorf("helm release %s/%s contains another chart; refusing adoption", s.Namespace, s.Name)
 		}
 		if current.Info.Status != release.StatusDeployed {
 			return fmt.Errorf("external Helm release %s/%s is %s; repair it with its owner", s.Namespace, s.Name, current.Info.Status)

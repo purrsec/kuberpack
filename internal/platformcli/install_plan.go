@@ -102,10 +102,10 @@ func executeInstallation(ctx context.Context, c setup.Config, credentials instal
 		return nil
 	}
 	if credentials.Git == "" {
-		return fmt.Errorf("KUBERPACK_GIT_TOKEN is required (read/write GitOps and repository webhooks)")
+		return fmt.Errorf("env KUBERPACK_GIT_TOKEN is required (read/write GitOps and repository webhooks)")
 	}
 	if credentials.Registry == "" {
-		return fmt.Errorf("KUBERPACK_REGISTRY_TOKEN is required for the builder")
+		return fmt.Errorf("env KUBERPACK_REGISTRY_TOKEN is required for the builder")
 	}
 	if err := validateInstallCredentials(credentials); err != nil {
 		return err
@@ -165,7 +165,7 @@ func executeInstallation(ctx context.Context, c setup.Config, credentials instal
 func (i *installation) preflight(ctx context.Context) error {
 	version, err := i.kube.Discovery().ServerVersion()
 	if err != nil {
-		return fmt.Errorf("Kubernetes API: %w", err)
+		return fmt.Errorf("kubernetes API: %w", err)
 	}
 	fmt.Printf("Kubernetes %s at %s\n", version.GitVersion, i.config.Host)
 	i.detectNetwork(ctx)
@@ -185,7 +185,7 @@ func (i *installation) preflight(ctx context.Context) error {
 		return err
 	}
 	if err == nil && existingRelease.Labels[installOwner] != i.c.Cluster {
-		return fmt.Errorf("Kuberpack release in namespace %s belongs to another workflow; keep its Helmfile or select another namespace", i.c.Namespace)
+		return fmt.Errorf("kuberpack release in namespace %s belongs to another workflow; keep its Helmfile or select another namespace", i.c.Namespace)
 	}
 	installations, err := i.kube.CoreV1().ConfigMaps("").List(ctx, metav1.ListOptions{LabelSelector: installOwner})
 	if err != nil {
@@ -193,7 +193,7 @@ func (i *installation) preflight(ctx context.Context) error {
 	}
 	for _, existing := range installations.Items {
 		if existing.Namespace != i.c.Namespace || existing.Labels[installOwner] != i.c.Cluster {
-			return fmt.Errorf("Kuberpack is already installed as %s in namespace %s; reuse that installation configuration", existing.Labels[installOwner], existing.Namespace)
+			return fmt.Errorf("kuberpack is already installed as %s in namespace %s; reuse that installation configuration", existing.Labels[installOwner], existing.Namespace)
 		}
 	}
 	for key, wanted := range map[string]string{"gitops.root": i.c.Root, "gitops.url": i.c.GitOpsURL} {
@@ -281,7 +281,7 @@ func (i *installation) preflight(ctx context.Context) error {
 	if i.c.TLS && i.c.ACMEEmail == "" {
 		_, err := i.dyn.Resource(schema.GroupVersionResource{Group: "cert-manager.io", Version: "v1", Resource: "clusterissuers"}).Get(ctx, i.c.Issuer, metav1.GetOptions{})
 		if err != nil {
-			return fmt.Errorf("ClusterIssuer %q is unavailable; choose an existing --issuer or provide --acme-email", i.c.Issuer)
+			return fmt.Errorf("clusterIssuer %q is unavailable; choose an existing --issuer or provide --acme-email", i.c.Issuer)
 		}
 	}
 	if i.c.CAFile != "" {

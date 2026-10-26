@@ -337,7 +337,7 @@ func waitForBuildkit(ctx context.Context, timeout time.Duration) error {
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("BuildKit did not become ready: %w", ctx.Err())
+			return fmt.Errorf("buildKit did not become ready: %w", ctx.Err())
 		case <-time.After(time.Second):
 		}
 	}

@@ -287,10 +287,10 @@ func (s *Server) advanceDeployment(ctx context.Context, d *savedDeployment) erro
 			d.InfraCommit = res.InfraCommitSHA
 			d.Step = "gitops_removed"
 			if err := s.reconcileApps(ctx, p.Project, nil); err != nil {
-				return fmt.Errorf("GitOps removed; inventory cleanup failed: %w", err)
+				return fmt.Errorf("gitOps removed; inventory cleanup failed: %w", err)
 			}
 			if err := s.deleteProjectTenant(ctx, p.Project, policy.Namespace); err != nil {
-				return fmt.Errorf("GitOps removed; tenant cleanup failed: %w", err)
+				return fmt.Errorf("gitOps removed; tenant cleanup failed: %w", err)
 			}
 			if err := s.cfg.Store.RevokeProjectTokens(ctx, p.Project); err != nil {
 				return fmt.Errorf("project removed; token revocation failed: %w", err)
@@ -322,13 +322,13 @@ func (s *Server) advanceDeployment(ctx context.Context, d *savedDeployment) erro
 				return err
 			}
 			if err := s.ensureProjectTenant(ctx, res.Project, res.Namespace); err != nil {
-				return fmt.Errorf("GitOps committed; tenant provisioning failed: %w", err)
+				return fmt.Errorf("gitOps committed; tenant provisioning failed: %w", err)
 			}
 			if err := s.reconcileApps(ctx, res.Project, res.Apps); err != nil {
-				return fmt.Errorf("GitOps committed; pipeline reconciliation failed: %w", err)
+				return fmt.Errorf("gitOps committed; pipeline reconciliation failed: %w", err)
 			}
 			if err := s.syncProjectTenantScope(ctx); err != nil {
-				return fmt.Errorf("GitOps committed; secret scope reconciliation failed: %w", err)
+				return fmt.Errorf("gitOps committed; secret scope reconciliation failed: %w", err)
 			}
 		}
 		for i := range d.Targets {

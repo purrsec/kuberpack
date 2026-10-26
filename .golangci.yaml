@@ -8,15 +8,11 @@ linters:
         - fmt.Fprint
         - fmt.Fprintf
         - fmt.Fprintln
-issues:
-  exclude-rules:
-    # Best-effort cleanup in defer: nothing to do with the error.
-    - linters: [errcheck]
-      source: '^\\s*defer\\s+.*\\.(Close|Remove|RemoveAll|Rollback)\\(\\)'
-    # Test scaffolding: assertion failures already fail the test.
-    - path: '_test\\.go'
-      linters: [errcheck]
-formatters:
-  enable:
-    - gofmt
-    - goimports
+  exclusions:
+    rules:
+      # Best-effort cleanup in defer: nothing to do with the error.
+      - linters: [errcheck]
+        source: '^\s*defer\s+.*\.(Close|Remove|RemoveAll|Rollback)\(.*\)\s*$'
+      # Test scaffolding: assertion failures already fail the test.
+      - path: _test\.go
+        linters: [errcheck]

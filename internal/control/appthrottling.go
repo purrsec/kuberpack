@@ -68,7 +68,7 @@ func (s *Server) populateThrottling(ctx context.Context, pods []corev1.Pod, cont
 			var counters map[string]cfsCounter
 			var err error
 			if node == "" {
-				err = fmt.Errorf("Container is not scheduled on a node yet")
+				err = fmt.Errorf("container is not scheduled on a node yet")
 			} else {
 				counters, err = s.kubeletCounters(ctx, node)
 			}
@@ -166,11 +166,11 @@ func aggregateThrottling(containers []ContainerResources) ThrottlingStatus {
 
 func (s *Server) kubeletCounters(ctx context.Context, nodeName string) (map[string]cfsCounter, error) {
 	if s.cfg.KubeConfig == nil {
-		return nil, fmt.Errorf("Kubelet metric access is not configured")
+		return nil, fmt.Errorf("kubelet metric access is not configured")
 	}
 	node, err := s.cfg.Kube.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("Cannot locate node metrics (%s)", apierrors.ReasonForError(err))
+		return nil, fmt.Errorf("cannot locate node metrics (%s)", apierrors.ReasonForError(err))
 	}
 	var host string
 	for _, kind := range []corev1.NodeAddressType{corev1.NodeInternalIP, corev1.NodeExternalIP, corev1.NodeHostName} {
@@ -189,7 +189,7 @@ func (s *Server) kubeletCounters(ctx context.Context, nodeName string) (map[stri
 		port = 10250
 	}
 	if host == "" || strings.ContainsAny(host, "/\\@?#") || port < 1 || port > 65535 {
-		return nil, fmt.Errorf("Node has no valid kubelet endpoint")
+		return nil, fmt.Errorf("node has no valid kubelet endpoint")
 	}
 	config := rest.CopyConfig(s.cfg.KubeConfig)
 	// Verify the node's serving identity, even if a developer's API config
@@ -203,27 +203,27 @@ func (s *Server) kubeletCounters(ctx context.Context, nodeName string) (map[stri
 	config.Timeout = 3 * time.Second
 	client, err := rest.HTTPClientFor(config)
 	if err != nil {
-		return nil, fmt.Errorf("Kubelet TLS client is unavailable; check the serving CA")
+		return nil, fmt.Errorf("kubelet TLS client is unavailable; check the serving CA")
 	}
 	defer client.CloseIdleConnections()
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	endpoint := url.URL{Scheme: "https", Host: net.JoinHostPort(host, strconv.Itoa(int(port))), Path: "/metrics/cadvisor"}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("Kubelet metric endpoint is invalid")
+		return nil, fmt.Errorf("kubelet metric endpoint is invalid")
 	}
 	response, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("Cannot reach kubelet metrics; verify network access and the serving CA")
+		return nil, fmt.Errorf("cannot reach kubelet metrics; verify network access and the serving CA")
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Kubelet metrics returned HTTP %d; check nodes/metrics read permission", response.StatusCode)
+		return nil, fmt.Errorf("kubelet metrics returned HTTP %d; check nodes/metrics read permission", response.StatusCode)
 	}
 	const maxBytes = 8 * 1024 * 1024
 	raw, err := io.ReadAll(io.LimitReader(response.Body, maxBytes+1))
 	if err != nil || len(raw) > maxBytes {
-		return nil, fmt.Errorf("Kubelet metric response was incomplete or exceeded 8 MiB")
+		return nil, fmt.Errorf("kubelet metric response was incomplete or exceeded 8 MiB")
 	}
 	return parseCFSCounters(raw, time.Now())
 }
@@ -244,7 +244,7 @@ func parseCFSCounters(raw []byte, now time.Time) (map[string]cfsCounter, error) 
 	parser := expfmt.NewTextParser(model.UTF8Validation)
 	families, err := parser.TextToMetricFamilies(&quotaText)
 	if err != nil {
-		return nil, fmt.Errorf("Kubelet metric response could not be parsed")
+		return nil, fmt.Errorf("kubelet metric response could not be parsed")
 	}
 	out := make(map[string]cfsCounter)
 	for _, name := range []string{"container_cpu_cfs_periods_total", "container_cpu_cfs_throttled_periods_total", "container_cpu_cfs_throttled_seconds_total"} {

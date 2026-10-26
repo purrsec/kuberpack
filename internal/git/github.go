@@ -41,7 +41,7 @@ func NewGitHub(apiURL, token string) (*GitHubProvider, error) {
 		apiURL = "https://api.github.com"
 	}
 	if _, err := url.Parse(apiURL); err != nil {
-		return nil, fmt.Errorf("GitHub API URL: %w", err)
+		return nil, fmt.Errorf("github API URL: %w", err)
 	}
 	// An empty token means an anonymous access: enough to read a public
 	// repository of a forge the platform has no token for.

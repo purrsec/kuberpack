@@ -48,7 +48,7 @@ func (i *installation) ensureFlux(ctx context.Context) error {
 		}
 		if i.fluxNamespace == "" {
 			if _, err := i.kube.Discovery().ServerResourcesForGroupVersion("kustomize.toolkit.fluxcd.io/v1"); err == nil {
-				return fmt.Errorf("Flux CRDs exist without the required controllers; repair this external installation before running Kuberpack")
+				return fmt.Errorf("flux CRDs exist without the required controllers; repair this external installation before running Kuberpack")
 			}
 		}
 		if i.fluxNamespace != "" {
@@ -87,14 +87,14 @@ func (i *installation) ensureFlux(ctx context.Context) error {
 	}
 	defer response.Body.Close()
 	if response.StatusCode != 200 {
-		return fmt.Errorf("Flux manifests: HTTP %d", response.StatusCode)
+		return fmt.Errorf("flux manifests: HTTP %d", response.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, 2<<20))
 	if err != nil {
 		return err
 	}
 	if fmt.Sprintf("%x", sha256.Sum256(data)) != fluxManifestSHA {
-		return fmt.Errorf("Flux manifest checksum mismatch")
+		return fmt.Errorf("flux manifest checksum mismatch")
 	}
 	i.managedFlux = data
 	decoder := yaml.NewYAMLOrJSONDecoder(strings.NewReader(string(data)), 4096)
@@ -113,7 +113,7 @@ func (i *installation) ensureFlux(ctx context.Context) error {
 		// Only the Flux instance recorded as ours is reconciled here. Shared
 		// Flux returned above is never patched or upgraded by this installer.
 		if err := applyOwnedUnstructured(ctx, i.dyn, i.config, obj, true); err != nil {
-			return fmt.Errorf("Flux %s/%s: %w", obj.GetKind(), obj.GetName(), err)
+			return fmt.Errorf("flux %s/%s: %w", obj.GetKind(), obj.GetName(), err)
 		}
 	}
 	return i.waitFlux(ctx)
@@ -128,7 +128,7 @@ func (i *installation) waitFlux(ctx context.Context) error {
 			}
 			return d.Status.ObservedGeneration >= d.Generation && d.Status.AvailableReplicas > 0, nil
 		}); err != nil {
-			return fmt.Errorf("Flux %s: %w", name, err)
+			return fmt.Errorf("flux %s: %w", name, err)
 		}
 	}
 	return nil

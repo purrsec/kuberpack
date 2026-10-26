@@ -77,7 +77,7 @@ func (i *installation) checkPlatformRepository(ctx context.Context) error {
 			return err
 		}
 		if len(entries) > 0 {
-			return fmt.Errorf("GitOps directory %s is not owned by Kuberpack; choose a dedicated --gitops-root", i.c.Root)
+			return fmt.Errorf("gitOps directory %s is not owned by Kuberpack; choose a dedicated --gitops-root", i.c.Root)
 		}
 	} else if err != nil {
 		return err
@@ -98,7 +98,7 @@ func (i *installation) checkPlatformRepository(ctx context.Context) error {
 			return err
 		}
 		if previous.ClusterUID != "" && previous.ClusterUID != string(ns.UID) {
-			return fmt.Errorf("GitOps scope %s belongs to another cluster; choose another installation name or restore the cluster deliberately", i.c.Root)
+			return fmt.Errorf("gitOps scope %s belongs to another cluster; choose another installation name or restore the cluster deliberately", i.c.Root)
 		}
 	}
 	return nil
@@ -368,7 +368,7 @@ func (i *installation) publishPlatform(ctx context.Context) error {
 		for _, old := range all.Items {
 			oldPath, _, _ := unstructured.NestedString(old.Object, "spec", "path")
 			if strings.TrimPrefix(oldPath, "./") == scope.path && (old.GetName() != scope.name || old.GetNamespace() != i.c.Namespace) {
-				return fmt.Errorf("GitOps path %s is already reconciled by %s/%s", scope.path, old.GetNamespace(), old.GetName())
+				return fmt.Errorf("gitOps path %s is already reconciled by %s/%s", scope.path, old.GetNamespace(), old.GetName())
 			}
 		}
 		// A platform reconciliation briefly changes its readiness. Giving
