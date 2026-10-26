@@ -391,6 +391,31 @@ func (p plannedBranchProvider) BranchSHA(context.Context, string, string, string
 	return strings.Repeat("d", 40), nil
 }
 
+func TestRegistrationReconciliationDoesNotDuplicateAnAcceptedDelivery(t *testing.T) {
+	s, _ := v2Fixture(t)
+	s.cfg.Provider = plannedBranchProvider{s.cfg.Provider}
+	ctx := context.Background()
+	app, err := s.cfg.Store.InsertApp(ctx, store.App{
+		Name: "demo-web", Project: "demo", ForgejoRepository: "demo/web", ProductionBranch: "main",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha := strings.Repeat("d", 40)
+	if err := s.cfg.Store.InsertDelivery(ctx, store.Delivery{
+		ID: "dep_test-web", AppID: app.ID, EventType: "redeploy", CommitSHA: sha, Status: "queued",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.queueFirstBuild(ctx, app); err != nil {
+		t.Fatal(err)
+	}
+	queued, err := s.cfg.Store.QueuedDeliveries(ctx)
+	if err != nil || len(queued) != 1 || queued[0].ID != "dep_test-web" {
+		t.Fatalf("registration duplicated the accepted deployment: %+v %v", queued, err)
+	}
+}
+
 func TestServiceRestrictedPlanDoesNotExposeTheCompleteManifest(t *testing.T) {
 	s, tokens := v2Fixture(t)
 	m := promote.ProjectManifest{Project: "demo", Namespace: "demo", Services: map[string]promote.Service{

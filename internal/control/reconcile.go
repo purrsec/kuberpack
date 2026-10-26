@@ -126,7 +126,10 @@ func (s *Server) reconcileApp(ctx context.Context, project string, desc promote.
 	// A new app is built right away. An app whose build parameters changed
 	// is built again: the manifest asked for something else.
 	// An application that runs a published image is not built.
-	active, _ := s.activeDeployment(ctx, project)
+	active, err := s.activeDeployment(ctx, project)
+	if err != nil {
+		return fmt.Errorf("app %s: cannot inspect active deployments: %w", desc.Name, err)
+	}
 	if !active && strings.TrimSpace(app.ForgejoRepository) != "" && (created || buildParametersChanged(previous, app)) {
 		if err := s.queueFirstBuild(ctx, app); err != nil {
 			return fmt.Errorf("app %s: %w", desc.Name, err)
@@ -268,6 +271,13 @@ func (s *Server) queueFirstBuild(ctx context.Context, app store.App) error {
 	}
 	if strings.TrimSpace(sha) == "" {
 		log.Printf("kuberpack app %s: branch %s of %s is empty", app.Name, app.ProductionBranch, app.ForgejoRepository)
+		return nil
+	}
+	exists, err := s.cfg.Store.HasProductionDelivery(ctx, app.ID, sha)
+	if err != nil {
+		return err
+	}
+	if exists {
 		return nil
 	}
 	del := "register-" + app.Name + "-" + sha + "-" + deliveryNonce()

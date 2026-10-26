@@ -411,6 +411,21 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	return nil
 }
 
+// HasProductionDelivery reports whether the commit is already represented by
+// a production delivery. Registration reconciliation can race with an
+// explicitly accepted deployment; the latter must remain the single owner of
+// the build for that commit.
+func (s *Store) HasProductionDelivery(ctx context.Context, appID int64, commit string) (bool, error) {
+	var exists int
+	err := s.db.QueryRowContext(ctx, `
+SELECT EXISTS(
+  SELECT 1 FROM webhook_deliveries
+  WHERE app_id = ? AND commit_sha = ? AND event_type != 'pull_request'
+    AND status IN ('queued', 'running', 'succeeded')
+)`, appID, commit).Scan(&exists)
+	return exists != 0, err
+}
+
 func (s *Store) SetDeliveryStatus(ctx context.Context, id, status, errMsg string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE webhook_deliveries SET status = ?, error = ? WHERE delivery_id = ?`, status, errMsg, id)
 	return err
