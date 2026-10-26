@@ -142,6 +142,22 @@ func TestWebhookHMACAndQueue(t *testing.T) {
 	if dupRec.Code != http.StatusAccepted {
 		t.Fatalf("dup %d", dupRec.Code)
 	}
+
+	// Forge retries can carry a new delivery identifier. The commit is
+	// already built, so another webhook envelope must not rebuild it.
+	sameCommit := httptest.NewRequest(http.MethodPost, "/hooks/forgejo", bytes.NewReader(body))
+	sameCommit.Header.Set("X-Gitea-Event", "push")
+	sameCommit.Header.Set("X-Gitea-Delivery", "del-44")
+	sameCommit.Header.Set("X-Gitea-Signature", hmacsig.Hex("s3cret", body))
+	sameCommitRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(sameCommitRec, sameCommit)
+	if sameCommitRec.Code != http.StatusAccepted || !strings.Contains(sameCommitRec.Body.String(), "duplicate") {
+		t.Fatalf("same commit %d %s", sameCommitRec.Code, sameCommitRec.Body.String())
+	}
+	builds, err := st.ListBuilds(ctx, app.ID)
+	if err != nil || len(builds) != 1 {
+		t.Fatalf("same commit queued another build: %+v %v", builds, err)
+	}
 }
 
 func TestFrozenTrackSkipsPromote(t *testing.T) {

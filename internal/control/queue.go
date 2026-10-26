@@ -26,7 +26,7 @@ func (s *Server) queuePush(w http.ResponseWriter, r *http.Request, app store.App
 	if delivery == "" {
 		delivery = "push-" + app.Name + "-" + payload.After
 	}
-	err := s.cfg.Store.InsertDelivery(r.Context(), store.Delivery{
+	err := s.cfg.Store.InsertProductionDeliveryOnce(r.Context(), store.Delivery{
 		ID:        delivery,
 		AppID:     app.ID,
 		EventType: "push",

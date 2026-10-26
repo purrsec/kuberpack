@@ -40,15 +40,19 @@ def main():
         collect("docker-" + container, ["docker", "logs", "--tail=150", run_id + "-" + container])
     collect("pod-statuses", ["kubectl", "get", "pods", "-A", "-o=json", "--request-timeout=10s"],
             lambda data: [{"name": p["metadata"]["name"], "namespace": p["metadata"]["namespace"],
+                           "delivery": p["metadata"].get("labels", {}).get("kuberpack.dev/delivery", ""),
+                           "commit": p["metadata"].get("labels", {}).get("kuberpack.dev/commit", ""),
+                           "build_id": p["metadata"].get("annotations", {}).get("kuberpack.dev/build-id", ""),
                            "status": p.get("status", {})} for p in data["items"]])
-    for namespace, label in (("kuberpack", "app.kubernetes.io/part-of=kuberpack"),
-                             ("flux-system", "app.kubernetes.io/part-of=flux"),
-                             ("kuberpack-build", "app.kubernetes.io/name=kuberpack-build"),
-                             ("pipeline", "app.kubernetes.io/part-of=kuberpack")):
+    for name, namespace, label in (("kuberpack", "kuberpack", "app.kubernetes.io/name=kuberpack"),
+                                   ("kuberpack-reloader", "kuberpack", "app.kubernetes.io/name=kuberpack-reloader"),
+                                   ("flux-system", "flux-system", "app.kubernetes.io/part-of=flux"),
+                                   ("kuberpack-build", "kuberpack-build", "app.kubernetes.io/name=kuberpack-build"),
+                                   ("pipeline", "pipeline", "app.kubernetes.io/part-of=kuberpack")):
         if not redaction_ready:
-            records.append(dict(name="logs-" + namespace, status="omitted", reason="Cannot redact cluster credentials"))
+            records.append(dict(name="logs-" + name, status="omitted", reason="Cannot redact cluster credentials"))
             continue
-        collect("logs-" + namespace, ["kubectl", "logs", "-n", namespace, "-l", label,
+        collect("logs-" + name, ["kubectl", "logs", "-n", namespace, "-l", label,
                 "--all-containers=true", "--prefix=true", "--tail=100", "--max-log-requests=20", "--request-timeout=10s"])
     for kind in ("helmreleases.helm.toolkit.fluxcd.io", "kustomizations.kustomize.toolkit.fluxcd.io", "gitrepositories.source.toolkit.fluxcd.io"):
         collect(kind.split(".")[0], ["kubectl", "get", kind, "-A", "-o=json", "--request-timeout=10s"])
