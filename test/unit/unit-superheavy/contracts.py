@@ -192,6 +192,13 @@ HTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
         with urllib.request.urlopen("https://web.fixture.test/", context=self.context, timeout=10) as response:
             return json.load(response)
 
+    def api_ready(self):
+        try:
+            with urllib.request.urlopen(self.api + "/healthz", context=self.context, timeout=5) as response:
+                return response.status == 200 and response.read().strip() == b"ok"
+        except (OSError, urllib.error.URLError):
+            return False
+
     def fingerprint(self):
         result = {}
         for ns in ("kuberpack", "infisical", "kuberpack-build", "pipeline", "external-apps", "cert-manager"):
@@ -295,6 +302,7 @@ HTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
         self.check("control plane never writes application source", self.remote_revision("source"), commit)
         self.command("restart the actual control plane", ["kubectl", "rollout", "restart", "deployment/kuberpack", "-n=kuberpack"])
         self.command("wait for restarted control plane", ["kubectl", "rollout", "status", "deployment/kuberpack", "-n=kuberpack", "--timeout=120s"], timeout=130)
+        self.wait("restarted HTTPS API is routed again", self.api_ready, timeout=60)
         self.check("accepted operation survives control plane restart", self.cli(*args)["deployment_id"], first["deployment_id"])
         self.check("recovery did not queue another build", len(self.cli("builds", "list", "--service=web")["builds"]), 1)
         before_uids = {p["metadata"]["uid"] for p in self.pods()}
