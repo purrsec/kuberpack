@@ -44,19 +44,30 @@ quatre niveaux passent également sur son SHA dans GitHub Actions.
 
 ```text
 test/
-├── run.py
-├── common/                     outils et fixtures partagés
+├── run.py                      lanceur local et CI (static, light, heavy, superheavy)
+├── measure.py                  répétition d’une suite et statistiques (p50/p95)
+├── common/                     image d’outils, librairie Python, tâches et fixtures partagés
 │   ├── Dockerfile              versions et bases épinglées
+│   ├── requirements.txt        dépendances Python épinglées
 │   ├── collections.yaml        collections Ansible épinglées
+│   ├── ansible.cfg             configuration Ansible du conteneur
+│   ├── inventory.yaml          inventaire local
 │   ├── images.json             images de fixtures épinglées par digest
 │   ├── suite.py                délais, exécution et rapports
+│   ├── privacy.py              collecte et expurgation des secrets
+│   ├── check_privacy.py        garde-fou anti-fuite dans les artefacts
+│   ├── diagnostics.py          diagnostics cluster et Docker
+│   ├── finalize_report.py      rapport de secours en cas d’échec d’infra
+│   ├── import_images.py        transfert producteur/consommateur vérifié
+│   ├── fixtures/               charts et projets de test
 │   ├── tasks/                  création, diagnostic et destruction
 │   └── callback_plugins/       événements Ansible sans payload secret
 ├── static/                     contrôles statiques et tests du harnais
-└── unit/
-    ├── unit-light/
-    ├── unit-heavy/
-    └── unit-superheavy/
+├── unit/
+│   ├── unit-light/             tests Go hors réseau uniquement (suite.json seul, sans playbook)
+│   ├── unit-heavy/             race detector + admission/RBAC/réseau (playbook.yaml + network.yaml)
+│   └── unit-superheavy/        installation, build/scan réels, GitOps, secrets, reloader, réinstallation
+└── examples/                   vérification manuelle Stirling, hors CI
 ```
 
 Les noms des dossiers initiaux sont conservés. Les suites lourdes contiennent

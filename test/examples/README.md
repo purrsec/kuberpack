@@ -6,7 +6,7 @@ deux PDF et peut vérifier la persistance d’un document entre deux passages.
 Il ne lit aucun kubeconfig.
 
 ```console
-docker build -t kuberpack-stirling-check test/common/examples
+docker build -t kuberpack-stirling-check test/examples
 docker run --rm kuberpack-stirling-check --help
 ```
 

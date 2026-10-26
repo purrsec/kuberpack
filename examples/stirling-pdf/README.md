@@ -58,7 +58,7 @@ PDF, dont le nombre de pages est contrôlé avec `pdfinfo`. L'image de test
 fournit Python et Poppler ; aucun outil PDF n'est requis sur le poste.
 
 ```bash
-docker build -t kuberpack-stirling-check test/common/examples
+docker build -t kuberpack-stirling-check test/examples
 mkdir -p .test-results/stirling
 docker run --rm \
   --mount "type=bind,source=$HOME/.config/kuberpack/stirling.env,target=/run/stirling.env,readonly" \

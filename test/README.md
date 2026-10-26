@@ -27,3 +27,20 @@ Les détails des scénarios, des budgets et de la qualification sont dans
 [le guide des tests](../docs/testing.md). Les tests Go de fonctions privées
 restent dans leur package ; cette arborescence organise les suites et leurs
 environnements d’exécution.
+
+## Arborescence
+
+```text
+test/
+├── run.py          lanceur local et CI (static, light, heavy, superheavy)
+├── measure.py      répétition d’une suite et statistiques (p50/p95)
+├── common/         image d’outils, librairie Python, tâches et fixtures partagés
+├── static/         contrôles statiques et contrats du harnais
+├── unit/           suites Go + Ansible (unit-light sans playbook, unit-heavy et unit-superheavy avec playbook)
+└── examples/       vérification manuelle Stirling, hors CI
+```
+
+`unit-light` ne contient qu’un `suite.json` : ce sont les tests Go hors
+réseau, sans playbook Ansible. `measure.py` relance une suite plusieurs fois
+(`--runs N`, défaut 10) pour mesurer les durées. `examples/` est manuel et
+n’est jamais exécuté par `run.py` ni par la CI.
