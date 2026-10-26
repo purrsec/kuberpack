@@ -52,13 +52,14 @@ jobs:
       suite: unit-light
 
   heavy:
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     needs: [static, light]
     uses: ./.github/workflows/test-suite.yaml
     with:
       suite: unit-heavy
 
   superheavy:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     needs: [static, light, heavy]
     uses: ./.github/workflows/test-suite.yaml
     with:

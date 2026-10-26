@@ -527,9 +527,10 @@ Les diagnostics précèdent le nettoyage, avec rapports JSON/JUnit même en cas
 d’échec. Le coût initial des outils et de compilation est rapporté séparément.
 
 La CI réutilise `.github/workflows/test-suite.yaml`. Statique et léger
-précèdent le lourd ; le très lourd suit sur les pushes, tags, nightly et
-lancements manuels. La publication des images attend les quatre niveaux.
-Les PR exécutent les trois premiers niveaux.
+tournent à chaque push ; le lourd s’y ajoute sur les PR ; lourd et très
+lourd tournent sur le nightly, les tags de release et les lancements
+manuels. La publication des images attend les niveaux requis par
+l’événement.
 
 ### Validation
 

@@ -145,10 +145,10 @@ lanceur.
 ## CI
 
 `.github/workflows/test-suite.yaml` contient l’unique recette de job Docker.
-`.github/workflows/image.yaml` la réutilise : statique et léger, puis lourd,
-puis très lourd sur les pushes, les tags, le nightly et le lancement manuel.
-Les PR exécutent les trois premiers niveaux sans secret de dépôt. La
-publication des images sur `main` ou sur un tag attend tous les niveaux.
+`.github/workflows/image.yaml` la réutilise : statique et léger à chaque
+push, lourd en plus sur les PR, et lourd + très lourd sur le nightly, les
+tags de release et les lancements manuels. La publication des images sur
+`main` ou sur un tag attend tous les niveaux requis par l’événement.
 
 Les caches de compilation Go sont vérifiés par Go à chaque utilisation ; le
 cache des résultats de test est désactivé par `-count=1`. Les binaires exécutés
