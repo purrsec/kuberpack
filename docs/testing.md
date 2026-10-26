@@ -150,6 +150,12 @@ push, lourd en plus sur les PR, et lourd + très lourd sur le nightly, les
 tags de release et les lancements manuels. La publication des images sur
 `main` ou sur un tag attend tous les niveaux requis par l’événement.
 
+Deux jobs légers tournent sur chaque push et chaque PR, en parallèle des
+suites : `lint` (`golangci-lint run ./...`, preset par défaut, binaire
+réinstallé à chaque run donc toujours à jour) et `vuln` (`govulncheck ./...`,
+qui ne signale que les vulnérabilités atteignables). Les mises à jour de
+dépendances sont proposées par Dependabot (Go hebdo groupé, images Docker).
+
 Les caches de compilation Go sont vérifiés par Go à chaque utilisation ; le
 cache des résultats de test est désactivé par `-count=1`. Les binaires exécutés
 appartiennent à chaque conteneur, jamais à un répertoire partagé entre runs.
