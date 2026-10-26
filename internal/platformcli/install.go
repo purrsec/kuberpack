@@ -54,6 +54,24 @@ func registryOf(forgeURL, user string) (registryURL, registryUser string) {
 	return forgeURL, user
 }
 
+// ensureNamespace creates a namespace when it does not exist.
+func ensureNamespace(ctx context.Context, client kubernetes.Interface, name string) error {
+	_, err := client.CoreV1().Namespaces().Get(ctx, name, metav1.GetOptions{})
+	if err == nil {
+		return nil
+	}
+	if !apierrors.IsNotFound(err) {
+		return err
+	}
+	_, err = client.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+	}, metav1.CreateOptions{})
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return err
+	}
+	return nil
+}
+
 // ensureSecret creates a secret, or replaces its content.
 //
 // The type of a Secret is immutable. A Secret that is already there keeps

@@ -12,7 +12,6 @@ import (
 	"git.host.bzh/pepe/kuberpack/internal/git"
 	"git.host.bzh/pepe/kuberpack/internal/hmacsig"
 	"git.host.bzh/pepe/kuberpack/internal/promote"
-	"git.host.bzh/pepe/kuberpack/internal/store"
 )
 
 // gitOpsSecretID is the key of the HMAC secret of the GitOps webhook. It is

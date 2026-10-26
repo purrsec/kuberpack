@@ -6,7 +6,7 @@ COPY --from=go /usr/local/go /usr/local/go
 COPY --from=docker /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
 ENV PATH=/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin \
-    GOTOOLCHAIN=local GOCACHE=/cache/build GOPATH=/cache/go \
+    GOTOOLCHAIN=auto GOCACHE=/cache/build GOPATH=/cache/go \
     PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     ANSIBLE_CONFIG=/workspace/test/common/ansible.cfg
 RUN apt-get update && apt-get install -y --no-install-recommends \
