@@ -67,10 +67,7 @@ func RepoOwnerNameFromURL(raw string) (string, string, error) {
 	if err != nil {
 		return "", "", fmt.Errorf("repository URL %q: %w", raw, err)
 	}
-	path := strings.Trim(parsed.Path, "/")
-	if strings.HasSuffix(path, ".git") {
-		path = strings.TrimSuffix(path, ".git")
-	}
+	path := strings.TrimSuffix(strings.Trim(parsed.Path, "/"), ".git")
 	parts := strings.Split(path, "/")
 	if len(parts) < 2 {
 		return "", "", fmt.Errorf("repository URL %q must end with owner/name", raw)

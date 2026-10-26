@@ -1,0 +1,22 @@
+version: "2"
+linters:
+  default: standard
+  settings:
+    errcheck:
+      # CLI output writes: failure is not actionable.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+issues:
+  exclude-rules:
+    # Best-effort cleanup in defer: nothing to do with the error.
+    - linters: [errcheck]
+      source: '^\\s*defer\\s+.*\\.(Close|Remove|RemoveAll|Rollback)\\(\\)'
+    # Test scaffolding: assertion failures already fail the test.
+    - path: '_test\\.go'
+      linters: [errcheck]
+formatters:
+  enable:
+    - gofmt
+    - goimports

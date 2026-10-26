@@ -461,9 +461,10 @@ func (a *App) wizard() error {
 		}
 	}
 	role := a.config.Contexts[contextName].Role
-	if role == "reader" || role == "project" {
+	switch role {
+	case "reader", "project":
 		tasks = tasks[2:]
-	} else if role == "deployer" {
+	case "deployer":
 		tasks = tasks[1:]
 	}
 	choice, err := a.selectOne("Task", tasks)

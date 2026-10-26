@@ -254,11 +254,6 @@ func (s *Server) deleteProjectTenant(ctx context.Context, project, namespace str
 	return nil
 }
 
-func propagationPolicy() *metav1.DeletionPropagation {
-	policy := metav1.DeletePropagationBackground
-	return &policy
-}
-
 // syncProjectTenantScope keeps the Infisical operator access list in the
 // cluster. With tenant isolation there is no global projects Kustomization to
 // apply the generated ConfigMap: the control plane updates it directly, from

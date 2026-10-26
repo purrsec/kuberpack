@@ -231,15 +231,6 @@ func runServe(args []string) error {
 	return err
 }
 
-// clusterClient builds the client of the cluster the control plane runs in.
-func clusterClient() (kubernetes.Interface, error) {
-	config, err := kubeConfig()
-	if err != nil {
-		return nil, err
-	}
-	return kubernetes.NewForConfig(config)
-}
-
 func platformFromEnv() promote.Platform {
 	return promote.Platform{
 		AppsDir:                getenv("KUBERPACK_GITOPS_APPS", "kubernetes/vps/apps"),

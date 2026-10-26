@@ -207,9 +207,10 @@ func releaseStatus(release *unstructured.Unstructured) ReconciliationStatus {
 			continue
 		}
 		if kind == "Ready" && out.State != "failed" {
-			if status == "True" {
+			switch status {
+			case "True":
 				out = ReconciliationStatus{State: "ready", Reason: reason, Message: message}
-			} else if status == "False" {
+			case "False":
 				out = ReconciliationStatus{State: "failed", Reason: reason, Message: message}
 			}
 		}

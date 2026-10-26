@@ -990,29 +990,6 @@ func projectPeers(m ProjectManifest, results map[string]AddonResult) ([]string, 
 	return services, addons
 }
 
-// projectAddonsOf lists the addons a project declares, read from its
-// manifest in the repository.
-func projectAddonsOf(work string, p Platform, project string) ([]string, error) {
-	path := filepath.Join(work, filepath.FromSlash(p.ProjectManifestPath(project)))
-	raw, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	manifest, err := ParseProjectManifest(raw)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]string, 0, len(manifest.Addons))
-	for name := range manifest.Addons {
-		out = append(out, sanitizeName(name))
-	}
-	sort.Strings(out)
-	return out, nil
-}
-
 // addonOperator returns the operator the type of an engine needs.
 func addonOperator(engine string) string {
 	entry, ok := AddonCatalogEntryForEngine(engine)
@@ -1036,15 +1013,6 @@ func hasOperator(p Platform, operator string) bool {
 // are rewritten when the platform changes, so that a change of the platform
 // reaches the applications that were compiled before it.
 func writeFile(path, content string) error {
-	return os.WriteFile(path, []byte(content), 0o644)
-}
-
-func writeIfMissing(path, content string) error {
-	if _, err := os.Stat(path); err == nil {
-		return nil
-	} else if !os.IsNotExist(err) {
-		return err
-	}
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 

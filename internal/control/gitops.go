@@ -239,12 +239,6 @@ func (s *Server) gitOpsProjects(payload pushPayload) []string {
 	return out
 }
 
-// storeApps is a small helper kept next to the reconciliation: it returns the
-// apps of a project, for the API.
-func (s *Server) storeApps(ctx context.Context, project string) ([]store.App, error) {
-	return s.cfg.Store.AppsByProject(ctx, project)
-}
-
 // waitForGitOpsHook ensures the webhook of the GitOps repository, retrying a
 // few times: the control plane can start before Forgejo is ready.
 func (s *Server) waitForGitOpsHook(ctx context.Context) {

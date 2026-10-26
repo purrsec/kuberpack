@@ -36,29 +36,6 @@ func ensureFluxSource(ctx context.Context, config *rest.Config, namespace, name,
 	return applyUnstructured(ctx, dyn, config, source)
 }
 
-// ensureFluxProjects writes the Kustomization that applies the projects of
-// the GitOps repository.
-func ensureFluxProjects(ctx context.Context, config *rest.Config, namespace, source, path string) error {
-	dyn, err := dynamicClientFor(config)
-	if err != nil {
-		return err
-	}
-	projects := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "kustomize.toolkit.fluxcd.io/v1",
-		"kind":       "Kustomization",
-		"metadata":   map[string]any{"name": "kuberpack-projects", "namespace": namespace},
-		"spec": map[string]any{
-			"interval": "1m",
-			"path":     path,
-			"prune":    true,
-			"sourceRef": map[string]any{
-				"kind": "GitRepository", "name": source,
-			},
-		},
-	}}
-	return applyUnstructured(ctx, dyn, config, projects)
-}
-
 // dynamicClientFor builds a dynamic client for the Flux resources.
 func dynamicClientFor(config *rest.Config) (dynamic.Interface, error) {
 	return dynamic.NewForConfig(config)

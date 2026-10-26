@@ -194,11 +194,11 @@ func (s *Server) kubeletCounters(ctx context.Context, nodeName string) (map[stri
 	config := rest.CopyConfig(s.cfg.KubeConfig)
 	// Verify the node's serving identity, even if a developer's API config
 	// happens to disable verification. Never send credentials through redirects.
-	config.TLSClientConfig.Insecure = false
-	config.TLSClientConfig.ServerName = ""
+	config.Insecure = false
+	config.ServerName = ""
 	if len(s.cfg.KubeletCA) > 0 {
-		config.TLSClientConfig.CAFile = ""
-		config.TLSClientConfig.CAData = s.cfg.KubeletCA
+		config.CAFile = ""
+		config.CAData = s.cfg.KubeletCA
 	}
 	config.Timeout = 3 * time.Second
 	client, err := rest.HTTPClientFor(config)

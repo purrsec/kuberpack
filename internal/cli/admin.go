@@ -150,9 +150,9 @@ func (a *App) tokenCommands(root *cobra.Command) {
 		}
 		completed := false
 		defer func() {
-			out.Close()
+			_ = out.Close()
 			if !completed {
-				os.Remove(file)
+				_ = os.Remove(file)
 			}
 		}()
 		var created struct {

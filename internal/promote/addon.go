@@ -163,26 +163,6 @@ func writeAddonFiles(dir string, files ...addonFile) error {
 	return nil
 }
 
-// envYAMLForAddon renders the environment variables an addon provides.
-func envYAMLForAddon(envs []AddonEnv) string {
-	var b strings.Builder
-	for _, env := range envs {
-		if strings.TrimSpace(env.Name) == "" {
-			continue
-		}
-		b.WriteString("- name: " + env.Name + "\n")
-		if env.Value != "" {
-			b.WriteString("  value: " + strconv.Quote(env.Value) + "\n")
-			continue
-		}
-		b.WriteString("  valueFrom:\n")
-		b.WriteString("    secretKeyRef:\n")
-		b.WriteString("      name: " + env.SecretName + "\n")
-		b.WriteString("      key: " + env.SecretKey + "\n")
-	}
-	return b.String()
-}
-
 // addonEgressPeer est un ensemble de pods qu'un addon, ou l'un de ses
 // helpers, peut joindre, avec les ports TCP qu'il peut utiliser. Les labels
 // sont ceux que Kuberpack écrit sur ses propres pods : une règle ne nomme

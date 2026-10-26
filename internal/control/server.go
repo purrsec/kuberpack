@@ -736,22 +736,6 @@ func appJSON(app store.App) map[string]any {
 	}
 }
 
-func secretEnvOrDefault(env string) string {
-	if env = strings.TrimSpace(env); env != "" {
-		return env
-	}
-	return "prod"
-}
-
-// inheritSecretFromOrDefault normalizes to "prod" or "dev"; anything else
-// (including empty) defaults to "dev".
-func inheritSecretFromOrDefault(v string) string {
-	if strings.EqualFold(strings.TrimSpace(v), promote.SecretFromProd) {
-		return promote.SecretFromProd
-	}
-	return promote.SecretFromDev
-}
-
 func sanitizeName(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	var b strings.Builder

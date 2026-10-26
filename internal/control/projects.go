@@ -11,17 +11,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type projectBody struct {
-	Project  string `json:"project"`
-	Manifest string `json:"manifest"`
-}
-
 func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireAdmin(w, r); !ok {
 		return
 	}
 	apiError(w, 410, "upgrade_required", "use the v2 plan/deployment API")
-	return
 }
 
 // checkNamespaceOwnership refuses to write a project into a namespace that
@@ -60,7 +54,6 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	apiError(w, 410, "upgrade_required", "use an administrator destruction plan")
-	return
 }
 func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 	principal, _ := principalFrom(r.Context())
@@ -126,14 +119,4 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/yaml")
 	_, _ = w.Write(raw)
-}
-
-func projectJSON(res promote.ProjectResult) map[string]any {
-	return map[string]any{
-		"project":      res.Project,
-		"services":     res.Services,
-		"addons":       res.Addons,
-		"infra_commit": res.InfraCommitSHA,
-		"changed":      res.Changed,
-	}
 }

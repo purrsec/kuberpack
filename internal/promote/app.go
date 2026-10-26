@@ -212,11 +212,6 @@ func normalizeSpec(spec AppSpec) (AppSpec, error) {
 	return spec, nil
 }
 
-func writeMissingAppFiles(work string, spec AppSpec, p Platform) (bool, error) {
-	p = p.withDefaults()
-	return writeMissingAppFilesIn(work, p.AppDir(spec.Name), spec, p)
-}
-
 // writeMissingAppFilesIn writes the GitOps files of a service in a given
 // directory. The directory of a service of a project is not the app
 // directory: the manifest owns the layout.
@@ -261,11 +256,6 @@ func servicePaths(valuesPath string) (dir string, parent string, resource string
 	parent = filepath.ToSlash(filepath.Join(filepath.Dir(dir), "kustomization.yaml"))
 	resource = filepath.Base(dir)
 	return dir, parent, resource
-}
-
-func enableInParent(work string, name string, p Platform) (bool, error) {
-	p = p.withDefaults()
-	return enableInParentAt(work, p.ParentPath(), name)
 }
 
 // enableInParentAt lists a resource in a given parent kustomization.

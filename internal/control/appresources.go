@@ -192,7 +192,7 @@ func (s *Server) appUsageSamples(ctx context.Context, namespace, selector string
 	out := make(map[string]usageSample)
 	dyn, err := s.dynamicClient()
 	if err != nil {
-		return out, fmt.Errorf("Resource metrics API is unavailable")
+		return out, fmt.Errorf("resource metrics API is unavailable")
 	}
 	list, err := dyn.Resource(schema.GroupVersionResource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "pods"}).Namespace(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
 	if err != nil {

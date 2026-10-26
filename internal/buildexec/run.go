@@ -324,7 +324,7 @@ func validateScanReport(path string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("Trivy did not scan an image target")
+	return fmt.Errorf("trivy did not scan an image target")
 }
 
 func waitForBuildkit(ctx context.Context, timeout time.Duration) error {

@@ -52,7 +52,6 @@ func (s *Server) listBuilds(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) redeployApp(w http.ResponseWriter, r *http.Request) {
 	apiError(w, 410, "upgrade_required", "use the v2 plan/deployment API")
-	return
 }
 func (s *Server) fluxHook(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.FluxSecret == "" {

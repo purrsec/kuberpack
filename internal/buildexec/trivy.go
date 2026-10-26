@@ -112,14 +112,6 @@ func trivyVerdictOfFile(path string, accepted []string) (TrivyVerdict, error) {
 	return TrivyVerdictOf(data, accepted)
 }
 
-func summarizeTrivyFile(path string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return summarizeTrivy(data)
-}
-
 func summarizeTrivy(data []byte) string {
 	var report trivyReport
 	if err := json.Unmarshal(data, &report); err != nil {

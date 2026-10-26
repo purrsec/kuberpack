@@ -23,13 +23,13 @@ func (i *installation) lock(parent context.Context) (context.Context, func(), er
 	lease, err := client.Get(parent, "kuberpack-install", metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		lease = &coordv1.Lease{ObjectMeta: metav1.ObjectMeta{Name: "kuberpack-install"}, Spec: coordv1.LeaseSpec{HolderIdentity: &holder, LeaseDurationSeconds: &duration, RenewTime: &now}}
-		lease, err = client.Create(parent, lease, metav1.CreateOptions{})
+		_, err = client.Create(parent, lease, metav1.CreateOptions{})
 	} else if err == nil {
 		if lease.Spec.HolderIdentity != nil && *lease.Spec.HolderIdentity != "" && lease.Spec.RenewTime != nil && lease.Spec.LeaseDurationSeconds != nil && lease.Spec.RenewTime.Add(time.Duration(*lease.Spec.LeaseDurationSeconds)*time.Second).After(time.Now()) {
 			return nil, nil, fmt.Errorf("another installation holds the cluster lock; wait for it to finish or for its 90-second lease to expire")
 		}
 		lease.Spec = coordv1.LeaseSpec{HolderIdentity: &holder, LeaseDurationSeconds: &duration, RenewTime: &now}
-		lease, err = client.Update(parent, lease, metav1.UpdateOptions{})
+		_, err = client.Update(parent, lease, metav1.UpdateOptions{})
 	}
 	if err != nil {
 		return nil, nil, err

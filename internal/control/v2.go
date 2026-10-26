@@ -88,17 +88,6 @@ func (s *Server) projectManifest(ctx context.Context, project string) ([]byte, p
 	return raw, m, err
 }
 
-func (s *Server) knownProject(ctx context.Context, project string) bool {
-	if s.cfg.Store == nil {
-		return false
-	}
-	if _, err := s.cfg.Store.Object(ctx, "policy", project); err == nil {
-		return true
-	}
-	_, _, err := s.projectManifest(ctx, project)
-	return err == nil
-}
-
 func (s *Server) projectDTO(ctx context.Context, project string, p Principal) (api.Project, error) {
 	raw, m, err := s.projectManifest(ctx, project)
 	if errors.Is(err, promote.ErrProjectNotFound) {
@@ -390,22 +379,23 @@ func (s *Server) planV2(w http.ResponseWriter, r *http.Request) {
 	if body.Action == "" {
 		body.Action = "deploy"
 	}
-	if body.Action == "destroy" {
+	switch body.Action {
+	case "destroy":
 		if !p.isAdmin() {
 			apiError(w, 403, "admin_required", "only an administrator may destroy a project")
 			return
 		}
-	} else if body.Action == "deploy" {
+	case "deploy":
 		if !p.canPublish() || len(p.Services) > 0 {
 			apiError(w, 403, "maintainer_required", "publishing a manifest requires a maintainer token")
 			return
 		}
-	} else if body.Action == "redeploy" {
+	case "redeploy":
 		if !p.canDeploy() {
 			apiError(w, 403, "deployer_required", "a deployer token is required")
 			return
 		}
-	} else {
+	default:
 		apiError(w, 400, "invalid_action", "unknown plan action")
 		return
 	}

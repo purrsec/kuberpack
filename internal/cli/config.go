@@ -84,15 +84,15 @@ func atomicPrivate(name string, data []byte) error {
 	tmp := f.Name()
 	defer os.Remove(tmp)
 	if err := f.Chmod(0600); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if _, err = f.Write(data); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err = f.Sync(); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err = f.Close(); err != nil {
@@ -201,4 +201,3 @@ func (a *App) directoryLink() (string, association, bool) {
 	}
 	return "", association{}, false
 }
-func privateEqual(a, b []byte) bool { return bytes.Equal(bytes.TrimSpace(a), bytes.TrimSpace(b)) }

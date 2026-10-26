@@ -227,7 +227,7 @@ func resourceQuantity(value, fallback string) resource.Quantity {
 func InCluster(image string) (*JobRunner, error) {
 	config, err := rest.InClusterConfig()
 	if err != nil {
-		return nil, fmt.Errorf("Kubernetes in-cluster config: %w", err)
+		return nil, fmt.Errorf("kubernetes in-cluster config: %w", err)
 	}
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {

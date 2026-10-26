@@ -209,7 +209,7 @@ func infisicalCRContent(spec AppSpec, p Platform) string {
 	b.WriteString("        engineVersion: v1\n")
 	b.WriteString("        data:\n")
 	for _, key := range spec.Secrets {
-		b.WriteString(fmt.Sprintf("          %s: '{{ (index . %q).Value }}'\n", key, key))
+		fmt.Fprintf(&b, "          %s: '{{ (index . %q).Value }}'\n", key, key)
 	}
 	return b.String()
 }
