@@ -92,6 +92,22 @@ class HarnessContracts(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 suite.go_tests("mandatory", ["./..."])
 
+    def test_one_success_cannot_hide_a_missing_required_contract(self):
+        suite = Suite("unit-light")
+        events = json.dumps({"Package": "example", "Test": "one-contract", "Action": "pass"})
+        with patch.object(suite, "command", return_value=(0, events)):
+            with self.assertRaises(RuntimeError):
+                suite.go_tests("mandatory", ["./..."], required=["one-contract", "missing-contract"])
+        self.assertEqual(suite.checks[-1]["actual"], "missing")
+
+    def test_skipped_ansible_contract_cannot_be_reported_as_passed(self):
+        suite = Suite("unit-light")
+        path = Path(self.directory.name) / "ansible-events.jsonl"
+        path.write_text(json.dumps(dict(name="live contract", status="skipped", duration=0)) + "\n")
+        suite.report()
+        self.assertTrue(suite.failed)
+        self.assertEqual(suite.checks[-1]["actual"], "skipped")
+
     def test_private_container_copies_use_explicit_octal_permissions(self):
         def walk(value):
             if isinstance(value, list):

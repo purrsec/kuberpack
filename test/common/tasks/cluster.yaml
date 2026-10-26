@@ -6,11 +6,12 @@
     connected:
       - "{{ run_id }}-runner"
 
-- name: Create the isolated Kubernetes data volume
+- name: Create isolated Kubernetes data and disk-backed workload volumes
   community.docker.docker_volume:
-    name: "{{ run_id }}-k3s"
+    name: "{{ run_id }}-{{ item }}"
     labels:
       org.kuberpack.test.run: "{{ run_id }}"
+  loop: [k3s, kubelet]
 
 - name: Start a fresh Kubernetes node without host ports
   community.docker.docker_container:
@@ -26,9 +27,9 @@
         aliases: [k3s]
     volumes:
       - "{{ run_id }}-k3s:/var/lib/rancher/k3s"
+      - "{{ run_id }}-kubelet:/var/lib/kubelet"
     tmpfs:
       - /run
-      - /var/lib/kubelet:exec,size={{ kubelet_tmpfs_size | default('2g') }}
     command:
       - server
       - --node-name={{ run_id }}

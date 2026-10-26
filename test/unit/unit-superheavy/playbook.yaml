@@ -1,8 +1,6 @@
 - name: Prove installation and the full delivery pipeline on fresh Docker infrastructure
   hosts: localhost
   gather_facts: false
-  vars:
-    kubelet_tmpfs_size: 12g
   environment:
     KUBECONFIG: /tmp/kuberpack-kubeconfig.yaml
     KUBERPACK_TEST_RUN: "{{ run_id }}"

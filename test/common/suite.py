@@ -77,10 +77,11 @@ class Suite:
             raise RuntimeError(f"{name} failed with exit {code}; see {log.name}")
         return code, output
 
-    def go_tests(self, name, args, env=None, allowed_skips=()):
+    def go_tests(self, name, args, env=None, allowed_skips=(), required=()):
         code, output = self.command(name, ["go", "test", "-json", "-count=1", "-shuffle=on", *args],
                                     timeout=1800, env=env, check=False)
         terminal = 0
+        passed = set()
         for line in output.splitlines():
             try:
                 item = json.loads(line)
@@ -89,6 +90,8 @@ class Suite:
             if not item.get("Test") or item.get("Action") not in ("pass", "fail", "skip"):
                 continue
             terminal += 1
+            if item["Action"] == "pass":
+                passed.add(item["Test"])
             skipped = item["Action"] == "skip"
             permitted = skipped and item["Test"] in allowed_skips
             self.check(item["Package"] + "/" + item["Test"], item["Action"] == "pass" or permitted,
@@ -96,6 +99,8 @@ class Suite:
                        expected="explicit opt-in excluded" if permitted else "pass", actual=item["Action"])
             if permitted:
                 self.checks[-1]["status"] = "skipped"
+        for test in required:
+            self.check(name + "/required/" + test, test in passed, expected="pass", actual="pass" if test in passed else "missing")
         if code or not terminal or self.failed:
             print(self.redact(output[-16000:]), file=sys.stderr)
             raise RuntimeError(f"{name} failed or skipped a required test")
@@ -130,7 +135,7 @@ class Suite:
         if events.exists():
             for line in events.read_text().splitlines():
                 item = json.loads(line)
-                self.check("ansible/" + item["name"], item["status"] != "failed", item["duration"],
+                self.check("ansible/" + item["name"], item["status"] == "passed", item["duration"],
                            events.name, actual=item["status"])
         result = dict(schema_version=1, suite=self.name, run_id=self.run_id,
                       status="failed" if self.failed else "passed", checks=self.checks,
@@ -191,8 +196,10 @@ def main():
                 suite.go_tests("race tests", ["-race", "-timeout=60s", "./..."],
                                allowed_skips=json.loads((ROOT / "test/unit/unit-light/suite.json").read_text())["allowed_skips"])
             else:
-                suite.go_tests("upstream dependency contracts", ["-timeout=180s", "-run=^(TestTheClusterServicesAreFetchable|TestInfisicalChartsEnforceScopeAndRuntimeHardening|TestResolveDigestOnTheInternet)$", "./internal/platformcli", "./internal/oci"],
-                               env={"KUBERPACK_TEST_NETWORK": "1"})
+                required = [name for name in json.loads((ROOT / "test/unit/unit-light/suite.json").read_text())["allowed_skips"]
+                            if name != "TestBuildAdmissionLiveAPIServer"]
+                suite.go_tests("upstream dependency contracts", ["-timeout=180s", "-run=^(" + "|".join(required) + ")$", "./internal/platformcli", "./internal/oci"],
+                               env={"KUBERPACK_TEST_NETWORK": "1"}, required=required)
             suite.ansible(str(ROOT / "test/unit" / args.suite / "playbook.yaml"))
         elapsed = time.monotonic() - suite.budget_start
         suite.check("suite time budget", elapsed < suite.config["budget_seconds"], evidence=str(round(elapsed, 3)),

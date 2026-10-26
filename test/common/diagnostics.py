@@ -21,19 +21,26 @@ def main():
 
     records = []
 
-    def collect(name, args):
+    def collect(name, args, project=None):
         started = time.monotonic()
         try:
             result = subprocess.run(args, capture_output=True, text=True, timeout=15)
             output = result.stdout + result.stderr
             code = result.returncode
+            if project is not None and code == 0:
+                output = json.dumps(project(json.loads(result.stdout)), indent=2) + "\n"
         except subprocess.SubprocessError as error:
             code, output = 124, type(error).__name__
+        except ValueError as error:
+            code, output = 65, type(error).__name__
         (artifacts / (name + ".log")).write_text(redact(output))
         records.append(dict(name=name, exit_code=code, duration=round(time.monotonic() - started, 3)))
 
     for container in ("k3s", "forgejo"):
         collect("docker-" + container, ["docker", "logs", "--tail=150", run_id + "-" + container])
+    collect("pod-statuses", ["kubectl", "get", "pods", "-A", "-o=json", "--request-timeout=10s"],
+            lambda data: [{"name": p["metadata"]["name"], "namespace": p["metadata"]["namespace"],
+                           "status": p.get("status", {})} for p in data["items"]])
     for namespace, label in (("kuberpack", "app.kubernetes.io/part-of=kuberpack"),
                              ("flux-system", "app.kubernetes.io/part-of=flux"),
                              ("kuberpack-build", "app.kubernetes.io/name=kuberpack-build"),

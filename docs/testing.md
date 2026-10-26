@@ -72,8 +72,9 @@ d’ingress sont résolus dans la fixture, sans dépendre de nip.io. Aucun
 kubeconfig ou credential du poste n’est injecté.
 Le nœud k3s utilise son propre espace de noms cgroup. Les niveaux lourds
 nécessitent que Docker puisse démarrer un conteneur privilégié ; ce conteneur
-reste une fixture jetable. BuildKit utilise des snapshots `native` pour éviter
-les erreurs de copie/suppression d’overlayfs imbriqué dans ce banc Docker.
+reste une fixture jetable. BuildKit conserve son stockage standard.
+Les fichiers de travail des pods vivent dans un volume Docker sur disque :
+un build n’écrit pas ses couches d’images dans un `tmpfs` facturé à sa mémoire.
 
 Les étapes critiques utilisent les modules Ansible de cycle de vie Docker,
 de copie, de certificats et d’attente. Les assertions typées et la génération
@@ -106,6 +107,8 @@ Par défaut, les artefacts vont dans `.test-results/<run-id>/` :
 - `invocation.json` : identifiant et durée totale, préparation comprise ;
 - événements Ansible et Go, sorties des commandes et diagnostics du cluster ;
 - logs bornés des workloads et contrôleurs, révisions Flux et état des conteneurs.
+  Les statuts des conteneurs conservent notamment les causes `OOMKilled` et
+  les redémarrages, sans exporter leurs variables d’environnement.
 
 `--artifacts <dossier>` choisit une destination neuve ou vide. Réutiliser un
 ancien rapport est refusé. Les secrets de fixture restent dans le conteneur
@@ -159,9 +162,10 @@ cert-manager existant ; elle ne prétend pas valider une émission ACME publique
 Une application de test minimale utilise la bibliothèque standard Python pour
 réduire les variations de dépendances applicatives. Son image est réellement
 construite et scannée ; aucune image préconstruite ne remplace le build.
-La configuration Railpack met à jour `pip` et `certifi` dans le runtime et
-dans l’environnement applicatif. Aucun résultat de scan n’est ignoré pour la
-fixture. Le parcours vérifie aussi les révisions appliquées par Flux, la
+La configuration Railpack installe la version corrigée de `certifi` dans un
+environnement sans `pip` et exclut les outils de construction du runtime.
+Leur absence est également vérifiée par l’application réelle. Aucun résultat
+de scan n’est ignoré pour la fixture. Le parcours vérifie aussi les révisions appliquées par Flux, la
 reprise d’une installation interrompue sans rotation des secrets, la
 préservation d’une application indépendante, le refus de destruction en
 présence d’un PVC et l’absence de commit/build lors d’une réapplication identique.

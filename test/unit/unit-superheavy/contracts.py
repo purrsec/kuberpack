@@ -165,9 +165,9 @@ class Contracts:
         env = self.git_environment()
         if not source.exists():
             self.command("clone test source", ["git", "clone", self.credentials["forge_url"] + "/kuberpack/source.git", source], env=env)
-        program = '''import hashlib, json, os
+        program = '''import hashlib, importlib.metadata, importlib.util, json, os
 from http.server import BaseHTTPRequestHandler, HTTPServer
-BODY = json.dumps({"version": "VERSION", "secret_sha256": hashlib.sha256(os.environ["PIPELINE_SECRET"].encode()).hexdigest()}).encode()
+BODY = json.dumps({"version": "VERSION", "secret_sha256": hashlib.sha256(os.environ["PIPELINE_SECRET"].encode()).hexdigest(), "pip_absent": importlib.util.find_spec("pip") is None, "certifi_version": importlib.metadata.version("certifi")}).encode()
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -178,9 +178,9 @@ HTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
 '''.replace("VERSION", version)
         (source / "main.py").write_text(program)
         (source / ".python-version").write_text("3.13\n")
-        # Keep Python's TLS and packaging tooling patched as well as the app.
-        # No scanner exception is granted to the fixture.
-        (source / "requirements.txt").write_text("pip==26.2.2\ncertifi==2026.10.23\n")
+        # Ship the patched application dependency and omit build-only tooling
+        # from the final runtime. The real scanner receives no exception.
+        (source / "requirements.txt").write_text("certifi==2026.10.23\n")
         fixture = Path(__file__).resolve().parents[2] / "common/fixtures/railpack.json"
         (source / "railpack.json").write_text(fixture.read_text())
         for args in (["add", "main.py", ".python-version", "requirements.txt", "railpack.json"],
@@ -284,6 +284,8 @@ HTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
         body = self.wait("HTTPS application serves the first delivery", lambda: self.application())
         self.check("application version", body["version"], "one")
         self.check("human secret reached the application", body["secret_sha256"], expected_secret)
+        self.check("runtime omits the build-only package installer", body["pip_absent"], True)
+        self.check("runtime uses the patched TLS dependency", body["certifi_version"], "2026.10.23")
         self.scoped_rbac()
         previous_head = self.remote_revision("applications")
         repeated_configuration = self.cli("deploy", "--file", str(manifest_path), "--request-id=fixture-reapply", "--yes", "--timeout=3m", timeout=200)

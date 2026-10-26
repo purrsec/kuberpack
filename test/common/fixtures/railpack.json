@@ -3,16 +3,19 @@
   "steps": {
     "install": {
       "commands": [
-        "python -m pip install --upgrade pip==26.2.2 certifi==2026.10.23",
-        "..."
+        "python -m venv --without-pip /app/.venv",
+        {"src": "requirements.txt", "dest": "requirements.txt"},
+        "python -m pip --python /app/.venv install -r requirements.txt",
+        {"path": "/app/.venv/bin"}
       ]
     }
   },
   "deploy": {
     "inputs": [
       {
-        "step": "build",
-        "include": ["/mise/shims", "/mise/installs", "/usr/local/bin/mise", "/etc/mise/config.toml", "/root/.local/state/mise"]
+        "step": "packages:mise",
+        "include": ["/mise/shims", "/mise/installs", "/usr/local/bin/mise", "/etc/mise/config.toml", "/root/.local/state/mise"],
+        "exclude": ["**/site-packages/pip", "**/site-packages/pip-*.dist-info", "**/ensurepip"]
       },
       {"step": "build", "include": ["/app/.venv"]},
       {"step": "build", "include": ["."], "exclude": [".venv"]}
