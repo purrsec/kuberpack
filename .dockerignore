@@ -7,7 +7,6 @@ hello-world/
 .worktrees
 .test-results
 .test-cache
-testenv
 **/*.key
 *.sqlite
 data/

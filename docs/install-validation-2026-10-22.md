@@ -1,6 +1,6 @@
 # Validation de l’installation — 22 octobre 2026
 
-> Compte rendu historique. Les scripts cités appartiennent à la [version auditée](https://github.com/purrsec/kuberpack/blob/da5fb9970ca8b3cf5f5894aa7835d4064376edbc/testenv/scripts). Les suites actuelles sont décrites dans [testing.md](testing.md).
+> Compte rendu historique. Le banc original reste consultable dans la [version auditée](https://github.com/purrsec/kuberpack/tree/da5fb9970ca8b3cf5f5894aa7835d4064376edbc). Les suites actuelles sont décrites dans [testing.md](testing.md).
 
 Ce compte rendu décrit le banc Docker et la préparation de l'essai suivant.
 La suppression/recréation du VPS et les résultats sur la machine neuve de
@@ -49,23 +49,18 @@ contient uniquement les déploiements de ce test.
 
 ## Rejouer le test
 
-Le cluster Docker doit être vierge de Kuberpack ; les images de test doivent
-être importées dans son containerd. Le script refuse une autre API que
-`https://172.29.90.11:6443` et vérifie l’image du conteneur local.
+Le banc exact de ce compte rendu appartient à la révision historique liée en
+introduction et n'est plus livré dans l'arborescence courante. Sa couverture a
+été reprise par le scénario Docker isolé commun au poste développeur et à la CI :
 
-```bash
-make build
-python3 testenv/scripts/install-smoke.py \
-  --kubeconfig /tmp/kuberpack-install-kubeconfig.yaml \
-  --cluster docker-clean \
-  --control-image docker.io/kuberpack-test/control:install-audit \
-  --helmfile /tmp/helmfile \
-  --interrupt
+```console
+python3 test/run.py superheavy
 ```
 
-Le script installe d’abord une application indépendante et cert-manager avec
-un Helmfile. Il prépare un issuer signé par la CA du banc d’essai, interrompt
-l’installation pendant Infisical puis la reprend. Il charge ensuite un secret
+La suite crée elle-même un cluster et une forge jetables. Elle installe d’abord
+une application indépendante et cert-manager. Elle prépare un issuer signé par
+la CA du run, interrompt l’installation pendant Infisical puis la reprend. Elle
+charge ensuite un secret
 avec un compte humain, compile un seul manifeste applicatif et contrôle par
 HTTPS l’empreinte de la valeur reçue. Le développeur de ce test utilise un
 kubeconfig inexistant et aucun jeton de forge.
@@ -73,13 +68,12 @@ kubeconfig inexistant et aucun jeton de forge.
 Les empreintes de secrets et UID de volumes sont comparés pendant la reprise
 et la réinstallation. La seconde installation doit produire zéro commit GitOps.
 Le Helmfile, les UID, données et spécifications de ses ressources sont comparés.
-Le script conserve un `result.json` sans valeurs de secrets dans son dossier
-temporaire ; le fichier privé de secrets y est protégé en mode 0600.
+La suite conserve un `result.json` sans valeurs de secrets dans ses artefacts ;
+le fichier privé de secrets y est protégé en mode 0600.
 
-Le développeur de ce banc d'essai fait confiance à sa CA locale avec
-`SSL_CERT_FILE=testenv/pki/ca-bundle-merged.crt`. Le test ne désactive pas
-la validation TLS. Les certificats sont émis par le cert-manager extérieur
-réutilisé, sans remplacer cet opérateur.
+La CA est générée pour le run et transmise uniquement aux composants qui en ont
+besoin. Le test ne désactive pas la validation TLS. Les certificats sont émis
+par le cert-manager extérieur réutilisé, sans remplacer cet opérateur.
 
 ## Limites
 

@@ -1,6 +1,6 @@
 # Audit sécurité Kuberpack — 23 octobre 2026
 
-> Compte rendu historique. Les scripts cités appartiennent à la [version auditée](https://github.com/purrsec/kuberpack/blob/da5fb9970ca8b3cf5f5894aa7835d4064376edbc/testenv/scripts). Les suites actuelles sont décrites dans [testing.md](testing.md).
+> Compte rendu historique. Le banc original reste consultable dans la [version auditée](https://github.com/purrsec/kuberpack/tree/da5fb9970ca8b3cf5f5894aa7835d4064376edbc). Les suites actuelles sont décrites dans [testing.md](testing.md).
 
 ## Verdict
 
@@ -77,35 +77,18 @@ NetworkPolicy : `wget` depuis un voisin, depuis un pod auxiliaire non étiqueté
 et `nslookup` pour le DNS. Un refus attendu doit être un échec réel du client,
 pas seulement une règle présente dans l’API.
 
-Commandes reproductibles :
+Commandes reproductibles actuelles :
 
-```sh
-go test ./...
-go vet ./...
-go test -race ./internal/control ./internal/promote ./internal/release \
-  ./internal/fetch ./internal/buildexec ./internal/builder ./cmd/kuberpack
-KUBERPACK_SECURITY_KUBECONFIG=$HOME/.kube/k3s-test.yaml \
-  go test ./charts -run TestBuildAdmission -count=1
-KUBERPACK_TEST_NETWORK=1 go test ./cmd/kuberpack \
-  -run TestInfisicalChartsEnforceScopeAndRuntimeHardening -count=1
-python3 testenv/scripts/install-smoke.py \
-  --kubeconfig "$HOME/.kube/k3s-test.yaml" --cluster docker-final \
-  --project security-install-replay-$(date +%s) \
-  --control-image docker.io/kuberpack-test/control:security-audit-final \
-  --helmfile /tmp/helmfile
-python3 testenv/scripts/security-smoke.py \
-  --kubeconfig "$HOME/.kube/k3s-test.yaml"
-go run ./cmd/kuberpack doctor network --context default \
-  --kubeconfig "$HOME/.kube/k3s-test.yaml" --yes
+```console
+python3 test/run.py static
+python3 test/run.py heavy
+python3 test/run.py superheavy
 ```
 
-Le projet `security-install-20261023` est la fixture du dernier passage ; un
-rejeu doit utiliser un nom neuf, comme le fait la commande ci-dessus.
-
-Les scripts refusent une autre adresse de cluster. Les fixtures d’admission
-sont supprimées à la fin, sans exécuter les images des cas dangereux. Le script
-réseau crée puis supprime ses seuls projets temporaires. Les valeurs de secrets
-sont capturées en mémoire et ne sont pas imprimées.
+Chaque exécution choisit un identifiant et des noms de projets neufs. Les
+fixtures d’admission sont supprimées à la fin, sans exécuter les images des cas
+dangereux. Les valeurs de secrets sont capturées en mémoire et ne sont pas
+imprimées. Les détails des scénarios et artefacts sont dans [testing.md](testing.md).
 
 ## Risques restants et ordre de travail
 

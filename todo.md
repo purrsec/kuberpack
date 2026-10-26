@@ -512,7 +512,7 @@ transite jamais par Kuberpack : seul le `secretKeyRef` est écrit.
 La recette commune est [test/run.py](test/run.py), exécutée dans Docker sur
 le poste du développeur et dans GitHub. Les opérations critiques de création,
 d’installation et de destruction des fixtures sont orchestrées avec Ansible.
-Les anciens scripts Bash de `testenv/scripts/` sont retirés.
+Les anciens scripts Bash du banc partagé sont retirés.
 
 | Niveau | Budget des contrôles | Scénarios |
 | --- | ---: | --- |
