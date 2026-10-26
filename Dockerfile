@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # in Dockerfile.builder. Copy the HTTPS transport and shared libraries into an
 # empty runtime, rather than inheriting the shell/tools of a general git image.
 FROM cgr.dev/chainguard/git:latest@sha256:913be6e43cb65ed65bc5c5f9b22e68e780616a66c5237da59334c7d1cdc3d628 AS git-runtime
-FROM alpine:3.21 AS runtime-files
+FROM alpine:3.24 AS runtime-files
 COPY --from=git-runtime /usr/lib/ /runtime/usr/lib/
 COPY --from=git-runtime /usr/bin/git /runtime/usr/bin/git
 COPY --from=git-runtime /usr/libexec/git-core/git-remote-http /runtime/usr/libexec/git-core/git-remote-http
