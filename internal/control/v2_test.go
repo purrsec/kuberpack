@@ -3,6 +3,7 @@ package control
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os/exec"
 	"reflect"
@@ -141,6 +142,62 @@ func TestV2PlanIsReadOnlyAndAcceptanceIsIdempotent(t *testing.T) {
 	r = tokenTestRequest(t, s.Handler(), http.MethodPost, "/api/v2/projects/demo/deployments", other, jsonBody(t, api.DeploymentRequest{PlanID: plan.ID, RequestID: "another"}))
 	if r.Code != 404 {
 		t.Fatalf("plan replay by another credential: %d", r.Code)
+	}
+}
+
+func TestDestroyingAnEmptyReservationRevokesTokensWithoutChangingGitOps(t *testing.T) {
+	s, tokens := v2Fixture(t)
+	ctx := context.Background()
+	s.cfg.Kube = fake.NewSimpleClientset()
+	s.cfg.KubeDynamic = dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
+	s.cfg.TenantIsolation = true
+	before := remoteGitHead(t, s.cfg.GitOpsURL)
+	reserved := tokenTestRequest(t, s.Handler(), http.MethodPost, "/api/v2/admin/projects/unused", tokens["admin"], "")
+	if reserved.Code != http.StatusCreated {
+		t.Fatalf("reserve: %d %s", reserved.Code, reserved.Body.String())
+	}
+	_, reader, err := s.cfg.Store.CreateAPIToken(ctx, "unused reader", "unused", "reader", time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := tokenTestRequest(t, s.Handler(), http.MethodPost, "/api/v2/projects/unused/plans", tokens["admin"], jsonBody(t, api.PlanRequest{Action: "destroy"}))
+	if r.Code != http.StatusCreated {
+		t.Fatalf("plan: %d %s", r.Code, r.Body.String())
+	}
+	var plan api.Plan
+	if err := json.Unmarshal(r.Body.Bytes(), &plan); err != nil {
+		t.Fatal(err)
+	}
+	r = tokenTestRequest(t, s.Handler(), http.MethodPost, "/api/v2/projects/unused/deployments", tokens["admin"], jsonBody(t, api.DeploymentRequest{PlanID: plan.ID, RequestID: "remove-reservation", ConfirmProject: "unused"}))
+	if r.Code != http.StatusAccepted {
+		t.Fatalf("accept: %d %s", r.Code, r.Body.String())
+	}
+	var accepted api.Deployment
+	if err := json.Unmarshal(r.Body.Bytes(), &accepted); err != nil {
+		t.Fatal(err)
+	}
+	object, err := s.cfg.Store.Object(ctx, "deployment", accepted.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var operation savedDeployment
+	if err := json.Unmarshal(object.Payload, &operation); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.advanceDeployment(ctx, &operation); err != nil {
+		t.Fatal(err)
+	}
+	if operation.Status != "succeeded" {
+		t.Fatalf("reservation removal did not finish: %+v", operation)
+	}
+	if _, err := s.cfg.Store.Object(ctx, "policy", "unused"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("reservation remains: %v", err)
+	}
+	if _, err := s.cfg.Store.AuthenticateAPIToken(ctx, reader, time.Now()); err == nil {
+		t.Fatal("removed project's token remains usable")
+	}
+	if remoteGitHead(t, s.cfg.GitOpsURL) != before {
+		t.Fatal("removing an unpublished reservation changed GitOps")
 	}
 }
 

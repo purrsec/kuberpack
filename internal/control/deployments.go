@@ -266,7 +266,9 @@ func (s *Server) advanceDeployment(ctx context.Context, d *savedDeployment) erro
 		}
 		if p.Action == "destroy" {
 			_, m, err := s.projectManifest(ctx, p.Project)
-			if err != nil {
+			if errors.Is(err, promote.ErrProjectNotFound) {
+				m = promote.ProjectManifest{}
+			} else if err != nil {
 				return err
 			}
 			policy, _, err := s.policyFor(ctx, p.Project, m)
