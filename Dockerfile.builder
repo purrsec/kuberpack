@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Builder image for one Kubernetes Job. The application image is produced by
 # the rootless BuildKit sidecar, not by this Dockerfile.
-FROM --platform=$BUILDPLATFORM golang:1.26.9-alpine AS go-build
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS go-build
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 WORKDIR /src
