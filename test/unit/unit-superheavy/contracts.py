@@ -314,6 +314,11 @@ HTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
         self.check("webhook delivery retains the rotated secret", self.application()["secret_sha256"], rotated)
         builds = self.cli("builds", "list", "--service=web")["builds"]
         self.check("webhook built the pushed commit", any(b["commit_sha"] == next_commit and b["status"] == "succeeded" for b in builds), True)
+        webhook_head = self.remote_revision("applications")
+        self.wait("Flux applied the webhook GitOps revision before reinstall", lambda:
+            self.flux_ready("kustomization", "kuberpack-project-pipeline", "kuberpack", webhook_head), timeout=90)
+        self.wait("the webhook Helm release settled before reinstall", lambda:
+            self.flux_ready("helmrelease", "web", "pipeline"), timeout=90)
         self.command("create a persistent claim in the project", ["kubectl", "apply", "-f", "-"], data=json.dumps({
             "apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "retain-data", "namespace": "pipeline"},
             "spec": {"accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "64Mi"}}}}))
