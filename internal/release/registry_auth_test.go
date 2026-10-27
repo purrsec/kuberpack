@@ -9,6 +9,7 @@ import (
 
 	"git.host.bzh/pepe/kuberpack/internal/builder"
 	"git.host.bzh/pepe/kuberpack/internal/git"
+	"git.host.bzh/pepe/kuberpack/internal/netguard"
 )
 
 type successfulTestBuilder struct{}
@@ -16,6 +17,10 @@ type successfulTestBuilder struct{}
 func (successfulTestBuilder) Build(context.Context, builder.Request) error { return nil }
 
 func TestReleaseUsesOnlyTheDedicatedRegistryCredential(t *testing.T) {
+	// The release polls its registry until the pushed tag appears: without
+	// an allowlisted loopback the environment guard refuses the fixture
+	// server and the poll never succeeds.
+	t.Setenv(netguard.EnvAllow, "127.0.0.1")
 	requests := 0
 	registry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
@@ -55,6 +60,7 @@ func TestReleaseDoesNotFallBackToTheGitOpsTokenForTheRegistry(t *testing.T) {
 }
 
 func TestPinExistingUsesOnlyTheDedicatedRegistryCredential(t *testing.T) {
+	t.Setenv(netguard.EnvAllow, "127.0.0.1")
 	requests := 0
 	registry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
