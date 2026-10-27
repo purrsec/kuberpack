@@ -666,3 +666,44 @@ kuberpack project create --project stirling \
   --image docker.io/stirlingtools/stirling-pdf:1.0.1 \
   --port 8080 --hostname stirling.example.org
 ```
+
+## Immich (image tierce + base + cache + volume)
+
+Le cas complet : une image publiée, une base PostgreSQL, un cache Valkey,
+un disque pour les photos, et les variables qui les relient. Les add-ons
+donnent `DATABASE_URL` (référence vers le Secret généré par CloudNativePG)
+et `VALKEY_URL` (l'URL du service de cache) ; le service n'a plus qu'à les
+consommer comme des variables ordinaires.
+
+```yaml
+services:
+  server:
+    type: stateless
+    image: ghcr.io/immich-app/immich-server:release
+    port: 2283
+    hostname: photos.example.org
+    env:
+      DB_DATABASE_NAME: immich
+    command: [start.sh]
+    volumes:
+      - name: upload
+        path: /data
+        size: 10Gi
+    startup_budget: 120
+    addons: [photos-db, photos-cache]
+
+addons:
+  photos-db:
+    engine: cnpg
+    database: immich
+    owner: immich
+  photos-cache:
+    engine: valkey
+    plan: small
+```
+
+Le volume avec une taille est un disque : sa réclamation est écrite à côté
+du service, les données survivent au pod. Le budget de démarrage devient
+une sonde (`(120+1)/2` essais) et allonge le délai du HelmRelease ; une
+image déjà épinglée par digest (`image@sha256:...`) est reprise telle
+quelle, sans appel réseau.

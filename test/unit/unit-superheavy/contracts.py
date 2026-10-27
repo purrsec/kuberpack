@@ -338,6 +338,44 @@ HTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
         removed = self.administrator_cli("projects", "destroy", "remove-me", "--plan-id", plan["id"], "--confirm-project=remove-me", "--yes")
         self.check("administrator destroys an empty reservation", removed["status"], "succeeded")
         self.request("GET", "/api/v2/session", token=revoked, expected=401)
+        self.third_party_image()
+
+
+    def third_party_image(self):
+        """A published image deploys without a source repository or a build."""
+        self.request("POST", "/api/v2/admin/projects/sidekick", token=self.token, expected=201)
+        self.request("PUT", "/api/v2/admin/projects/sidekick/policy", {
+            "namespace": "sidekick", "domains": ["sidekick.fixture.test"], "repositories": [],
+            "max_services": 2, "max_replicas": 1}, token=self.token)
+        token = self.issue_token("maintainer", project="sidekick")
+        pinned = json.loads((Path(__file__).resolve().parents[2] / "common/images.json").read_text())["busybox"]
+        manifest_path = self.directory / "sidekick.yaml"
+        manifest_path.write_text(json.dumps({"project": "sidekick", "services": {"side": {
+            "image": pinned, "hostname": "sidekick.fixture.test", "port": 8080, "healthcheck": "/",
+            "command": ["sh", "-ec", "mkdir -p /tmp/www; printf sidekick-ok > /tmp/www/index.html; exec httpd -f -p 8080 -h /tmp/www"]}}}, indent=2) + "\n")
+        args = ["deploy", "--file", str(manifest_path), "--request-id=fixture-sidekick", "--yes", "--detach"]
+        first = self.cli(*args, token=token)
+        deployed = self.cli("deployments", "wait", first["deployment_id"], "--timeout=10m", token=token, timeout=620)
+        self.check("third-party image delivery succeeded", deployed["status"], "succeeded")
+        self.check("published image needs no build",
+                   len(self.cli("builds", "list", "--service=side", token=token)["builds"]), 0)
+        deployment = self.kube("get", "deployment", "side", "-n", "sidekick")
+        image = deployment["spec"]["template"]["spec"]["containers"][0]["image"]
+        self.check("third-party runtime image is pinned by digest", re.search(r"@sha256:[a-f0-9]{64}$", image) is not None, True)
+
+        def running():
+            try:
+                items = self.kube("get", "pods", "-n", "sidekick", "-l=app.kubernetes.io/name=side")["items"]
+            except RuntimeError:
+                return None
+            return [p for p in items if p["status"].get("phase") == "Running"] or None
+        pods = self.wait("third-party image pod is running", running, timeout=300)
+        self.check("third-party pods run the pinned image",
+                   all(c["image"] == image for p in pods for c in p["spec"]["containers"]), True)
+        plan = self.administrator_cli("projects", "destroy", "sidekick", "--plan")
+        removed = self.administrator_cli("projects", "destroy", "sidekick",
+                                         "--plan-id", plan["id"], "--confirm-project=sidekick", "--yes")
+        self.check("third-party project is destroyed", removed["status"], "succeeded")
 
 
 def main():

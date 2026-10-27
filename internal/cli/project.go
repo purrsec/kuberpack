@@ -182,22 +182,30 @@ func (a *App) initProject(o initOptions) error {
 		return fail(2, "choose --repository or --image")
 	}
 	if o.repository == "" && o.image == "" {
-		o.repository = a.gitRepository()
-		if o.repository == "" {
-			if !a.interactive() {
+		detected := a.gitRepository()
+		if !a.interactive() {
+			if detected == "" {
 				return fail(2, "provide --repository or --image")
 			}
+			o.repository = detected
+		} else {
+			// A detected remote is only the default; the source kind stays a
+			// choice so a folder with a remote can still deploy an image.
 			choice, err := a.selectOne("Source", []string{"Git repository", "Published image"})
 			if err != nil {
 				return err
 			}
 			if choice == "Published image" {
 				o.image, err = a.ask("Published image reference", "")
+				if err != nil {
+					return err
+				}
+				o.repository = ""
 			} else {
-				o.repository, err = a.ask("Source repository", "")
-			}
-			if err != nil {
-				return err
+				o.repository, err = a.ask("Source repository", detected)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}

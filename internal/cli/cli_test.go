@@ -182,8 +182,8 @@ func TestGuidedFirstDeploymentNeedsNoFlagsOrPrematureServiceLink(t *testing.T) {
 			t.Fatalf("git fixture: %v %s", err, b)
 		}
 	}
-	// Task, port, missing hostname, grouped local recap, final remote plan.
-	a.In = strings.NewReader("1\n\ndemo.example.org\n1\ny\n")
+	// Task, source kind, detected repository default, port, missing hostname, grouped local recap, final remote plan.
+	a.In = strings.NewReader("1\n1\n\n\ndemo.example.org\n1\ny\n")
 	if err := a.Run(context.Background(), nil); err != nil {
 		t.Fatalf("wizard: %v\n%s", err, diagnostics)
 	}
@@ -295,6 +295,62 @@ func TestWaitFailureAndTimeoutHaveDistinctExitCodes(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestInitWithDetectedRemoteCanDeployAPublishedImage(t *testing.T) {
+	a, _, _ := testApp(t)
+	a.Interactive = true
+	for _, args := range [][]string{{"init"}, {"remote", "add", "origin", "https://git.example.org/acme/api.git"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = a.WorkDir
+		if b, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git fixture: %v %s", err, b)
+		}
+	}
+	// Project, published image source, image reference, default port,
+	// hostname, save the proposed configuration.
+	a.In = strings.NewReader("demo\n2\nghcr.io/immich:release\n\ndemo.example.org\n1\n")
+	if err := a.Run(context.Background(), []string{"init"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(a.WorkDir, "kuberpack.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "image: ghcr.io/immich:release") {
+		t.Fatalf("manifest does not deploy the image: %s", data)
+	}
+	if strings.Contains(string(data), "repository:") {
+		t.Fatalf("manifest kept the detected repository: %s", data)
+	}
+}
+
+func TestInitWithDetectedRemoteDefaultsToTheRemoteRepository(t *testing.T) {
+	a, _, _ := testApp(t)
+	a.Interactive = true
+	for _, args := range [][]string{{"init"}, {"remote", "add", "origin", "https://git.example.org/acme/api.git"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = a.WorkDir
+		if b, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git fixture: %v %s", err, b)
+		}
+	}
+	// Project, git source, detected repository default, default port,
+	// hostname, save the proposed configuration.
+	a.In = strings.NewReader("demo\n1\n\n\ndemo.example.org\n1\n")
+	if err := a.Run(context.Background(), []string{"init"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(a.WorkDir, "kuberpack.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "repository: ") || !strings.Contains(string(data), "acme/api") {
+		t.Fatalf("manifest does not reuse the detected remote: %s", data)
+	}
+	if strings.Contains(string(data), "image:") {
+		t.Fatalf("manifest gained an image: %s", data)
 	}
 }
 
