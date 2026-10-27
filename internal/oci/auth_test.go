@@ -6,12 +6,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"git.host.bzh/pepe/kuberpack/internal/netguard"
 )
 
 // A hosted registry (GHCR, ECR, GAR) refuses the credentials and asks for a
 // token. The client trades the credentials against the token service and
 // retries.
 func TestRegistryExchangesTheCredentialsForAToken(t *testing.T) {
+	// The fixture registry lives on loopback: the environment fallback
+	// must allow it explicitly, as an operator would.
+	t.Setenv(netguard.EnvAllow, "127.0.0.1")
 	var sawBasic, sawBearer bool
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

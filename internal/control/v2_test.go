@@ -447,3 +447,33 @@ func TestServiceRestrictedPlanDoesNotExposeTheCompleteManifest(t *testing.T) {
 		t.Fatalf("restricted token selected another service: %d", r.Code)
 	}
 }
+
+// A redeploy re-pins the digest of a published image: the tag is resolved
+// again, no source repository is needed and no build is queued.
+func TestRedeployRePinsAPublishedImage(t *testing.T) {
+	s, tokens := v2Fixture(t)
+	m := promote.ProjectManifest{Project: "demo", Namespace: "demo", Services: map[string]promote.Service{
+		"web": {Image: "docker.io/library/nginx@sha256:" + strings.Repeat("c", 64), Hostname: "web.example.org", Port: 8080},
+	}}
+	req := s.requestProject(context.Background(), "demo")
+	req.Manifest = m
+	if _, err := promote.EnsureProject(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	r := tokenTestRequest(t, s.Handler(), http.MethodPost, "/api/v2/projects/demo/plans", tokens["maintainer"], jsonBody(t, api.PlanRequest{Action: "redeploy", Service: "web"}))
+	if r.Code != 201 {
+		t.Fatalf("plan: %d %s", r.Code, r.Body.String())
+	}
+	var plan api.Plan
+	_ = json.Unmarshal(r.Body.Bytes(), &plan)
+	if len(plan.Targets) != 1 || !strings.HasSuffix(plan.Targets[0].Image, "@sha256:"+strings.Repeat("c", 64)) {
+		t.Fatalf("re-pinned target: %+v", plan.Targets)
+	}
+	if len(plan.Changes) != 1 || plan.Changes[0].Action != "rebuild" {
+		t.Fatalf("re-pin change: %+v", plan.Changes)
+	}
+	r = tokenTestRequest(t, s.Handler(), http.MethodPost, "/api/v2/projects/demo/plans", tokens["maintainer"], jsonBody(t, api.PlanRequest{Action: "redeploy", Service: "ghost"}))
+	if r.Code != 400 {
+		t.Fatalf("unknown service was accepted: %d", r.Code)
+	}
+}

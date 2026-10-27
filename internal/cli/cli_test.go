@@ -529,3 +529,42 @@ func TestWizardInGitFolderCanDeployAPublishedImage(t *testing.T) {
 		t.Fatalf("wizard kept the detected repository: %s", data)
 	}
 }
+
+// A redeploy re-pins a published image instead of refusing it; --commit
+// stays reserved for repository services.
+func TestRedeployRePinsAPublishedImage(t *testing.T) {
+	s, ca := tlsFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/session":
+			_ = json.NewEncoder(w).Encode(session())
+		case "/api/v2/projects/demo/services":
+			_ = json.NewEncoder(w).Encode(map[string]any{"services": []api.Service{{ID: "demo-side", Name: "side", Project: "demo", Image: "ghcr.io/immich:release"}}})
+		case "/api/v2/projects/demo":
+			_ = json.NewEncoder(w).Encode(api.Project{Name: "demo", Services: []api.Service{{ID: "demo-side", Name: "side", Project: "demo"}}})
+		case "/api/v2/projects/demo/plans":
+			var request api.PlanRequest
+			_ = json.NewDecoder(r.Body).Decode(&request)
+			if request.Action != "redeploy" || request.Service != "side" {
+				t.Errorf("wrong redeploy request: %+v", request)
+			}
+			_ = json.NewEncoder(w).Encode(api.Plan{ID: "plan_2", Project: "demo", Action: "redeploy"})
+		case "/api/v2/projects/demo/deployments":
+			w.WriteHeader(202)
+			_ = json.NewEncoder(w).Encode(api.Deployment{ID: "dep_2", Project: "demo", Status: "accepted"})
+		default:
+			t.Errorf("unexpected request: %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	a, _, _ := testApp(t)
+	writeConnection(t, a, s.URL, ca)
+	if err := a.Run(context.Background(), []string{"redeploy", "--service", "side", "--yes", "--detach"}); err != nil {
+		t.Fatalf("redeploy refused a published image: %v", err)
+	}
+	b, _, _ := testApp(t)
+	b.ConfigDir = a.ConfigDir
+	writeConnection(t, b, s.URL, ca)
+	if err := b.Run(context.Background(), []string{"redeploy", "--service", "side", "--commit", "abcdef1234567890abcdef1234567890abcdef12", "--yes", "--detach"}); err == nil || Code(err) != 2 {
+		t.Fatalf("--commit was accepted for a published image: %v", err)
+	}
+}

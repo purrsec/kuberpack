@@ -41,7 +41,7 @@ kuberpack deployments wait dep_ID
 
 La connexion et le projet sont mémorisés dans la configuration utilisateur. `link` associe un autre dossier à un projet existant et permet de sélectionner un service par défaut pour les logs, les builds et la reconstruction. `status` sans `--service` affiche le projet. Une cible ambiguë est demandée en terminal et refusée en automatisation.
 
-Un push Git sur la branche configurée déclenche normalement un build. Les fichiers non poussés ne sont jamais téléversés par le CLI. `redeploy` reconstruit un service `repository:` depuis sa configuration enregistrée ; ce n'est pas un redémarrage des pods. Pour un service `image:`, modifiez la référence puis utilisez `deploy` ; aucun build Kuberpack ne lui est associé.
+Un push Git sur la branche configurée déclenche normalement un build. Les fichiers non poussés ne sont jamais téléversés par le CLI. `redeploy` reconstruit un service `repository:` depuis sa configuration enregistrée ; ce n'est pas un redémarrage des pods. Pour un service `image:`, `redeploy` re-pinne le digest du tag sans builder de build ; aucun build Kuberpack ne lui est associé.
 
 `deploy` publie le **manifeste complet** du projet. Il refuse `--service`. La préparation du plan valide l'état distant, les permissions, les quotas, les paramètres opérateur, les références et la compilation dans un checkout temporaire sans push. Les commits et les digests affichés sont conservés dans le plan. `validate` effectue uniquement les contrôles structurels locaux, sans réseau.
 

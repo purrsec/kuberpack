@@ -667,15 +667,25 @@ kuberpack project create --project stirling \
   --port 8080 --hostname stirling.example.org
 ```
 
-## Immich (image tierce + base + cache + volume)
+## Immich (images tierces + base + cache + volume)
 
-Le cas complet : une image publiée, une base PostgreSQL, un cache Valkey,
-un disque pour les photos, et les variables qui les relient. Les add-ons
-donnent `DATABASE_URL` (référence vers le Secret généré par CloudNativePG)
-et `VALKEY_URL` (l'URL du service de cache) ; le service n'a plus qu'à les
-consommer comme des variables ordinaires.
+Le cas complet : deux images publiées (serveur + machine learning), une
+base PostgreSQL, un cache Valkey, un disque pour les photos, et les
+variables qui les relient. Les add-ons donnent `DATABASE_URL` (référence
+vers le Secret `<projet>-<addon>-app` généré par CloudNativePG, clé `uri`
+du catalogue) et `VALKEY_URL` (l'URL du service de cache,
+`valkey://<projet>-<addon>:6379`) ; le service n'a plus qu'à les consommer
+comme des variables ordinaires. Les variables du manifeste priment sur
+celles des add-ons.
 
 ```yaml
+project: photos
+
+policies:
+  defaultDeny: true
+  # Le machine learning télécharge ses modèles au démarrage.
+  internet: true
+
 services:
   server:
     type: stateless
@@ -684,6 +694,7 @@ services:
     hostname: photos.example.org
     env:
       DB_DATABASE_NAME: immich
+      REDIS_DBINDEX: "0"
     command: [start.sh]
     volumes:
       - name: upload
@@ -691,6 +702,17 @@ services:
         size: 10Gi
     startup_budget: 120
     addons: [photos-db, photos-cache]
+    # Le serveur joint le machine learning sur son port.
+    peers: [ml]
+  ml:
+    type: stateless
+    image: ghcr.io/immich-app/immich-machine-learning:release
+    port: 3003
+    # Chaque service a un hostname : le compilateur refuse un service
+    # sans nom public. Le trafic interne passe par le DNS du cluster,
+    # pas par ce nom.
+    hostname: ml.photos.example.org
+    startup_budget: 180
 
 addons:
   photos-db:
@@ -702,8 +724,36 @@ addons:
     plan: small
 ```
 
+Trois règles à retenir :
+
+- **Chaque service a un hostname**, même interne. L'ingress est créé,
+  mais `server` joint `ml` par le DNS du cluster
+  (`ml.photos.svc.cluster.local:3003`, ou `ml.photos` en forme courte),
+  jamais par le hostname. `peers: [ml]` ouvre la NetworkPolicy du
+  serveur vers le port du service pair ; sans lui, le `defaultDeny` du
+  projet coupe la connexion.
+- **Les noms exacts attendus par Immich viennent de sa documentation,
+  pas d'ici.** Kuberpack injecte `DATABASE_URL` et `VALKEY_URL` ; le
+  reste (`DB_HOSTNAME`, `DB_PASSWORD`, …) se mappe avec `env:` pour les
+  valeurs littérales et `secrets:` pour les clés Infisical injectées sous
+  le même nom. `DB_DATABASE_NAME` et `REDIS_DBINDEX` ci-dessus sont un
+  exemple : vérifiez-les contre la version d'Immich que vous déployez.
+- **Le healthcheck doit répondre 2xx/3xx** sur le port du service (`/`
+  par défaut) : la sonde de démarrage bloque la livraison sinon. Le
+  serveur Immich sert son interface sur `/` ; pour un service sans
+  endpoint HTTP, réglez ce champ avant de déployer.
+
 Le volume avec une taille est un disque : sa réclamation est écrite à côté
 du service, les données survivent au pod. Le budget de démarrage devient
 une sonde (`(120+1)/2` essais) et allonge le délai du HelmRelease ; une
 image déjà épinglée par digest (`image@sha256:...`) est reprise telle
 quelle, sans appel réseau.
+
+### Mettre à jour une image tierce
+
+`kuberpack redeploy --service server` re-pinne le digest du tag : le plan
+résout le tag au moment du plan et l'épingle dans le fichier généré,
+sans toucher au manifeste et sans builder de build. Sinon, modifiez le
+tag dans le manifeste puis `deploy`. Un tag mobile (comme `release`)
+repris tel quel est donc re-résolu à chaque `deploy`, même sans toucher
+au manifeste.

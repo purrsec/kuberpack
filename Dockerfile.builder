@@ -14,7 +14,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags="-s -w" -o /kuberpack-builder ./cmd/kuberpack-builder
 
-FROM alpine:3.21 AS tools
+FROM alpine:3.24 AS tools
 ARG RAILPACK_VERSION=0.39.0
 ARG RAILPACK_SHA256=728407f5cdb9e9bc1cdd07f568419344a20e71b0a5a9fd90a9cfbaca0a6c94f7
 ARG TRIVY_VERSION=0.74.0
@@ -36,7 +36,7 @@ RUN set -eu; work="$(mktemp -d)"; \
 
 FROM docker.io/moby/buildkit:v0.34.1-rootless@sha256:f68752a5a94acfcdad2d07867b7075601a421638e17fc5f28efc1c814d0c4f89 AS buildkit
 
-FROM alpine:3.21
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates git skopeo tar bash coreutils \
     && addgroup -g 1000 kuberpack \
     && adduser -D -u 1000 -G kuberpack kuberpack \

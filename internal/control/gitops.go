@@ -247,10 +247,12 @@ func (s *Server) waitForGitOpsHook(ctx context.Context) {
 		} else {
 			log.Printf("kuberpack gitops webhook: %v", err)
 		}
+		timer := time.NewTimer(5 * time.Second)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-time.After(5 * time.Second):
+		case <-timer.C:
 		}
 	}
 }

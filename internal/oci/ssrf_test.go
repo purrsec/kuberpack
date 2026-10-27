@@ -102,6 +102,26 @@ func TestRegistryBoundsRedirects(t *testing.T) {
 	}
 }
 
+// Sans politique explicite, le client retombe sur la garde lue dans
+// l'environnement : sans allowlist, un registre sur la boucle locale est
+// refusé avant toute connexion. Il n'y a jamais de client libre.
+func TestRegistryWithoutPolicyUsesEnvironmentGuard(t *testing.T) {
+	t.Setenv(netguard.EnvAllow, "")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Docker-Content-Digest", testDigest)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	registry, err := New(server.URL, "images", "test-only-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.ManifestDigest(context.Background(), "pepe/web", "latest"); !errors.Is(err, netguard.ErrBlocked) {
+		t.Fatalf("le repli sans politique devait être gardé: %v", err)
+	}
+}
+
 // Un client injecté reste prioritaire : les tests existants peuvent parler à
 // un serveur local sans allowlist, mais l'appelant garde la responsabilité.
 func TestInjectedHTTPClientIsKept(t *testing.T) {

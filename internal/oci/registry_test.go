@@ -6,11 +6,16 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"git.host.bzh/pepe/kuberpack/internal/netguard"
 )
 
 const testDigest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 func TestManifestDigest(t *testing.T) {
+	// The fixture registry lives on loopback: the environment fallback
+	// must allow it explicitly, as an operator would.
+	t.Setenv(netguard.EnvAllow, "127.0.0.1")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v2/pepe/web/manifests/sha-abc" {
 			t.Errorf("path: %s", r.URL.Path)
@@ -39,6 +44,7 @@ func TestManifestDigest(t *testing.T) {
 }
 
 func TestDigestForCommitPrefersProductTag(t *testing.T) {
+	t.Setenv(netguard.EnvAllow, "127.0.0.1")
 	sha := "0123456789abcdef0123456789abcdef01234567"
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v2/pepe/web/manifests/"+TagForCommit(sha), func(w http.ResponseWriter, r *http.Request) {
@@ -65,6 +71,7 @@ func TestDigestForCommitPrefersProductTag(t *testing.T) {
 }
 
 func TestDigestForCommitRequiresProductTag(t *testing.T) {
+	t.Setenv(netguard.EnvAllow, "127.0.0.1")
 	sha := "d45ace010726ffffffffffffffffffffffffffff"
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v2/pepe/hello-world/manifests/"+TagForCommit(sha), func(w http.ResponseWriter, r *http.Request) {
@@ -86,6 +93,7 @@ func TestDigestForCommitRequiresProductTag(t *testing.T) {
 }
 
 func TestWaitForCommit(t *testing.T) {
+	t.Setenv(netguard.EnvAllow, "127.0.0.1")
 	sha := "0123456789abcdef0123456789abcdef01234567"
 	hits := 0
 	mux := http.NewServeMux()

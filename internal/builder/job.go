@@ -281,6 +281,8 @@ func (r *JobRunner) Build(ctx context.Context, req Request) error {
 	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	var failedAt time.Time
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 	for {
 		current, err := r.Client.BatchV1().Jobs(created.Namespace).Get(ctx, created.Name, metav1.GetOptions{})
 		if err != nil {
@@ -307,7 +309,7 @@ func (r *JobRunner) Build(ctx context.Context, req Request) error {
 				return fail.Text(fail.Job, "failed")
 			}
 			return fail.Text(fail.Job, "timeout")
-		case <-time.After(interval):
+		case <-ticker.C:
 		}
 	}
 }

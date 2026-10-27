@@ -40,6 +40,8 @@ func Run(ctx context.Context, client kubernetes.Interface, interval time.Duratio
 	if log == nil {
 		log = func(string, ...any) {}
 	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 	for {
 		changed, err := Reconcile(ctx, client)
 		if err != nil {
@@ -50,7 +52,7 @@ func Run(ctx context.Context, client kubernetes.Interface, interval time.Duratio
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(interval):
+		case <-ticker.C:
 		}
 	}
 }

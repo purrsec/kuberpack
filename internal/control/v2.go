@@ -453,8 +453,8 @@ func (s *Server) planV2(w http.ResponseWriter, r *http.Request) {
 		}
 		if body.Action == "redeploy" {
 			v, exists := m.Services[body.Service]
-			if !exists || v.Repository == "" {
-				apiError(w, 400, "source_service_required", "select a registered repository service")
+			if !exists || (v.Repository == "" && strings.TrimSpace(v.Image) == "") {
+				apiError(w, 400, "source_service_required", "select a registered repository or published-image service")
 				return
 			}
 			if len(p.Services) > 0 && !slices.Contains(p.Services, body.Service) {

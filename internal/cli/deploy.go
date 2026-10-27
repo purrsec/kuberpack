@@ -121,8 +121,11 @@ func (a *App) deploy(o deployOptions, rebuild bool) error {
 			return err
 		}
 		request.Service = service.Name
-		if service.Repository == "" {
-			return fail(2, "this service uses a published image; edit the manifest and deploy it")
+		if service.Repository == "" && service.Image == "" {
+			return fail(2, "service %s has neither a source repository nor a published image", service.Name)
+		}
+		if service.Repository == "" && o.commit != "" {
+			return fail(2, "--commit is only supported for repository services; redeploying a published image re-pins its tag")
 		}
 	}
 	path := "/api/v2/projects/" + url.PathEscape(project)

@@ -148,6 +148,8 @@ func (a *App) status(watch bool) error {
 	}
 	service := a.service
 
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
 	for {
 		var v any
 		path := "/api/v2/projects/" + url.PathEscape(project) + "/services"
@@ -174,7 +176,7 @@ func (a *App) status(watch bool) error {
 		select {
 		case <-a.ctx.Done():
 			return a.ctx.Err()
-		case <-time.After(2 * time.Second):
+		case <-ticker.C:
 		}
 	}
 }
@@ -371,6 +373,8 @@ func (a *App) buildCommands(root *cobra.Command) {
 		defer cancel()
 		previous := ""
 		finished := false
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
 		for {
 			resp, err := client.request(ctx, http.MethodGet, base+"/"+url.PathEscape(id)+"/logs", nil)
 			if err != nil {
@@ -422,7 +426,7 @@ func (a *App) buildCommands(root *cobra.Command) {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(time.Second):
+			case <-ticker.C:
 			}
 		}
 	}}

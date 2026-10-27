@@ -266,12 +266,14 @@ func (s *Server) Start(ctx context.Context) {
 // and then at every interval. The reconciliation is idempotent: an
 // application that did not change is not built again.
 func (s *Server) reconcileLoop(ctx context.Context) {
+	ticker := time.NewTicker(s.cfg.ReconcileInterval)
+	defer ticker.Stop()
 	for {
 		s.reconcileSafely(ctx)
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(s.cfg.ReconcileInterval):
+		case <-ticker.C:
 		}
 	}
 }

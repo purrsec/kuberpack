@@ -1,5 +1,6 @@
 """Regression tests for false-green results, deadlines and secret redaction."""
 import base64
+import checks
 import importlib.util
 import json
 import os
@@ -173,6 +174,47 @@ class HarnessContracts(unittest.TestCase):
         verification = next(task["community.docker.docker_container_exec"] for task in tasks
                             if task.get("name") == "Verify the rendered registry endpoint was loaded by containerd")
         self.assertIn("{{ forge_ip }}:3000", verification["argv"])
+
+
+    def test_go_toolchain_guard_accepts_matching_pins(self):
+        root = Path(self.directory.name)
+        (root / "go.mod").write_text("module example\n\ngo 1.27.3\n")
+        (root / "Dockerfile").write_text("ARG GO_VERSION=1.27.3  # Dependabot cannot bump this\nFROM golang:${GO_VERSION}-alpine AS build\n")
+        (root / "Dockerfile.builder").write_text("FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS go-build\n")
+        common = root / "test" / "common"
+        common.mkdir(parents=True)
+        (common / "Dockerfile").write_text("FROM golang:1.27.3-bookworm@sha256:abc AS go\n")
+        self.assertEqual(checks.go_toolchain_errors(root), [])
+
+    def test_go_toolchain_guard_reports_arg_drift_with_the_fix_value(self):
+        root = Path(self.directory.name)
+        (root / "go.mod").write_text("module example\n\ngo 1.27.3\n")
+        (root / "Dockerfile").write_text("ARG GO_VERSION=1.26.9\n")
+        (root / "Dockerfile.builder").write_text("FROM golang:1.27.3-alpine\n")
+        common = root / "test" / "common"
+        common.mkdir(parents=True)
+        (common / "Dockerfile").write_text("FROM golang:1.27.3-bookworm\n")
+        errors = checks.go_toolchain_errors(root)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("Dockerfile", errors[0])
+        self.assertIn("ARG GO_VERSION", errors[0])
+        self.assertIn("go 1.27.3", errors[0])
+
+    def test_go_toolchain_guard_reports_literal_from_drift(self):
+        root = Path(self.directory.name)
+        (root / "go.mod").write_text("module example\n\ngo 1.27.3\n")
+        (root / "Dockerfile").write_text("ARG GO_VERSION=1.27.3\n")
+        (root / "Dockerfile.builder").write_text("FROM golang:1.26.9-alpine AS go-build\n")
+        common = root / "test" / "common"
+        common.mkdir(parents=True)
+        (common / "Dockerfile").write_text("FROM golang:1.27.3-bookworm\n")
+        errors = checks.go_toolchain_errors(root)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("Dockerfile.builder", errors[0])
+        self.assertIn("go 1.27.3", errors[0])
+
+    def test_go_toolchain_guard_covers_the_actual_repository(self):
+        self.assertEqual(checks.go_toolchain_errors(COMMON.parents[1]), [])
 
 
 if __name__ == "__main__":

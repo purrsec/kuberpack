@@ -277,10 +277,12 @@ func readDigest(ctx context.Context, authFile, image string) (string, error) {
 	var lastErr error
 	for attempt := 0; attempt < digestAttempts; attempt++ {
 		if attempt > 0 {
+			timer := time.NewTimer(digestRetryDelay)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return "", ctx.Err()
-			case <-time.After(digestRetryDelay):
+			case <-timer.C:
 			}
 		}
 		cmd := exec.CommandContext(ctx, "skopeo", "inspect", "--authfile", authFile, "--format", "{{.Digest}}", "docker://"+image)
@@ -330,6 +332,8 @@ func validateScanReport(path string) error {
 func waitForBuildkit(ctx context.Context, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 	for {
 		cmd := exec.CommandContext(ctx, "buildctl", "--addr", "unix:///run/buildkit/buildkitd.sock", "debug", "workers")
 		if err := cmd.Run(); err == nil {
@@ -338,7 +342,7 @@ func waitForBuildkit(ctx context.Context, timeout time.Duration) error {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("buildKit did not become ready: %w", ctx.Err())
-		case <-time.After(time.Second):
+		case <-ticker.C:
 		}
 	}
 }

@@ -30,9 +30,10 @@ type Registry struct {
 	User       string
 	Token      string
 	HTTPClient *http.Client
-	// Policy garde les accès sortants du client. Nil laisse l'appelant
-	// responsable de l'URL : le registre configuré par l'opérateur est une
-	// adresse de confiance, celui d'un manifeste ne l'est pas.
+	// Policy garde les accès sortants du client. Nil retombe sur la garde
+	// lue dans l'environnement : le registre configuré par l'opérateur est
+	// une adresse de confiance (hôte public ou allowlisté), celui d'un
+	// manifeste ne l'est pas et exige une politique explicite.
 	Policy *netguard.Policy
 }
 
@@ -56,7 +57,9 @@ func New(baseURL, user, token string) (*Registry, error) {
 }
 
 // client choisit le client HTTP : un client injecté (test), la politique
-// d'egress si elle est posée, ou le client par défaut.
+// d'egress si elle est posée, ou la garde lue dans l'environnement. Il n'y a
+// jamais de client libre : sans politique explicite, l'allowlist de
+// l'opérateur (KUBERPACK_EGRESS_ALLOW) s'applique, donc restrictive.
 func (r *Registry) client() *http.Client {
 	if r.HTTPClient != nil {
 		return r.HTTPClient
@@ -64,7 +67,7 @@ func (r *Registry) client() *http.Client {
 	if r.Policy != nil {
 		return r.Policy.HTTPClient(30 * time.Second)
 	}
-	return &http.Client{Timeout: 30 * time.Second}
+	return netguard.FromEnvironment().HTTPClient(30 * time.Second)
 }
 
 // ManifestDigest returns Docker-Content-Digest for repository:tag.
