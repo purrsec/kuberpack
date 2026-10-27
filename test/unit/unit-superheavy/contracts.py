@@ -343,10 +343,13 @@ HTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
 
     def third_party_image(self):
         """A published image deploys without a source repository or a build."""
-        self.request("POST", "/api/v2/admin/projects/sidekick", token=self.token, expected=201)
+        # self.token is a project-scoped maintainer by now: project
+        # administration needs the fixture administrator credential.
+        admin = self.credentials["api_token"]
+        self.request("POST", "/api/v2/admin/projects/sidekick", token=admin, expected=201)
         self.request("PUT", "/api/v2/admin/projects/sidekick/policy", {
             "namespace": "sidekick", "domains": ["sidekick.fixture.test"], "repositories": [],
-            "max_services": 2, "max_replicas": 1}, token=self.token)
+            "max_services": 2, "max_replicas": 1}, token=admin)
         token = self.issue_token("maintainer", project="sidekick")
         pinned = json.loads((Path(__file__).resolve().parents[2] / "common/images.json").read_text())["busybox"]
         manifest_path = self.directory / "sidekick.yaml"
