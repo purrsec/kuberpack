@@ -30,7 +30,7 @@ func TestProjectPublishedImageWithAddonsAndVolumes(t *testing.T) {
 				Port:     2283,
 				Hostname: "photos.example.org",
 				Env: map[string]string{
-					"IMMICH_VERSION":  "release",
+					"IMMICH_VERSION":   "release",
 					"DB_DATABASE_NAME": "immich",
 				},
 				Command:       []string{"start.sh"},
