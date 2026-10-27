@@ -3,11 +3,14 @@
 
 # syntax=docker/dockerfile:1
 
-ARG GO_VERSION=1.26.9
+ARG GO_VERSION=1.27.3
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
+# Follow go.mod (Dependabot cannot bump the ARG above): the toolchain
+# auto-upgrades instead of failing under GOTOOLCHAIN=local.
+ENV GOTOOLCHAIN=auto
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
