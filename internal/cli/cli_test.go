@@ -485,3 +485,47 @@ func TestBuildLogFollowPinsLatestIDAndReadsFinalSnapshot(t *testing.T) {
 		t.Fatalf("log follow lost or repeated content: latest=%d snapshots=%d output=%q", listReads, logReads, out.String())
 	}
 }
+
+// A git folder does not force the wizard onto its own remote: the guided
+// first deployment can choose a published image instead.
+func TestWizardInGitFolderCanDeployAPublishedImage(t *testing.T) {
+	sess := session()
+	sess.Project = "immich"
+	s, ca := tlsFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/session":
+			_ = json.NewEncoder(w).Encode(sess)
+		case "/api/v2/projects/immich":
+			_ = json.NewEncoder(w).Encode(api.Project{Name: "immich", Revision: "rev-1"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	a, _, _ := testApp(t)
+	writeConnection(t, a, s.URL, ca)
+	a.Interactive = true
+	for _, args := range [][]string{{"init"}, {"remote", "add", "origin", "https://git.example.org/acme/api.git"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = a.WorkDir
+		if b, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git fixture: %v %s", err, b)
+		}
+	}
+	// Task 1 (prepare and deploy), source 2 (published image), image
+	// reference, default port, hostname, save. The plan request then 404s:
+	// this fixture proves the guided manifest, not the deployment.
+	a.In = strings.NewReader("1\n2\nghcr.io/immich-app/immich-server:release\n\nphotos.example.org\n1\n")
+	if err := a.Run(context.Background(), nil); err == nil {
+		t.Fatal("wizard deployed without a plan endpoint")
+	}
+	data, err := os.ReadFile(filepath.Join(a.WorkDir, "kuberpack.yaml"))
+	if err != nil {
+		t.Fatalf("wizard wrote no manifest: %v", err)
+	}
+	if !strings.Contains(string(data), "image: ghcr.io/immich-app/immich-server:release") {
+		t.Fatalf("wizard did not take the published image: %s", data)
+	}
+	if strings.Contains(string(data), "repository:") {
+		t.Fatalf("wizard kept the detected repository: %s", data)
+	}
+}
