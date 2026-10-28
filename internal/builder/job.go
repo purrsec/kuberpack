@@ -189,7 +189,7 @@ func (r *JobRunner) memoryLimits() (builder, buildkit string) {
 func (r *JobRunner) volumeSizes() (work, cache, tmp resource.Quantity) {
 	total, err := resource.ParseQuantity(strings.TrimSpace(r.NodeDisk))
 	if err != nil || total.IsZero() {
-		return resource.MustParse("3Gi"), resource.MustParse("2Gi"), resource.MustParse("1Gi")
+		return resource.MustParse("3Gi"), resource.MustParse("8Gi"), resource.MustParse("1Gi")
 	}
 	// The volumes must leave the node room to breathe: the kubelet
 	// evicts the pods that write the most when the disk crosses its

@@ -441,6 +441,15 @@ control plane écrivent la même forme), sinon chaque build déclencherait un
 commit parasite ; le compilateur applique les mêmes défauts que l’ancien
 chemin (port 8080, healthcheck `/`).
 
+### Étape 6 — extinction des apps standalone historiques (à faire)
+
+Trois applications historiques (`wattchman-website`, `ecms`, `vite-vite`)
+vivent encore sous `kubernetes/vps/apps/<app>` à côté de
+`kubernetes/vps/projects/<project>`. Lors de la bascule finale de
+l’arborescence (`03-apps/vps`), les migrer vers des projets Kuberpack
+(`kuberpack.yaml`) pour que l’observation du déploiement et la réconciliation
+GitOps par manifeste fonctionnent nativement, sans mode legacy standalone.
+
 ### Pièges
 
 - **La compilation doit rester idempotente.** Un projet recompilé ne doit

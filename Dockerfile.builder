@@ -4,6 +4,7 @@
 FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS go-build
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
+ARG CADDY_VERSION=v2.11.7
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
@@ -12,7 +13,10 @@ COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -trimpath -ldflags="-s -w" -o /kuberpack-builder ./cmd/kuberpack-builder
+    go build -trimpath -ldflags="-s -w" -o /kuberpack-builder ./cmd/kuberpack-builder && \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    GOBIN=/out go install -trimpath -ldflags="-s -w" github.com/caddyserver/caddy/v2/cmd/caddy@${CADDY_VERSION} && \
+    (mv /out/caddy /caddy || mv /out/${TARGETOS}_${TARGETARCH}/caddy /caddy)
 
 FROM alpine:3.24 AS tools
 ARG RAILPACK_VERSION=0.39.0
@@ -43,6 +47,7 @@ RUN apk add --no-cache ca-certificates git skopeo tar bash coreutils \
     && mkdir -p /work \
     && chown 1000:1000 /work
 COPY --from=go-build --chmod=755 /kuberpack-builder /usr/bin/kuberpack-builder
+COPY --from=go-build --chmod=755 /caddy /usr/share/kuberpack/caddy
 COPY --from=tools --chmod=755 /railpack /usr/bin/railpack
 COPY --from=tools --chmod=755 /trivy /usr/bin/trivy
 COPY --from=tools --chmod=755 /syft /usr/bin/syft

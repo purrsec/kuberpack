@@ -46,6 +46,7 @@ func (s *Server) reconcileApps(ctx context.Context, project string, apps []promo
 			record := appFromManifest(project, desc)
 			record.Image = desc.Image
 			record.Autodeploy = false
+			record.AutodeployPR = false
 			published = append(published, record)
 			continue
 		}
@@ -225,6 +226,7 @@ func appFromManifest(project string, desc promote.ProjectApp) store.App {
 		ProductionBranch:  desc.Branch,
 		Strategy:          desc.Strategy,
 		Autodeploy:        true,
+		AutodeployPR:      true,
 		Hostname:          desc.Hostname,
 		Port:              desc.Port,
 		Healthcheck:       desc.Healthcheck,

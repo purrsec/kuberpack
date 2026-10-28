@@ -267,7 +267,7 @@ func TestTheVolumesOfABuildFollowTheNode(t *testing.T) {
 	// A node whose size is not known keeps the default volumes.
 	unknown := &JobRunner{}
 	work, cache, tmp = unknown.volumeSizes()
-	if work.String() != "3Gi" || cache.String() != "2Gi" || tmp.String() != "1Gi" {
+	if work.String() != "3Gi" || cache.String() != "8Gi" || tmp.String() != "1Gi" {
 		t.Errorf("the default volumes are %v, %v, %v", work, cache, tmp)
 	}
 }

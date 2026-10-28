@@ -176,6 +176,13 @@ func Run(ctx context.Context, req Request) (digest string, err error) {
 	if err := addAppPath(prepared.PlanPath); err != nil {
 		return "", fail.Stage(fail.Railpack, err)
 	}
+	// Static frontends use Caddy. The upstream prebuilt archive can lag behind
+	// the Go standard library security releases; use the Caddy binary compiled
+	// with the builder's current Go toolchain when present.
+	if err := replacePlanCaddy(prepared.PlanPath, buildDir, "/usr/share/kuberpack/caddy"); err != nil {
+		return "", fail.Stage(fail.Railpack, err)
+	}
+	defer os.Remove(filepath.Join(buildDir, planCaddyContextFile))
 	if err := waitForBuildkit(ctx, time.Minute); err != nil {
 		return "", fail.Stage(fail.Buildkit, err)
 	}
@@ -380,6 +387,101 @@ func addAppPath(planPath string) error {
 		deploy["startCommand"] = "export PATH=/app:$PATH; " + command
 	}
 	fmt.Printf("start command %q, PATH of the application in the image\n", deploy["startCommand"])
+	encoded, err := json.Marshal(plan)
+	if err != nil {
+		return fmt.Errorf("write the plan: %w", err)
+	}
+	return os.WriteFile(planPath, encoded, 0o600)
+}
+
+const planCaddyContextFile = ".kuberpack-caddy"
+
+// replacePlanCaddy replaces Railpack's prebuilt Caddy download step with the
+// Caddy binary compiled by the builder's own Go toolchain.
+func replacePlanCaddy(planPath, buildDir, caddyBinaryPath string) error {
+	if strings.TrimSpace(planPath) == "" || strings.TrimSpace(buildDir) == "" || strings.TrimSpace(caddyBinaryPath) == "" {
+		return nil
+	}
+	if _, err := os.Stat(caddyBinaryPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("stat builder caddy: %w", err)
+	}
+	raw, err := os.ReadFile(planPath)
+	if err != nil {
+		return fmt.Errorf("read the plan: %w", err)
+	}
+	var plan map[string]any
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		return fmt.Errorf("read the plan: %w", err)
+	}
+	steps, ok := plan["steps"].([]any)
+	if !ok {
+		return nil
+	}
+	hasCaddy := false
+	for _, item := range steps {
+		step, ok := item.(map[string]any)
+		if !ok || step["name"] != "packages:caddy" {
+			continue
+		}
+		hasCaddy = true
+		step["commands"] = []map[string]any{
+			{"src": planCaddyContextFile, "dest": "/railpack/caddy/caddy"},
+			{"cmd": "chmod 0755 /railpack/caddy/caddy"},
+			{"path": "/railpack/caddy"},
+			{"path": "/railpack/caddy/bin"},
+		}
+	}
+	if !hasCaddy {
+		return nil
+	}
+	for _, item := range steps {
+		step, ok := item.(map[string]any)
+		if !ok || step["name"] == "packages:caddy" {
+			continue
+		}
+		inputs, ok := step["inputs"].([]any)
+		if !ok {
+			continue
+		}
+		for i := 1; i < len(inputs); i++ {
+			input, ok := inputs[i].(map[string]any)
+			if !ok {
+				continue
+			}
+			if local, _ := input["local"].(bool); !local {
+				continue
+			}
+			var excludes []string
+			if existing, ok := input["exclude"].([]any); ok {
+				for _, entry := range existing {
+					if s, ok := entry.(string); ok {
+						excludes = append(excludes, s)
+					}
+				}
+			}
+			already := false
+			for _, entry := range excludes {
+				if entry == planCaddyContextFile {
+					already = true
+					break
+				}
+			}
+			if !already {
+				excludes = append(excludes, planCaddyContextFile)
+			}
+			input["exclude"] = excludes
+		}
+	}
+	data, err := os.ReadFile(caddyBinaryPath)
+	if err != nil {
+		return fmt.Errorf("read builder caddy: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(buildDir, planCaddyContextFile), data, 0o755); err != nil {
+		return fmt.Errorf("stage builder caddy: %w", err)
+	}
 	encoded, err := json.Marshal(plan)
 	if err != nil {
 		return fmt.Errorf("write the plan: %w", err)

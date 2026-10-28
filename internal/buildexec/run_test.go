@@ -79,3 +79,56 @@ func TestAddAppPath(t *testing.T) {
 		t.Fatalf("the start command must find the binary of the application: %q", parsed.Deploy.StartCommand)
 	}
 }
+
+func TestReplacePlanCaddy(t *testing.T) {
+	dir := t.TempDir()
+	buildDir := filepath.Join(dir, "src")
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	caddyBin := filepath.Join(dir, "caddy")
+	if err := os.WriteFile(caddyBin, []byte("fake-caddy-binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	planPath := filepath.Join(dir, "railpack-plan.json")
+	raw := `{
+		"steps": [
+			{
+				"name": "packages:caddy",
+				"inputs": [{"image": "ghcr.io/railwayapp/railpack-builder:latest"}],
+				"commands": [
+					{"cmd": "mise install-into caddy@2.11.7 /railpack/caddy"},
+					{"path": "/railpack/caddy"},
+					{"path": "/railpack/caddy/bin"}
+				]
+			},
+			{
+				"name": "build",
+				"inputs": [
+					{"step": "install"},
+					{"local": true, "include": ["."], "exclude": ["node_modules"]}
+				]
+			}
+		]
+	}`
+	if err := os.WriteFile(planPath, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := replacePlanCaddy(planPath, buildDir, caddyBin); err != nil {
+		t.Fatal(err)
+	}
+	staged, err := os.ReadFile(filepath.Join(buildDir, planCaddyContextFile))
+	if err != nil || string(staged) != "fake-caddy-binary" {
+		t.Fatalf("staged caddy binary: %q, %v", staged, err)
+	}
+	out, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "mise install-into caddy") {
+		t.Fatalf("prebuilt caddy download was not replaced: %s", out)
+	}
+	if !strings.Contains(string(out), `"/railpack/caddy/caddy"`) || !strings.Contains(string(out), `".kuberpack-caddy"`) {
+		t.Fatalf("expected staged caddy copy and exclude in plan: %s", out)
+	}
+}

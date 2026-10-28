@@ -350,6 +350,9 @@ func TestReconcileArmsThePipeline(t *testing.T) {
 	if app.Healthcheck != "/healthz" || app.Port != 8080 {
 		t.Fatalf("runtime: %+v", app)
 	}
+	if !app.Autodeploy || !app.AutodeployPR {
+		t.Fatalf("autodeploy defaults: autodeploy=%v autodeploy_pr=%v", app.Autodeploy, app.AutodeployPR)
+	}
 	secret, err := store.SecretsDir(filepath.Join(dir, "secrets")).Get(app.ID)
 	if err != nil || secret == "" {
 		t.Fatalf("the webhook secret must exist: %v", err)
