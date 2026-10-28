@@ -142,7 +142,7 @@ class HarnessContracts(unittest.TestCase):
         self.assertIn("**", workflow["on"]["push"]["branches"])
         for event in ("push", "pull_request"):
             self.assertIn("test/**", workflow["on"][event]["paths"])
-        self.assertEqual(set(workflow["jobs"]["image"]["needs"]), {"static", "light", "heavy", "superheavy"})
+        self.assertEqual(set(workflow["jobs"]["image"]["needs"]), {"static", "light", "lint", "vuln", "heavy", "superheavy"})
         for job in ("static", "light", "heavy", "superheavy"):
             self.assertEqual(workflow["jobs"][job]["uses"], "./.github/workflows/test-suite.yaml")
 
