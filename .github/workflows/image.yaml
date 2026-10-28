@@ -94,8 +94,18 @@ jobs:
       suite: unit-superheavy
 
   image:
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
-    needs: [static, light, heavy, superheavy]
+    # Main pushes skip the expensive suites: explicitly accept those skips.
+    # A manual run executes both suites and may publish only after they pass.
+    if: >-
+      ${{ !cancelled() &&
+          needs.static.result == 'success' && needs.light.result == 'success' &&
+          needs.lint.result == 'success' && needs.vuln.result == 'success' &&
+          (needs.heavy.result == 'success' || needs.heavy.result == 'skipped') &&
+          (needs.superheavy.result == 'success' || needs.superheavy.result == 'skipped') &&
+          (github.event_name == 'workflow_dispatch' ||
+           (github.event_name == 'push' &&
+            (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')))) }}
+    needs: [static, light, lint, vuln, heavy, superheavy]
     runs-on: ubuntu-latest
     permissions:
       contents: read
