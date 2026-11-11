@@ -59,6 +59,12 @@ type Platform struct {
 	// operator is not declared: the project would fail to apply as a
 	// whole, not only the database.
 	AddonOperators []string
+	// APIServerBlocks are CIDRs of the Kubernetes API server, added as
+	// ipBlock egress rules wherever an addon needs the API. They cover
+	// clusters where the API does not run as a pod in kube-system: on
+	// K3s it is a host process, so the namespace rule alone matches
+	// nothing. Empty keeps the historical namespace-only rule.
+	APIServerBlocks []string
 	// NodeMemory is the memory of the node. The compiler refuses a
 	// project that does not fit: an application that is scheduled and
 	// then killed takes the whole cluster with it.
@@ -230,6 +236,11 @@ func (p Platform) AppDir(name string) string {
 
 func (p Platform) ValuesPath(name string) string {
 	return filepath.ToSlash(filepath.Join(p.AppDir(name), "values.yaml"))
+}
+
+// PreviewsPath is the repository-relative directory that holds preview manifests.
+func (p Platform) PreviewsPath() string {
+	return filepath.ToSlash(p.withDefaults().PreviewsDir)
 }
 
 func (p Platform) PreviewParentPath() string {

@@ -44,9 +44,14 @@ func (req PreviewRequest) remoteGit(ctx context.Context, dir string, args ...str
 }
 
 // EnsurePreviewBranch clones the previews branch, creating it if Forgejo has none yet.
-func EnsurePreviewBranch(ctx context.Context, gitOpsURL, branch string, authArgs []string) error {
+// previewsDir is the repository-relative directory holding preview manifests; an
+// empty value keeps the historical default so existing deployments are unaffected.
+func EnsurePreviewBranch(ctx context.Context, gitOpsURL, branch string, authArgs []string, previewsDir string) error {
 	if branch == "" {
 		branch = "previews"
+	}
+	if previewsDir == "" {
+		previewsDir = Platform{}.PreviewsPath()
 	}
 	parent, err := os.MkdirTemp("", "kuberpack-previews-init-*")
 	if err != nil {
@@ -67,7 +72,7 @@ func EnsurePreviewBranch(ctx context.Context, gitOpsURL, branch string, authArgs
 	if _, err := runGit(ctx, work, gitConfig("rm", "-rf", "--ignore-unmatch", ".")...); err != nil {
 		return err
 	}
-	previews := filepath.Join(work, "kubernetes", "vps", "previews")
+	previews := filepath.Join(work, filepath.FromSlash(previewsDir))
 	if err := os.MkdirAll(previews, 0o755); err != nil {
 		return err
 	}
@@ -75,7 +80,7 @@ func EnsurePreviewBranch(ctx context.Context, gitOpsURL, branch string, authArgs
 	if err := os.WriteFile(filepath.Join(previews, "kustomization.yaml"), kustom, 0o644); err != nil {
 		return err
 	}
-	if _, err := runGit(ctx, work, gitConfig("add", "--", "kubernetes/vps/previews")...); err != nil {
+	if _, err := runGit(ctx, work, gitConfig("add", "--", previewsDir)...); err != nil {
 		return err
 	}
 	if _, err := runGit(ctx, work, gitConfig("commit", "-m", "init previews")...); err != nil {
@@ -87,7 +92,7 @@ func EnsurePreviewBranch(ctx context.Context, gitOpsURL, branch string, authArgs
 	return nil
 }
 
-// RemovePreview deletes kubernetes/vps/previews/<release> and drops it from the parent list.
+// RemovePreview deletes PreviewsPath()/<release> and drops it from the parent list.
 func RemovePreview(ctx context.Context, req PreviewRequest) (Result, error) {
 	spec, err := normalizeSpec(req.App)
 	if err != nil {

@@ -46,6 +46,7 @@ func (cnpgEngine) Render(dir string, spec AddonSpec, platform Platform) (AddonRe
 	// seulement quand le manifeste en déclare un.
 	egress := addonEgress{
 		KubernetesAPI:     true,
+		APIBlocks:         p.APIServerBlocks,
 		OperatorNamespace: "cnpg-system",
 		OperatorPorts:     []int{443, 9090},
 		ReplicaPorts:      []int{entry.Port, 8000, 9090},
@@ -174,11 +175,11 @@ func (cnpgEngine) Render(dir string, spec AddonSpec, platform Platform) (AddonRe
 	// Les helpers de la base ont leur propre egress : un dump lit la base
 	// et rien d'autre, le Job du bucket ne joint que le stockage.
 	helperPolicies := []string{addonHelperNetworkPolicy(name, namespace, sanitizeName(spec.Project),
-		sanitizeName(spec.Name), "dump", false,
+		sanitizeName(spec.Name), "dump", false, nil,
 		[]addonEgressPeer{{Kind: entry.Kind, AddonName: sanitizeName(spec.Name), Ports: []int{entry.Port}}})}
 	if bucketJob != "" && spec.Backup != nil {
 		helperPolicies = append(helperPolicies, addonHelperNetworkPolicy(name, namespace, sanitizeName(spec.Project),
-			sanitizeName(spec.Name), "bucket", false,
+			sanitizeName(spec.Name), "bucket", false, nil,
 			[]addonEgressPeer{{Kind: "s3", AddonName: sanitizeName(spec.Backup.S3), Ports: []int{objectStorePort, 443}}}))
 	}
 	if err := writeAddonFiles(dir, addonFile{

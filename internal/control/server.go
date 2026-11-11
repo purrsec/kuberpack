@@ -78,6 +78,15 @@ type Config struct {
 	// ServiceAccount and Flux Kustomization per project. The application
 	// Kustomization then applies with the tenant identity, not cluster-admin.
 	TenantIsolation bool
+	// SkipClusterBookkeeping skips the per-application objects the control
+	// plane otherwise writes in the project namespace (registry pull
+	// secret, values ConfigMap, release fast-forward). It is for split
+	// platforms where the control plane runs on another cluster than the
+	// workloads: the project namespaces do not exist locally, and GitOps
+	// (Flux) is the only writer. Builds, webhooks and compilation are
+	// unaffected; releases converge on the Flux interval instead of
+	// immediately.
+	SkipClusterBookkeeping bool
 	// Reloader reports whether the secret reloader is installed. The
 	// provisioner then binds its identity in each project namespace.
 	Reloader bool

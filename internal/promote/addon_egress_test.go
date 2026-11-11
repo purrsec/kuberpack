@@ -143,7 +143,7 @@ func TestAnAddonWithoutOutgoingNeedHasNoTotalEgress(t *testing.T) {
 // bootstrap des credentials, la base pour un dump, le stockage pour un
 // bucket.
 func TestTheHelperEgressIsBoundedByWhatItUses(t *testing.T) {
-	bootstrap := addonHelperNetworkPolicy("demo-mongo", "demo", "demo", "mongo", "bootstrap", true, nil)
+	bootstrap := addonHelperNetworkPolicy("demo-mongo", "demo", "demo", "mongo", "bootstrap", true, nil, nil)
 	parseNetworkPolicy(t, bootstrap)
 	for _, want := range []string{
 		"policyTypes: [Egress]",
@@ -158,7 +158,7 @@ func TestTheHelperEgressIsBoundedByWhatItUses(t *testing.T) {
 		}
 	}
 
-	dump := addonHelperNetworkPolicy("demo-postgres", "demo", "demo", "postgres", "dump", false,
+	dump := addonHelperNetworkPolicy("demo-postgres", "demo", "demo", "postgres", "dump", false, nil,
 		[]addonEgressPeer{{Kind: "postgres", AddonName: "postgres", Ports: []int{5432}}})
 	parseNetworkPolicy(t, dump)
 	for _, want := range []string{
@@ -175,7 +175,7 @@ func TestTheHelperEgressIsBoundedByWhatItUses(t *testing.T) {
 		t.Errorf("the dump policy reaches the API without needing it:\n%s", dump)
 	}
 
-	bucket := addonHelperNetworkPolicy("demo-postgres", "demo", "demo", "postgres", "bucket", false,
+	bucket := addonHelperNetworkPolicy("demo-postgres", "demo", "demo", "postgres", "bucket", false, nil,
 		[]addonEgressPeer{{Kind: "s3", AddonName: "rustfs", Ports: []int{9000, 443}}})
 	parseNetworkPolicy(t, bucket)
 	for _, want := range []string{
@@ -291,5 +291,37 @@ func TestTheBootstrapHelperOnlyReachesTheAPI(t *testing.T) {
 	}
 	if strings.Contains(job, "kuberpack.io/addon: nosql") {
 		t.Errorf("the bootstrap pod must not be selected as an instance of the database:\n%s", job)
+	}
+}
+
+// Sur K3s, l'API ne tourne pas dans un pod : les blocs CIDR configurés
+// sortent en règles ipBlock en plus de la règle de namespace, qui reste
+// pour les clusters où l'API est un pod.
+func TestTheAPIEgressCarriesConfiguredIPBlocks(t *testing.T) {
+	policy := addonNetworkPolicy("demo-postgres", "demo", "postgres", "postgres", "demo", []int{5432},
+		addonEgress{
+			KubernetesAPI:     true,
+			APIBlocks:         []string{"10.43.0.1/32", "95.111.234.93/32"},
+			OperatorNamespace: "cnpg-system",
+			OperatorPorts:     []int{443, 9090},
+			ReplicaPorts:      []int{5432},
+		},
+		AddonSpec{ServiceClients: []string{"web"}})
+	parseNetworkPolicy(t, policy)
+	for _, want := range []string{
+		"kubernetes.io/metadata.name: kube-system",
+		"cidr: 10.43.0.1/32",
+		"cidr: 95.111.234.93/32",
+	} {
+		if !strings.Contains(policy, want) {
+			t.Errorf("the API egress does not carry %q:\n%s", want, policy)
+		}
+	}
+
+	helper := addonHelperNetworkPolicy("demo-postgres", "demo", "demo", "postgres", "dump", true,
+		[]string{"10.43.0.1/32"}, nil)
+	parseNetworkPolicy(t, helper)
+	if !strings.Contains(helper, "cidr: 10.43.0.1/32") {
+		t.Errorf("the helper API egress does not carry the block:\n%s", helper)
 	}
 }

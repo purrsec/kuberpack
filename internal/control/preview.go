@@ -59,7 +59,7 @@ func (s *Server) processPreview(ctx context.Context, d store.Delivery) {
 		return
 	}
 	if s.cfg.GitOpsURL != "" {
-		if err := promote.EnsurePreviewBranch(ctx, s.cfg.GitOpsURL, previewBranch(s.cfg.Platform), s.cfg.Provider.CloneAuth(s.cfg.Token)); err != nil {
+		if err := promote.EnsurePreviewBranch(ctx, s.cfg.GitOpsURL, previewBranch(s.cfg.Platform), s.cfg.Provider.CloneAuth(s.cfg.Token), s.cfg.Platform.PreviewsPath()); err != nil {
 			_ = s.cfg.Store.SetDeliveryStatus(ctx, d.ID, "failed", err.Error())
 			return
 		}

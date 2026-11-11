@@ -186,6 +186,7 @@ func runServe(args []string) error {
 		GitOpsBranch:             *gitopsBranch,
 		AppsSource:               getenv("KUBERPACK_APPS_SOURCE", "kuberpack-gitops"),
 		TenantIsolation:          getenvBool("KUBERPACK_TENANT_ISOLATION", false),
+		SkipClusterBookkeeping:   getenvBool("KUBERPACK_SKIP_CLUSTER_BOOKKEEPING", false),
 		Reloader:                 getenvBool("KUBERPACK_RELOADER", false),
 		ChartPath:                *chartPath,
 		WriteCharts:              getenvBool("KUBERPACK_WRITE_CHARTS", true),
@@ -254,6 +255,7 @@ func platformFromEnv() promote.Platform {
 		TenantIsolation:        getenvBool("KUBERPACK_TENANT_ISOLATION", false),
 		RequireProjectSecrets:  getenvBool("KUBERPACK_REQUIRE_PROJECT_SECRETS", true),
 		PreviewDomain:          getenv("KUBERPACK_PREVIEW_DOMAIN", "preview.host.bzh"),
+		PreviewsDir:            getenv("KUBERPACK_PREVIEWS_DIR", ""),
 		InfisicalAuthRef:       getenv("KUBERPACK_INFISICAL_AUTH_REF", "contabo-vps"),
 		InfisicalProjectID:     strings.TrimSpace(os.Getenv("KUBERPACK_INFISICAL_PROJECT_ID")),
 		InfisicalPath:          getenv("KUBERPACK_INFISICAL_PATH", "/"),
@@ -262,6 +264,7 @@ func platformFromEnv() promote.Platform {
 		InfisicalOperatorScope: getenvBool("KUBERPACK_INFISICAL_OPERATOR_SCOPE", false),
 		PostgresImage:          getenv("KUBERPACK_POSTGRES_IMAGE", ""),
 		AddonOperators:         splitList(getenv("KUBERPACK_ADDON_OPERATORS", "")),
+		APIServerBlocks:        splitList(getenv("KUBERPACK_API_SERVER_BLOCKS", "")),
 		NodeMemory:             getenv("KUBERPACK_NODE_MEMORY", ""),
 		NodeCPU:                getenvFloat("KUBERPACK_NODE_CPU", 0),
 		// The share of the node the platform keeps for itself. The

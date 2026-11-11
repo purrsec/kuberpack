@@ -146,7 +146,7 @@ func (rustfsEngine) Render(dir string, spec AddonSpec, platform Platform) (Addon
 			sanitizeName(spec.Project), []int{entry.Port},
 			addonEgress{ReplicaPorts: []int{entry.Port}}, spec)},
 		addonFile{name: "helper-networkpolicy.yaml", content: addonHelperNetworkPolicy(name, namespace,
-			sanitizeName(spec.Project), aname, "bootstrap", true, nil)},
+			sanitizeName(spec.Project), aname, "bootstrap", true, p.APIServerBlocks, nil)},
 	); err != nil {
 		return AddonResult{}, err
 	}

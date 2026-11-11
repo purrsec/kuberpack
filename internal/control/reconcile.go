@@ -92,8 +92,12 @@ func (s *Server) reconcileApp(ctx context.Context, project string, desc promote.
 
 	// The application pulls the image of the platform's registry: the secret
 	// that holds the credentials lives in the cluster, in the namespace of
-	// the application. It is never written in the GitOps repository.
-	if err := s.ensurePullSecret(ctx, desc.Namespace); err != nil {
+	// the application. It is never written in the GitOps repository. On a
+	// split platform the project namespaces live on another cluster, so
+	// there is nothing to write locally: GitOps owns the objects.
+	if s.cfg.SkipClusterBookkeeping {
+		log.Printf("kuberpack app %s: cluster bookkeeping skipped (split platform)", desc.Name)
+	} else if err := s.ensurePullSecret(ctx, desc.Namespace); err != nil {
 		log.Printf("kuberpack app %s: the secret of the registry: %v", desc.Name, err)
 	}
 
@@ -119,9 +123,13 @@ func (s *Server) reconcileApp(ctx context.Context, project string, desc promote.
 
 	// The values of the application are written in the cluster, and its
 	// release is asked to reconcile: the manifest is applied when it
-	// changes, not in the interval of the controller.
-	if err := s.syncAppValues(ctx, app, desc.Namespace); err != nil {
-		log.Printf("kuberpack app %s: the values: %v", app.Name, err)
+	// changes, not in the interval of the controller. Skipped on a split
+	// platform with the pull secret above: releases converge on the Flux
+	// interval.
+	if !s.cfg.SkipClusterBookkeeping {
+		if err := s.syncAppValues(ctx, app, desc.Namespace); err != nil {
+			log.Printf("kuberpack app %s: the values: %v", app.Name, err)
+		}
 	}
 
 	// A new app is built right away. An app whose build parameters changed
