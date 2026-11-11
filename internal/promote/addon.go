@@ -250,7 +250,10 @@ func writeAddonDNSEgress(b *strings.Builder) {
 
 // writeAddonAPIEgress écrit la règle qui joint l'API. L'API n'est pas
 // toujours un pod : la règle nomme le namespace kube-system, qui existe sur
-// chaque cluster, et jamais un namespace de projet.
+// chaque cluster, et jamais un namespace de projet. Sur K3s, l'API tourne
+// sur l'hôte (pas dans kube-system) : la ClusterIP du Service kubernetes
+// est pointée en ipBlock, sinon les Jobs CNPG initdb reçoivent
+// connection refused.
 func writeAddonAPIEgress(b *strings.Builder) {
 	b.WriteString("    - to:\n")
 	b.WriteString("        - namespaceSelector:\n")
@@ -259,6 +262,11 @@ func writeAddonAPIEgress(b *strings.Builder) {
 	b.WriteString("      ports:\n")
 	b.WriteString("        - { protocol: TCP, port: 443 }\n")
 	b.WriteString("        - { protocol: TCP, port: 6443 }\n")
+	b.WriteString("    - to:\n")
+	b.WriteString("        - ipBlock:\n")
+	b.WriteString("            cidr: 10.43.0.1/32\n")
+	b.WriteString("      ports:\n")
+	b.WriteString("        - { protocol: TCP, port: 443 }\n")
 }
 
 // writeAddonOperatorEgress écrit la règle qui joint l'opérateur du moteur.
