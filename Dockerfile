@@ -25,7 +25,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # Git is retained for GitOps; build tools and command interpreters belong only
 # in Dockerfile.builder. Copy the HTTPS transport and shared libraries into an
 # empty runtime, rather than inheriting the shell/tools of a general git image.
-FROM cgr.dev/chainguard/git:latest@sha256:65ffd786aa1b5d0cbfb33f4bf8a08755eb9a16205758edcf8f8afbb54f93badb AS git-runtime
+FROM cgr.dev/chainguard/git:latest@sha256:731f9a623e508ded57f8d68788c64221eab05e900ced9e34ae5c202ee723f0ca AS git-runtime
 FROM alpine:3.24 AS runtime-files
 COPY --from=git-runtime /usr/lib/ /runtime/usr/lib/
 COPY --from=git-runtime /usr/bin/git /runtime/usr/bin/git
