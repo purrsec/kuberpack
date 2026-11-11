@@ -2,6 +2,8 @@ package promote
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -278,3 +280,33 @@ func TestProjectAddonBackupRetention(t *testing.T) {
 
 // intPtr is the number of replicas of a service, when it is declared.
 func intPtr(v int) *int { return &v }
+
+// Without cert-manager, Traefik resolves the certificate itself: the
+// values carry the resolver annotation and no TLS secret name, and no
+// Certificate object is written.
+func TestProjectWithoutCertManagerUsesTraefikResolver(t *testing.T) {
+	bare := setupAppsGitOps(t)
+	m := ProjectManifest{
+		Project: "demo",
+		Services: map[string]Service{
+			"app": {Type: "stateless", Repository: "demo/app", Port: 8080, Hostname: "app.example.org"},
+		},
+	}
+	if _, err := EnsureProject(context.Background(), ProjectRequest{
+		GitOpsURL: bare, GitOpsBranch: "main", Manifest: m,
+		Platform: Platform{NetworkPolicy: true, IngressTLS: true, DisableCertManager: true, AddonOperators: []string{"cnpg"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	clone := readRemoteTree(t, bare)
+	values := readFile(t, clone, "kubernetes/vps/projects/demo/app/values.yaml")
+	if !strings.Contains(values, "router.tls.certresolver: letsencrypt") {
+		t.Fatalf("values:\n%s", values)
+	}
+	if strings.Contains(values, "tlsSecretName") {
+		t.Fatalf("values:\n%s", values)
+	}
+	if _, err := os.ReadFile(filepath.Join(clone, filepath.FromSlash("kubernetes/vps/projects/demo/app/certificate.yaml"))); err == nil {
+		t.Fatalf("certificate.yaml must not exist without cert-manager")
+	}
+}

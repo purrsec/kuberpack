@@ -545,7 +545,12 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 			}
 		}
 		spec.ConfigurationRevision = specHash(m)
-		spec.TLSSecretName = sname + "-tls"
+		// Without cert-manager, Traefik resolves the certificate itself:
+		// no TLS secret name, no Certificate object, and the resolver
+		// annotation is rendered instead (see valuesYAML).
+		if !p.DisableCertManager {
+			spec.TLSSecretName = sname + "-tls"
+		}
 		// A service that runs a published image is not built.
 		spec.Image = strings.TrimSpace(svc.Image)
 		if spec.Image != "" {
@@ -614,6 +619,8 @@ func compileProjectFiles(ctx context.Context, work string, m ProjectManifest, p 
 			if err := writeFile(filepath.Join(dir, "certificate.yaml"), certificate); err != nil {
 				return nil, nil, nil, err
 			}
+		} else if err := os.Remove(filepath.Join(dir, "certificate.yaml")); err != nil && !os.IsNotExist(err) {
+			return nil, nil, nil, err
 		}
 		if len(svc.Secrets) > 0 && p.InfisicalEnabled() {
 			if err := writeFile(filepath.Join(dir, "secret.yaml"), RenderSecretCR(spec, p)); err != nil {

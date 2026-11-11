@@ -254,6 +254,7 @@ func platformFromEnv() promote.Platform {
 		NetworkPolicy:          getenvBool("KUBERPACK_NETWORK_POLICY", true),
 		TenantIsolation:        getenvBool("KUBERPACK_TENANT_ISOLATION", false),
 		RequireProjectSecrets:  getenvBool("KUBERPACK_REQUIRE_PROJECT_SECRETS", true),
+		DisableCertManager:     getenvBool("KUBERPACK_DISABLE_CERT_MANAGER", false),
 		PreviewDomain:          getenv("KUBERPACK_PREVIEW_DOMAIN", "preview.host.bzh"),
 		PreviewsDir:            getenv("KUBERPACK_PREVIEWS_DIR", ""),
 		InfisicalAuthRef:       getenv("KUBERPACK_INFISICAL_AUTH_REF", "contabo-vps"),

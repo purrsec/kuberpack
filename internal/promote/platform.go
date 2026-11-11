@@ -59,6 +59,14 @@ type Platform struct {
 	// operator is not declared: the project would fail to apply as a
 	// whole, not only the database.
 	AddonOperators []string
+	// DisableCertManager skips the cert-manager Certificate objects: no
+	// TLS secret name is set, no certificate.yaml is written, and the
+	// Traefik resolver annotation is rendered instead, so Traefik issues
+	// the certificates itself with ACME. It is for clusters without a
+	// cert-manager issuer, where the Certificate objects would otherwise
+	// stay unissued forever. False by default: cert-manager stays the
+	// issuer.
+	DisableCertManager bool
 	// APIServerBlocks are CIDRs of the Kubernetes API server, added as
 	// ipBlock egress rules wherever an addon needs the API. They cover
 	// clusters where the API does not run as a pod in kube-system: on
