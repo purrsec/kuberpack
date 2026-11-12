@@ -43,14 +43,18 @@ La connexion et le projet sont mémorisés dans la configuration utilisateur. `l
 
 Un push Git sur la branche configurée déclenche normalement un build. Les fichiers non poussés ne sont jamais téléversés par le CLI. `redeploy` reconstruit un service `repository:` depuis sa configuration enregistrée ; ce n'est pas un redémarrage des pods. Pour un service `image:`, `redeploy` re-pinne le digest du tag sans builder de build ; aucun build Kuberpack ne lui est associé.
 
-`deploy` publie le **manifeste complet** du projet. Il refuse `--service`. La préparation du plan valide l'état distant, les permissions, les quotas, les paramètres opérateur, les références et la compilation dans un checkout temporaire sans push. Les commits et les digests affichés sont conservés dans le plan. `validate` effectue uniquement les contrôles structurels locaux, sans réseau.
+`deploy` publie le **manifeste complet** du projet. Il refuse `--service`. La préparation du plan valide l'état distant, les permissions, les quotas, les paramètres opérateur, les références et la compilation dans un checkout temporaire sans push. Les commits et les digests affichés sont conservés dans le plan. `validate` effectue uniquement les contrôles structurels locaux, sans réseau ; `validate --compile` exécute en plus **la compilation réelle de la plateforme**, dans un clone jetable et sans commit : un refus arrive immédiatement, avec sa raison, au lieu d'être découvert après un push, un webhook et une lecture de journal.
 
 ```bash
 kuberpack validate
+kuberpack validate --compile
+kuberpack doctor
 kuberpack deploy --plan
 kuberpack deploy --plan-id plan_ID --yes
 kuberpack init --from-remote
 ```
+
+`doctor` interroge la plateforme sur ce qu'elle sait faire avant qu'un manifeste soit poussé : référence du chart, opérateurs d'addon déclarés, mode de certificat (cert-manager ou ACME Traefik), mode de tenue de compte (local ou GitOps seul), frontière des secrets, et surtout la permission de lire les namespaces — celle dont l'absence refuse tous les projets avec un message qui ressemble à un namespace manquant. Il ne modifie rien et sort en erreur si un contrôle échoue.
 
 La dernière commande récupère explicitement le manifeste distant complet ; elle refuse une destination déjà existante. `--file` permet de choisir un autre emplacement. Il n'est pas obligatoire de placer le manifeste dans le dépôt applicatif.
 

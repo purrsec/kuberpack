@@ -200,6 +200,7 @@ func (a *App) command() *cobra.Command {
 		r.AddCommand(&cobra.Command{Use: "wizard", Short: "Open the guided task assistant", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error { return a.wizard() }})
 		r.AddCommand(a.initCommand(), a.linkCommand(), a.unlinkCommand(), a.deployCommand(false), a.deployCommand(true))
 		a.readCommands(r)
+		a.doctorCommand(r)
 	}
 	return r
 }

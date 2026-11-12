@@ -123,3 +123,36 @@ type Error struct {
 	Message   string `json:"message"`
 	RequestID string `json:"request_id,omitempty"`
 }
+
+// DoctorCheck is one line of the preflight report: what the platform can
+// do, and what it cannot. It exists because a deployment that cannot work
+// must say so before the developer pushes, not after the cluster stayed
+// unchanged.
+type DoctorCheck struct {
+	Name   string `json:"name"`
+	OK     bool   `json:"ok"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// Doctor is the preflight report of the platform.
+type Doctor struct {
+	Version string        `json:"version"`
+	Checks  []DoctorCheck `json:"checks"`
+}
+
+// CompileRequest is a manifest submitted for a dry run: the caller wants
+// the verdict of the compiler, not a commit.
+type CompileRequest struct {
+	Manifest string `json:"manifest"`
+}
+
+// CompileResult is the verdict of a dry run. A refusal is a result, not an
+// HTTP error: the reason is the actionable part.
+type CompileResult struct {
+	Valid     bool     `json:"valid"`
+	Project   string   `json:"project"`
+	Namespace string   `json:"namespace,omitempty"`
+	Services  []string `json:"services,omitempty"`
+	Addons    []string `json:"addons,omitempty"`
+	Refused   string   `json:"refused,omitempty"`
+}

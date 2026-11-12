@@ -82,7 +82,8 @@ func (a *App) readCommands(root *cobra.Command) {
 		return exec.CommandContext(a.ctx, binary, args...).Run()
 	}})
 	var file string
-	validate := &cobra.Command{Use: "validate", Short: "Validate the local manifest without network access", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+	var compile bool
+	validate := &cobra.Command{Use: "validate", Short: "Validate the manifest: local structure, or the real compiler with --compile", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
 		b, err := os.ReadFile(a.manifestPath(file))
 		if err != nil {
 			return err
@@ -91,9 +92,28 @@ func (a *App) readCommands(root *cobra.Command) {
 		if err != nil {
 			return fail(2, "%s", err)
 		}
-		return a.print(map[string]any{"project": m.Project, "valid": true, "scope": "local_structure"})
+		if !compile {
+			return a.print(map[string]any{"project": m.Project, "valid": true, "scope": "local_structure"})
+		}
+		// --compile runs the compiler the platform runs on a push, into a
+		// throwaway clone: the refusal is the one the push would produce,
+		// and it arrives now instead of after a webhook and a log dig.
+		c, _, err := a.connect()
+		if err != nil {
+			return err
+		}
+		var result api.CompileResult
+		path := "/api/v2/projects/" + url.PathEscape(m.Project) + "/compile"
+		if err := c.json(a.ctx, http.MethodPost, path, api.CompileRequest{Manifest: string(b)}, &result); err != nil {
+			return err
+		}
+		if !result.Valid {
+			return fail(1, "refused: %s", result.Refused)
+		}
+		return a.print(result)
 	}}
 	validate.Flags().StringVar(&file, "file", "kuberpack.yaml", "Manifest file")
+	validate.Flags().BoolVar(&compile, "compile", false, "Run the real compiler on the platform (dry run, nothing is committed)")
 	root.AddCommand(validate)
 	a.deploymentCommands(root)
 	a.buildCommands(root)

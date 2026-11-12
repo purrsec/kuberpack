@@ -1,6 +1,7 @@
 package control
 
 import (
+	"strings"
 	"testing"
 
 	"git.host.bzh/pepe/kuberpack/internal/promote"
@@ -92,5 +93,50 @@ func TestIsProjectPath(t *testing.T) {
 		if !ok || got != want {
 			t.Fatalf("%s: got %q, want %q", path, got, want)
 		}
+	}
+}
+
+// A push that compiles nothing leaves the GitOps repository untouched, so no
+// commit can carry the explanation. The status of the pushed commit is then
+// the only place the developer can read why: the reason must be in the
+// description, and the state must not be a success.
+func TestARefusedProjectExplainsItselfOnTheCommit(t *testing.T) {
+	reason := `mitame: namespace "mitame" already exists and is not owned by Kuberpack project "mitame"`
+	state, description := compileStatus(promote.ReloadResult{Refused: []string{reason}})
+	if state != "failure" {
+		t.Fatalf("a refusal must not be published as %q", state)
+	}
+	if !strings.HasPrefix(description, "mitame: namespace") {
+		t.Fatalf("the reason must come first, the description is clipped: %q", description)
+	}
+	if !strings.Contains(description, reason) {
+		t.Fatalf("the description does not carry the reason: %q", description)
+	}
+}
+
+// Several refusals: the first reason is shown, the rest is counted. The
+// description is clipped at 140 runes, so a list of reasons would lose all
+// of them.
+func TestSeveralRefusalsKeepTheFirstReason(t *testing.T) {
+	state, description := compileStatus(promote.ReloadResult{Refused: []string{"first: reason", "second: reason"}})
+	if state != "failure" {
+		t.Fatalf("state is %q", state)
+	}
+	if !strings.Contains(description, "first: reason") || !strings.Contains(description, "+1") {
+		t.Fatalf("description: %q", description)
+	}
+}
+
+// A push that compiles everything is a success, and says what it did.
+func TestACompiledPushIsASuccess(t *testing.T) {
+	state, description := compileStatus(promote.ReloadResult{
+		Projects: []promote.ProjectResult{{Project: "demo"}},
+		Removed:  []string{"old"},
+	})
+	if state != "success" {
+		t.Fatalf("state is %q", state)
+	}
+	if description != "1 project(s) compiled, 1 removed" {
+		t.Fatalf("description: %q", description)
 	}
 }

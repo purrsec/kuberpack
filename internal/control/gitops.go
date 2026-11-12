@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -188,21 +189,44 @@ func (s *Server) handleGitOpsPush(ctx context.Context, payload pushPayload) erro
 		return err
 	}
 
-	// A refused project is not deployed. The developer must know why: the
-	// reason is in the log of the platform, and in the status of the
-	// commit.
+	// A refused project is not deployed. The developer must know why, and
+	// from the commit alone: a push that compiles nothing leaves the
+	// GitOps repository untouched, so there is no commit to carry the
+	// explanation. The reason goes first in the status description
+	// because fail.Short clips it; the counts would push it out.
 	for _, refusal := range result.Refused {
 		log.Printf("kuberpack project refused: %s", refusal)
 	}
-	description := fmt.Sprintf("%d project(s) compiled", len(result.Projects))
-	if len(result.Removed) > 0 {
-		description = fmt.Sprintf("%s, %d removed", description, len(result.Removed))
-	}
-	if len(result.Refused) > 0 {
-		description = fmt.Sprintf("%s, %d refused", description, len(result.Refused))
-	}
-	s.publishStatusOnCommit(ctx, owner, repo, payload.After, git.StatusSuccess, description)
+	state, description := compileStatus(result)
+	s.publishStatusOnCommit(ctx, owner, repo, payload.After, state, description)
 	return nil
+}
+
+// compileStatus is what a developer reads on the commit: the state of the
+// push and its explanation. A refusal is a failure, not a success with a
+// count: the manifest was not applied, and a green check would say the
+// opposite. The first refusal comes first, because the description is
+// clipped and the reason is the actionable part.
+func compileStatus(result promote.ReloadResult) (string, string) {
+	compiled := fmt.Sprintf("%d project(s) compiled", len(result.Projects))
+	if len(result.Removed) > 0 {
+		compiled = fmt.Sprintf("%s, %d removed", compiled, len(result.Removed))
+	}
+	if len(result.Refused) == 0 {
+		return git.StatusSuccess, compiled
+	}
+	refused := fmt.Sprintf("%d refused", len(result.Refused))
+	reason := ""
+	if len(result.Refused) > 0 {
+		reason = strings.TrimSpace(result.Refused[0])
+	}
+	if reason == "" {
+		return git.StatusFailure, refused
+	}
+	if len(result.Refused) > 1 {
+		return git.StatusFailure, reason + " (+" + strconv.Itoa(len(result.Refused)-1) + ")"
+	}
+	return git.StatusFailure, reason
 }
 
 // publishStatusOnCommit publishes the state of the compilation on the commit

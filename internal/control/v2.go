@@ -37,10 +37,12 @@ func apiError(w http.ResponseWriter, status int, code, message string) {
 
 func (s *Server) routesV2(m *http.ServeMux) {
 	m.HandleFunc("GET /api/v2/session", s.withAPIv2(s.sessionV2))
+	m.HandleFunc("GET /api/v2/doctor", s.withAPIv2(s.doctorV2))
 	m.HandleFunc("GET /api/v2/projects", s.withAPIv2(s.projectsV2))
 	m.HandleFunc("GET /api/v2/projects/{project}", s.withAPIv2(s.projectV2))
 	m.HandleFunc("GET /api/v2/projects/{project}/services", s.withAPIv2(s.servicesV2))
 	m.HandleFunc("POST /api/v2/projects/{project}/plans", s.withAPIv2(s.planV2))
+	m.HandleFunc("POST /api/v2/projects/{project}/compile", s.withAPIv2(s.compileV2))
 	m.HandleFunc("POST /api/v2/projects/{project}/deployments", s.withAPIv2(s.executeV2))
 	m.HandleFunc("GET /api/v2/projects/{project}/deployments", s.withAPIv2(s.deploymentsV2))
 	m.HandleFunc("GET /api/v2/projects/{project}/deployments/{id}", s.withAPIv2(s.deploymentV2))
