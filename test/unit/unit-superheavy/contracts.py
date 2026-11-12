@@ -34,10 +34,12 @@ class Contracts:
             text = text.replace(value, "[redacted]")
         return re.sub(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", "[redacted-jwt]", text)
 
-    def check(self, name, actual, expected):
+    def check(self, name, actual, expected, detail=None):
         passed = actual == expected
         event = dict(id=name, status="passed" if passed else "failed", expected=expected, actual=actual,
                      evidence="actual API/Kubernetes response", duration=0)
+        if detail:
+            event["detail"] = detail
         with (self.artifacts / "release-checks.jsonl").open("a") as stream:
             stream.write(self.redact(json.dumps(event)) + "\n")
         if not passed:
@@ -199,6 +201,14 @@ HTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
         except (OSError, urllib.error.URLError):
             return False
 
+    # The reloader owns one field of a Deployment's pod template: it stamps the
+    # version of the synchronised Secret there to restart the workload. A
+    # reinstallation that re-syncs the Secret may legitimately change that
+    # stamp, so the preservation fingerprint compares identity and
+    # configuration, not the stamp. The reloader itself is covered by the
+    # "secret rotation replaced the pod" check.
+    RELOADER_ANNOTATION = "kuberpack.io/secret-revision"
+
     def fingerprint(self):
         result = {}
         for ns in ("kuberpack", "infisical", "kuberpack-build", "pipeline", "external-apps", "cert-manager"):
@@ -206,9 +216,45 @@ HTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
                 if obj.get("type") in ("helm.sh/release.v1", "kubernetes.io/tls", "kubernetes.io/service-account-token"):
                     continue
                 identity = ns + "/" + obj["kind"] + "/" + obj["metadata"]["name"]
-                state = {"uid": obj["metadata"]["uid"], "data": obj.get("data"), "spec": obj.get("spec")}
+                spec = obj.get("spec")
+                if obj["kind"] == "Deployment" and isinstance(spec, dict):
+                    template = spec.get("template") or {}
+                    metadata = template.get("metadata") or {}
+                    annotations = metadata.get("annotations") or {}
+                    annotations.pop(self.RELOADER_ANNOTATION, None)
+                state = {"uid": obj["metadata"]["uid"], "data": obj.get("data"), "spec": spec}
                 result[identity] = hashlib.sha256(json.dumps(state, sort_keys=True).encode()).hexdigest()
         return result
+
+    def fingerprint_drift(self, before, after):
+        """Name the objects and the fields a reinstallation changed.
+
+        A bare hash difference says nothing about what moved: the report has
+        to carry the object and the field, or the failure costs another run.
+        """
+        drift = {}
+        for identity in sorted(set(before) | set(after)):
+            if before.get(identity) == after.get(identity):
+                continue
+            entry = {"before": before.get(identity), "after": after.get(identity)}
+            kind = identity.split("/")[1] if identity.count("/") >= 2 else ""
+            namespace = identity.split("/")[0]
+            name = identity.rsplit("/", 1)[-1]
+            try:
+                live = self.kube("get", kind.lower() + "/" + name, "-n", namespace)
+            except Exception as error:  # the object may be gone: the hash says it
+                entry["fields"] = "unavailable: %s" % error
+                drift[identity] = entry
+                continue
+            spec = live.get("spec") or {}
+            if kind == "Deployment":
+                annotations = ((spec.get("template") or {}).get("metadata") or {}).get("annotations") or {}
+                entry["pod_annotations"] = sorted(annotations)
+                entry["image"] = [c.get("image") for c in ((spec.get("template") or {}).get("spec") or {}).get("containers", [])]
+            entry["replicas"] = spec.get("replicas")
+            drift[identity] = entry
+        return drift
+
 
     def pods(self):
         return self.kube("get", "pods", "-n", "pipeline", "-l=app.kubernetes.io/name=web")["items"]
@@ -328,7 +374,9 @@ HTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
         before = self.fingerprint()
         revisions = (self.remote_revision("platform"), self.remote_revision("applications"))
         install(self.directory, self.artifacts, "reinstall")
-        self.check("reinstallation preserves credentials, volumes and workload identities", self.fingerprint(), before)
+        after = self.fingerprint()
+        self.check("reinstallation preserves credentials, volumes and workload identities", after, before,
+                   detail=self.fingerprint_drift(before, after))
         self.check("reinstallation creates no GitOps commits", (self.remote_revision("platform"), self.remote_revision("applications")), revisions)
         self.check("reinstalled API remains scoped", self.cli("whoami")["role"], "maintainer")
         self.check("reinstalled delivery remains available", self.application()["version"], "two")
